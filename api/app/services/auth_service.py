@@ -193,6 +193,13 @@ def create_signup_invite(
             org_exists = conn.execute('SELECT 1 FROM organizations WHERE organization_id = ? LIMIT 1', (organization_id,)).fetchone()
             if org_exists is None:
                 raise ValueError('Unknown organization_id')
+        if normalized_email:
+            existing_user = conn.execute(
+                'SELECT user_id FROM users WHERE lower(trim(email)) = ? LIMIT 1',
+                (normalized_email,),
+            ).fetchone()
+            if existing_user is not None:
+                raise ValueError('An account with that email already exists. Update the existing user instead of creating a new invite.')
         conn.execute(
             '''
             INSERT INTO signup_invites (
@@ -242,6 +249,18 @@ def list_signup_invites(*, limit: int = 100, include_consumed: bool = True, orga
     return [_serialize_signup_invite(row) for row in rows]
 
 
+
+
+def delete_signup_invite(*, invite_id: str) -> dict[str, Any]:
+    invite_id_clean = str(invite_id).strip()
+    if not invite_id_clean:
+        raise ValueError('invite_id is required')
+    with get_connection() as conn:
+        row = conn.execute('SELECT * FROM signup_invites WHERE invite_id = ? LIMIT 1', (invite_id_clean,)).fetchone()
+        if row is None:
+            raise ValueError('Unknown invite_id')
+        conn.execute('DELETE FROM signup_invites WHERE invite_id = ?', (invite_id_clean,))
+    return _serialize_signup_invite(row)
 
 
 def get_active_signup_invite_preview(*, invite_code: str) -> dict[str, Any]:
@@ -621,6 +640,37 @@ def set_user_active(*, user_id: str, is_active: bool) -> dict[str, Any]:
         raise ValueError('Unknown user_id')
     if not is_active:
         revoke_all_auth_tokens_for_user(user_id)
+    return {
+        'user_id': row['user_id'],
+        'email': row['email'],
+        'display_name': row['display_name'],
+        'role': row['role'],
+        'is_active': bool(row['is_active']),
+        'created_at': row['created_at'],
+        'updated_at': row['updated_at'],
+        'deactivated_at': row['deactivated_at'],
+    }
+
+
+def delete_user_permanently(*, user_id: str) -> dict[str, Any]:
+    user_id_clean = str(user_id).strip()
+    if not user_id_clean:
+        raise ValueError('user_id is required')
+
+    with get_connection() as conn:
+        row = conn.execute(
+            'SELECT user_id, email, display_name, role, is_active, created_at, updated_at, deactivated_at FROM users WHERE user_id = ?',
+            (user_id_clean,),
+        ).fetchone()
+        if row is None:
+            raise ValueError('Unknown user_id')
+        if row['role'] == UserRole.OWNER.value:
+            owner_count_row = conn.execute('SELECT COUNT(*) AS count FROM users WHERE role = ?', (UserRole.OWNER.value,)).fetchone()
+            owner_count = int(owner_count_row['count'] or 0) if owner_count_row is not None else 0
+            if owner_count <= 1:
+                raise ValueError('You cannot delete the only owner account')
+        conn.execute('DELETE FROM users WHERE user_id = ?', (user_id_clean,))
+
     return {
         'user_id': row['user_id'],
         'email': row['email'],

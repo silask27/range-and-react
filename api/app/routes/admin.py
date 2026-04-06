@@ -22,6 +22,8 @@ from api.app.services.auth_service import (
     count_users,
     count_users_by_role,
     create_signup_invite,
+    delete_signup_invite,
+    delete_user_permanently,
     link_external_identity,
     list_signup_invites,
     list_users,
@@ -192,6 +194,19 @@ def admin_update_user_active_route(user_id: str, payload: dict = Body(...), curr
     return {'user': updated}
 
 
+@router.delete('/users/{user_id}')
+def admin_delete_user_route(user_id: str, current_user: UserAccount = Depends(require_role(UserRole.OWNER))) -> dict:
+    user_id_clean = str(user_id).strip()
+    if user_id_clean == current_user.user_id:
+        raise HTTPException(status_code=400, detail='You cannot delete your own owner account from the admin console')
+    try:
+        deleted = delete_user_permanently(user_id=user_id_clean)
+        log_audit_event(action_type='user_deleted', actor=current_user, target_user_id=None, metadata={'deleted_user_id': user_id_clean, 'email': deleted['email'], 'role': deleted['role']})
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {'deleted_user': deleted}
+
+
 @router.post('/users/{user_id}/external-identities')
 def admin_link_external_identity_route(user_id: str, payload: dict = Body(...), current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN))) -> dict:
     provider = str(payload.get('provider') or '').strip()
@@ -224,7 +239,7 @@ def admin_create_signup_invite_route(payload: dict = Body(...), current_user: Us
     email = (str(payload.get('email') or '').strip() or None)
     role_raw = str(payload.get('role') or UserRole.MEMBER.value).strip().lower()
     requested_org_id = (str(payload.get('organization_id') or '').strip() or None)
-    membership_role = str(payload.get('membership_role') or 'member').strip().lower() or 'member'
+    membership_role = str(payload.get('membership_role') or role_raw).strip().lower() or role_raw
     expires_in_days = int(payload.get('expires_in_days') or 14)
 
     try:
@@ -238,6 +253,7 @@ def admin_create_signup_invite_route(payload: dict = Body(...), current_user: Us
         raise HTTPException(status_code=400, detail='Owner invites are not allowed')
 
     organization_id = _resolve_invite_org(current_user, requested_org_id)
+    membership_role = membership_role if organization_id else 'member'
     if current_user.role == UserRole.COACH:
         membership_role = 'member'
 
@@ -264,11 +280,26 @@ def admin_create_signup_invite_route(payload: dict = Body(...), current_user: Us
     return {'invite': _decorate_invite(invite, email_delivery)}
 
 
+@router.delete('/signup-invites/{invite_id}')
+def admin_delete_signup_invite_route(invite_id: str, current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> dict:
+    org_scope, _ = _scope(current_user)
+    invite_lookup = {item['invite_id']: item for item in list_signup_invites(limit=500, organization_ids=org_scope)}
+    invite = invite_lookup.get(str(invite_id).strip())
+    if invite is None:
+        raise HTTPException(status_code=404, detail='Invite not found in your scope')
+    try:
+        deleted = delete_signup_invite(invite_id=invite_id)
+        log_audit_event(action_type='signup_invite_deleted', actor=current_user, organization_id=deleted.get('organization_id'), metadata={'invite_id': deleted['invite_id'], 'email': deleted.get('email'), 'role': deleted.get('role')})
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {'deleted_invite': _decorate_invite(deleted)}
+
+
 @router.post('/signup-invites/bulk')
 def admin_create_signup_invites_bulk_route(payload: dict = Body(...), current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> dict:
     requested_org_id = (str(payload.get('organization_id') or '').strip() or None)
     role_raw = str(payload.get('role') or UserRole.MEMBER.value).strip().lower()
-    membership_role = str(payload.get('membership_role') or 'member').strip().lower() or 'member'
+    membership_role = str(payload.get('membership_role') or role_raw).strip().lower() or role_raw
     expires_in_days = int(payload.get('expires_in_days') or 14)
     raw_emails = payload.get('emails')
     emails: list[str] = []
@@ -289,6 +320,7 @@ def admin_create_signup_invites_bulk_route(payload: dict = Body(...), current_us
         raise HTTPException(status_code=400, detail='Owner invites are not allowed')
 
     organization_id = _resolve_invite_org(current_user, requested_org_id)
+    membership_role = membership_role if organization_id else 'member'
     if current_user.role == UserRole.COACH:
         membership_role = 'member'
 
@@ -414,7 +446,7 @@ def admin_create_organization_route(payload: dict = Body(...), current_user: Use
 def admin_add_org_member_route(organization_id: str, payload: dict = Body(...), current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> dict:
     scoped_org_id = ensure_organization_access(current_user, organization_id)
     user_id = str(payload.get('user_id') or '').strip()
-    membership_role = str(payload.get('membership_role') or 'member').strip().lower() or 'member'
+    membership_role = str(payload.get('membership_role') or role_raw).strip().lower() or role_raw
     if not user_id:
         raise HTTPException(status_code=400, detail='user_id is required')
     if current_user.role == UserRole.COACH and membership_role != 'member':

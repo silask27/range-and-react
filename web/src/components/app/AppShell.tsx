@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import type { CSSProperties, ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { API_BASE, apiFetch } from "../../lib/api";
 import { clearStoredAuth, getStoredAuthUser } from "../../lib/auth";
 import SiteFooter from "./SiteFooter";
@@ -32,8 +32,14 @@ const PAGE_LABELS: Record<string, string> = {
 export default function AppShell({ children, title, subtitle, headerContent }: { children: ReactNode; title?: string; subtitle?: string; headerContent?: ReactNode }) {
   const pathname = usePathname() || "/dashboard";
   const router = useRouter();
-  const user = getStoredAuthUser();
-  const currentRole = ((user?.role as Role | undefined) ?? "member");
+  const [storedRole, setStoredRole] = useState<Role | null>(null);
+
+  useEffect(() => {
+    const user = getStoredAuthUser();
+    setStoredRole((user?.role as Role | undefined) ?? null);
+  }, [pathname]);
+
+  const currentRole = storedRole ?? "member";
   const navItems = NAV_ITEMS.filter((item) => !item.roles || item.roles.includes(currentRole));
   const pageLabel = PAGE_LABELS[Object.keys(PAGE_LABELS).find((key) => pathname.startsWith(key)) || "/dashboard"];
 

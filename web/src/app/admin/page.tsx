@@ -62,6 +62,12 @@ type InviteEntry = { invite_id: string; invite_code: string; email: string | nul
 type TabKey = "analytics" | "assignments" | "members";
 
 const PALETTE = { cream: "#F0EBE0", coral: "#E76F51", green: "#6A9E72", muted: "rgba(240,235,224,0.45)", soft: "rgba(240,235,224,0.08)" };
+const ACCOUNT_ROLE_OPTIONS = ["member", "coach", "admin"] as const;
+const ORG_ROLE_OPTIONS = ["member", "coach", "admin", "owner"] as const;
+
+function roleOptionsForUser(canManageRoles: boolean) {
+  return canManageRoles ? ACCOUNT_ROLE_OPTIONS : (["member"] as const);
+}
 
 export default function AdminPage() {
   const { user, isAuthLoading, authError } = useRequireAuth();
@@ -80,10 +86,39 @@ export default function AdminPage() {
   const [externalState, setExternalState] = useState({ user_id: "", provider: "", external_user_id: "", external_email: "" });
   const [orgState, setOrgState] = useState({ name: "", slug: "", external_provider: "", external_org_id: "" });
   const [orgMemberState, setOrgMemberState] = useState({ organization_id: "", user_id: "", membership_role: "member" });
-  const [inviteState, setInviteState] = useState({ email: "", role: "member", organization_id: "", membership_role: "member", expires_in_days: 14 });
-  const [bulkInviteState, setBulkInviteState] = useState({ emails: "", role: "member", organization_id: "", membership_role: "member", expires_in_days: 14 });
+  const [inviteState, setInviteState] = useState({ email: "", role: "member", organization_id: "", expires_in_days: 14 });
+  const [bulkInviteState, setBulkInviteState] = useState({ emails: "", role: "member", organization_id: "", expires_in_days: 14 });
 
   const canManageRoles = user?.role === "owner" || user?.role === "admin";
+  const canDeleteUsers = user?.role === "owner";
+
+  const membershipSummaryByUserId = useMemo(() => {
+    const summary = new Map<string, string[]>();
+    organizations.forEach((org) => {
+      org.members.forEach((member) => {
+        const next = summary.get(member.user_id) ?? [];
+        next.push(`${org.name} (${member.membership_role})`);
+        summary.set(member.user_id, next);
+      });
+    });
+    return summary;
+  }, [organizations]);
+
+  const inviteOrganizationName = useMemo(() => {
+    const summary = new Map<string, string>();
+    organizations.forEach((org) => {
+      summary.set(org.organization_id, org.name);
+    });
+    return summary;
+  }, [organizations]);
+
+  function updateInviteRole(role: string) {
+    setInviteState((current) => ({ ...current, role }));
+  }
+
+  function updateBulkInviteRole(role: string) {
+    setBulkInviteState((current) => ({ ...current, role }));
+  }
 
   async function loadAll() {
     const [usersRes, assignmentsRes, villainsRes, scenariosRes, analyticsRes, auditsRes, orgsRes, invitesRes] = await Promise.all([
@@ -199,10 +234,10 @@ export default function AdminPage() {
     event.preventDefault();
     setError(null); setNotice(null);
     try {
-      const res = await apiFetch(`${API_BASE}/admin/signup-invites`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...inviteState, email: inviteState.email || undefined, organization_id: inviteState.organization_id || undefined }) });
+      const res = await apiFetch(`${API_BASE}/admin/signup-invites`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...inviteState, email: inviteState.email || undefined, organization_id: inviteState.organization_id || undefined, membership_role: inviteState.organization_id ? inviteState.role : undefined }) });
       const data = await res.json();
       if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to create invite.");
-      setInviteState({ email: "", role: "member", organization_id: "", membership_role: "member", expires_in_days: 14 });
+      setInviteState({ email: "", role: "member", organization_id: "", expires_in_days: 14 });
       const invite = (data as { invite: InviteEntry }).invite;
       const deliveryStatus = invite.email_delivery?.status;
       const suffix = deliveryStatus === "sent" ? " · email sent" : invite.invite_url ? ` · share link: ${invite.invite_url}` : "";
@@ -218,12 +253,12 @@ export default function AdminPage() {
     event.preventDefault();
     setError(null); setNotice(null);
     try {
-      const res = await apiFetch(`${API_BASE}/admin/signup-invites/bulk`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...bulkInviteState, organization_id: bulkInviteState.organization_id || undefined }) });
+      const res = await apiFetch(`${API_BASE}/admin/signup-invites/bulk`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...bulkInviteState, organization_id: bulkInviteState.organization_id || undefined, membership_role: bulkInviteState.organization_id ? bulkInviteState.role : undefined }) });
       const data = await res.json();
       if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to create bulk invites.");
       const createdCount = Number((data as { created_count?: number }).created_count ?? 0);
       const failureCount = Array.isArray((data as { failures?: unknown[] }).failures) ? (data as { failures?: unknown[] }).failures!.length : 0;
-      setBulkInviteState({ emails: "", role: "member", organization_id: "", membership_role: "member", expires_in_days: 14 });
+      setBulkInviteState({ emails: "", role: "member", organization_id: "", expires_in_days: 14 });
       setNotice(`Created ${createdCount} invite${createdCount === 1 ? "" : "s"}${failureCount ? ` · ${failureCount} failed` : ""}.`);
       await loadAll();
     } catch (err) {
@@ -250,6 +285,45 @@ export default function AdminPage() {
     }
   }
 
+  async function handleDeleteUser(targetUserId: string, label: string) {
+    if (!canDeleteUsers) return;
+    const confirmed = window.confirm(`Delete ${label}? This permanently removes the account and linked memberships, sessions, tokens, and results.`);
+    if (!confirmed) return;
+    setError(null); setNotice(null);
+    try {
+      const res = await apiFetch(`${API_BASE}/admin/users/${encodeURIComponent(targetUserId)}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to delete user.");
+      setNotice(`${label} deleted.`);
+      await loadAll();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to delete user.");
+    }
+  }
+
+  async function handleDeleteInvite(inviteId: string) {
+    const confirmed = window.confirm("Delete this signup invite? Anyone using the link after this will be blocked.");
+    if (!confirmed) return;
+    setError(null); setNotice(null);
+    try {
+      const res = await apiFetch(`${API_BASE}/admin/signup-invites/${encodeURIComponent(inviteId)}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to delete invite.");
+      setNotice("Signup invite deleted.");
+      await loadAll();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to delete invite.");
+    }
+  }
+
+  async function handleCopyInvite(url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      setNotice("Signup link copied.");
+    } catch {
+      setError("Unable to copy the signup link.");
+    }
+  }
   const headerStats = analytics ? (
     <>
       <HeaderStat label="Avg villain ranging" value={formatScore(analytics.summary.avg_ranging_score)} tone="coral" />
@@ -355,33 +429,79 @@ export default function AdminPage() {
 
           {activeTab === "members" ? (
             <section style={mainGridStyle}>
-              <section style={panelStyle}>
-                <SectionHeader eyebrow="Members" title="Roles and account status" />
-                <div style={stackStyle}>
-                  {users.map((entry) => (
-                    <div key={entry.user_id} style={memberAdminRowStyle}>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={rowTitleStyle}>{entry.display_name || entry.email}</div>
-                        <div style={rowMetaStyle}>{entry.email} · {entry.role} · {entry.is_active ? "active" : "inactive"}</div>
+              <section style={{ display: "grid", gap: 18 }}>
+                <section style={panelStyle}>
+                  <SectionHeader eyebrow="Members" title="Accounts, roles, and organization access" />
+                  <div style={helperPanelStyle}>Use signup links for brand-new accounts. Use the role dropdown here for existing accounts. Use organization membership only when you are attaching an existing user to a company roster.</div>
+                  <div style={stackStyle}>
+                    {users.length ? users.map((entry) => {
+                      const memberships = membershipSummaryByUserId.get(entry.user_id) ?? [];
+                      return (
+                        <div key={entry.user_id} style={memberAdminRowStyle}>
+                          <div style={{ minWidth: 0, display: "grid", gap: 8 }}>
+                            <div>
+                              <div style={rowTitleStyle}>{entry.display_name || entry.email}</div>
+                              <div style={rowMetaStyle}>{entry.email}</div>
+                            </div>
+                            <div style={pillWrapStyle}>
+                              <span style={tagStyle}>platform role {entry.role}</span>
+                              <span style={entry.is_active ? activeTagStyle : inactiveTagStyle}>{entry.is_active ? "active" : "inactive"}</span>
+                              {memberships.length ? memberships.map((membership) => <span key={membership} style={softTagStyle}>{membership}</span>) : <span style={softTagStyle}>No organization linked</span>}
+                            </div>
+                          </div>
+                          <div style={actionClusterStyle}>
+                            {canManageRoles ? (
+                              <select value={entry.role} onChange={(event) => void handleRoleChange(entry.user_id, event.target.value)} style={compactInputStyle}>
+                                <option value="member">member</option>
+                                <option value="coach">coach</option>
+                                <option value="admin">admin</option>
+                                <option value="owner">owner</option>
+                              </select>
+                            ) : null}
+                            {canManageRoles ? <button type="button" onClick={() => void handleActiveToggle(entry.user_id, !entry.is_active)} style={entry.is_active ? dangerButtonStyle : successButtonStyle}>{entry.is_active ? "Deactivate" : "Reactivate"}</button> : null}
+                            {canDeleteUsers ? <button type="button" onClick={() => void handleDeleteUser(entry.user_id, entry.display_name || entry.email)} style={deleteButtonStyle}>Delete</button> : null}
+                          </div>
+                        </div>
+                      );
+                    }) : <EmptyState copy="No accounts yet." />}
+                  </div>
+                </section>
+
+                <section style={panelStyle}>
+                  <SectionHeader eyebrow="Invites" title="Pending signup links" />
+                  <div style={helperCopyStyle}>Keep these links available until the person finishes account setup. Delete old links once they are no longer needed.</div>
+                  <div style={{ ...stackStyle, marginTop: 14 }}>
+                    {invites.length ? invites.slice(0, 12).map((invite) => (
+                      <div key={invite.invite_id} style={inviteCardRowStyle}>
+                        <div style={{ minWidth: 0, display: "grid", gap: 8 }}>
+                          <div>
+                            <div style={rowTitleStyle}>{invite.email || "Open invite"}</div>
+                            <div style={pillWrapStyle}>
+                              <span style={tagStyle}>platform role {invite.role}</span>
+                              {invite.organization_id ? <span style={softTagStyle}>{inviteOrganizationName.get(invite.organization_id || "") || "Organization"}</span> : <span style={softTagStyle}>No organization</span>}
+                              {invite.membership_role && invite.organization_id ? <span style={softTagStyle}>roster {invite.membership_role}</span> : null}
+                            </div>
+                          </div>
+                          <div style={inviteUrlStyle}>{invite.invite_url || "Invite link unavailable"}</div>
+                          <div style={pillWrapStyle}>
+                            <span style={tagStyle}>{invite.status}</span>
+                            <span style={softTagStyle}>{invite.expires_at ? `expires ${new Date(invite.expires_at).toLocaleDateString()}` : "no expiry"}</span>
+                            <span style={softTagStyle}>code {invite.invite_code}</span>
+                          </div>
+                        </div>
+                        <div style={actionClusterStyle}>
+                          {invite.invite_url ? <button type="button" onClick={() => void handleCopyInvite(invite.invite_url!)} style={secondaryButtonStyle}>Copy link</button> : null}
+                          <button type="button" onClick={() => void handleDeleteInvite(invite.invite_id)} style={deleteButtonStyle}>Delete link</button>
+                        </div>
                       </div>
-                      <div style={actionWrapStyle}>
-                        {canManageRoles ? (
-                          <select value={entry.role} onChange={(event) => void handleRoleChange(entry.user_id, event.target.value)} style={compactInputStyle}>
-                            <option value="member">member</option>
-                            <option value="coach">coach</option>
-                            <option value="admin">admin</option>
-                            <option value="owner">owner</option>
-                          </select>
-                        ) : null}
-                        {canManageRoles ? <button type="button" onClick={() => void handleActiveToggle(entry.user_id, !entry.is_active)} style={secondaryButtonStyle}>{entry.is_active ? "Deactivate" : "Reactivate"}</button> : null}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    )) : <EmptyState copy="No signup invites yet." />}
+                  </div>
+                </section>
               </section>
               <section style={{ display: "grid", gap: 18 }}>
                 <section style={panelStyle}>
-                  <SectionHeader eyebrow="Advanced" title="Organizations and external links" />
+                  <SectionHeader eyebrow="Admin tools" title="Organizations and access setup" />
+                  <div style={helperPanelStyle}>Create the organization first, then send signup links. Existing users can be attached later without creating a new account.</div>
                   {canManageRoles ? (
                     <details style={detailsStyle}>
                       <summary style={summaryStyle}>Create organization</summary>
@@ -395,75 +515,58 @@ export default function AdminPage() {
                     </details>
                   ) : null}
                   <details style={detailsStyle}>
-                    <summary style={summaryStyle}>Add organization member</summary>
+                    <summary style={summaryStyle}>Add existing user to organization</summary>
                     <form onSubmit={handleAddOrgMember} style={stackStyle}>
                       <select value={orgMemberState.organization_id} onChange={(event) => setOrgMemberState((current) => ({ ...current, organization_id: event.target.value }))} style={inputStyle} required><option value="">Select organization</option>{organizations.map((org) => <option key={org.organization_id} value={org.organization_id}>{org.name}</option>)}</select>
-                      <select value={orgMemberState.user_id} onChange={(event) => setOrgMemberState((current) => ({ ...current, user_id: event.target.value }))} style={inputStyle} required><option value="">Select member</option>{users.map((entry) => <option key={entry.user_id} value={entry.user_id}>{entry.display_name || entry.email}</option>)}</select>
-                      <input value={orgMemberState.membership_role} onChange={(event) => setOrgMemberState((current) => ({ ...current, membership_role: event.target.value }))} placeholder="Membership role" style={inputStyle} />
+                      <select value={orgMemberState.user_id} onChange={(event) => setOrgMemberState((current) => ({ ...current, user_id: event.target.value }))} style={inputStyle} required><option value="">Select user</option>{users.map((entry) => <option key={entry.user_id} value={entry.user_id}>{entry.display_name || entry.email}</option>)}</select>
+                      <label style={labelStyle}><span style={labelTitleStyle}>Organization role</span><select value={orgMemberState.membership_role} onChange={(event) => setOrgMemberState((current) => ({ ...current, membership_role: event.target.value }))} style={inputStyle}>{ORG_ROLE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
                       <button type="submit" style={secondaryButtonStyle}>Save membership</button>
                     </form>
                   </details>
                   <details style={detailsStyle}>
                     <summary style={summaryStyle}>Create signup invite</summary>
                     <form onSubmit={handleCreateInvite} style={stackStyle}>
-                      <input value={inviteState.email} onChange={(event) => setInviteState((current) => ({ ...current, email: event.target.value }))} placeholder="Invite email (optional)" style={inputStyle} />
+                      <label style={labelStyle}><span style={labelTitleStyle}>Invite email</span><input value={inviteState.email} onChange={(event) => setInviteState((current) => ({ ...current, email: event.target.value }))} placeholder="Required for account-specific invites" style={inputStyle} /></label>
                       <div style={twoColStyle}>
-                        <select value={inviteState.role} onChange={(event) => setInviteState((current) => ({ ...current, role: event.target.value }))} style={inputStyle}>
-                          <option value="member">member</option>
-                          {canManageRoles ? <option value="coach">coach</option> : null}
-                          {canManageRoles ? <option value="admin">admin</option> : null}
-                        </select>
-                        <select value={inviteState.organization_id} onChange={(event) => setInviteState((current) => ({ ...current, organization_id: event.target.value }))} style={inputStyle}>
+                        <label style={labelStyle}><span style={labelTitleStyle}>Account role</span><select value={inviteState.role} onChange={(event) => updateInviteRole(event.target.value)} style={inputStyle}>{roleOptionsForUser(canManageRoles).map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+                        <label style={labelStyle}><span style={labelTitleStyle}>Organization</span><select value={inviteState.organization_id} onChange={(event) => setInviteState((current) => ({ ...current, organization_id: event.target.value }))} style={inputStyle}>
                           {canManageRoles ? <option value="">No organization</option> : <option value="">Select organization</option>}
                           {organizations.map((org) => <option key={org.organization_id} value={org.organization_id}>{org.name}</option>)}
-                        </select>
+                        </select></label>
                       </div>
                       <div style={twoColStyle}>
-                        <input value={inviteState.membership_role} onChange={(event) => setInviteState((current) => ({ ...current, membership_role: event.target.value }))} placeholder="Membership role" style={inputStyle} />
-                        <input type="number" min={1} max={90} value={inviteState.expires_in_days} onChange={(event) => setInviteState((current) => ({ ...current, expires_in_days: Number(event.target.value) || 14 }))} placeholder="Expires in days" style={inputStyle} />
+                        <div />
+                        <label style={labelStyle}><span style={labelTitleStyle}>Invite expires in</span><input type="number" min={1} max={90} value={inviteState.expires_in_days} onChange={(event) => setInviteState((current) => ({ ...current, expires_in_days: Number(event.target.value) || 14 }))} placeholder="Expires in days" style={inputStyle} /></label>
                       </div>
-                      <button type="submit" style={secondaryButtonStyle}>Create invite</button>
+                      <div style={helperCopyStyle}>This is the standard onboarding path for a brand-new person. The selected account role is what they will land with after signup. {inviteState.organization_id ? "Choosing an organization will also place them into that roster automatically." : "Choose an organization only when this new account should start inside a company roster."}</div>
+                      <button type="submit" style={primaryButtonStyle}>Create invite</button>
                     </form>
-                    <div style={{ ...stackStyle, marginTop: 14 }}>
-                      {invites.slice(0, 6).map((invite) => (
-                        <div key={invite.invite_id} style={rowStyle}>
-                          <div style={{ minWidth: 0 }}>
-                            <div style={rowTitleStyle}>{invite.email || "Open invite"}</div>
-                            <div style={rowMetaStyle}>{`${invite.role} · ${invite.status} · code ${invite.invite_code}`}</div>
-                          </div>
-                          <div style={tagStyle}>{invite.expires_at ? new Date(invite.expires_at).toLocaleDateString() : "no expiry"}</div>
-                        </div>
-                      ))}
-                    </div>
                   </details>
 
                   <details style={detailsStyle}>
-                    <summary style={summaryStyle}>Bulk member invites</summary>
+                    <summary style={summaryStyle}>Bulk roster invites</summary>
                     <form onSubmit={handleCreateBulkInvites} style={stackStyle}>
-                      <textarea value={bulkInviteState.emails} onChange={(event) => setBulkInviteState((current) => ({ ...current, emails: event.target.value }))} placeholder="One email per line" style={{ ...inputStyle, minHeight: 140, resize: "vertical" }} required />
+                      <label style={labelStyle}><span style={labelTitleStyle}>Email list</span><textarea value={bulkInviteState.emails} onChange={(event) => setBulkInviteState((current) => ({ ...current, emails: event.target.value }))} placeholder="One email per line" style={{ ...inputStyle, minHeight: 140, resize: "vertical" }} required /></label>
                       <div style={twoColStyle}>
-                        <select value={bulkInviteState.role} onChange={(event) => setBulkInviteState((current) => ({ ...current, role: event.target.value }))} style={inputStyle}>
-                          <option value="member">member</option>
-                          {canManageRoles ? <option value="coach">coach</option> : null}
-                          {canManageRoles ? <option value="admin">admin</option> : null}
-                        </select>
-                        <select value={bulkInviteState.organization_id} onChange={(event) => setBulkInviteState((current) => ({ ...current, organization_id: event.target.value }))} style={inputStyle}>
+                        <label style={labelStyle}><span style={labelTitleStyle}>Account role</span><select value={bulkInviteState.role} onChange={(event) => updateBulkInviteRole(event.target.value)} style={inputStyle}>{roleOptionsForUser(canManageRoles).map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+                        <label style={labelStyle}><span style={labelTitleStyle}>Organization</span><select value={bulkInviteState.organization_id} onChange={(event) => setBulkInviteState((current) => ({ ...current, organization_id: event.target.value }))} style={inputStyle}>
                           {canManageRoles ? <option value="">No organization</option> : <option value="">Select organization</option>}
                           {organizations.map((org) => <option key={org.organization_id} value={org.organization_id}>{org.name}</option>)}
-                        </select>
+                        </select></label>
                       </div>
                       <div style={twoColStyle}>
-                        <input value={bulkInviteState.membership_role} onChange={(event) => setBulkInviteState((current) => ({ ...current, membership_role: event.target.value }))} placeholder="Membership role" style={inputStyle} />
-                        <input type="number" min={1} max={90} value={bulkInviteState.expires_in_days} onChange={(event) => setBulkInviteState((current) => ({ ...current, expires_in_days: Number(event.target.value) || 14 }))} placeholder="Expires in days" style={inputStyle} />
+                        <div />
+                        <label style={labelStyle}><span style={labelTitleStyle}>Invite expires in</span><input type="number" min={1} max={90} value={bulkInviteState.expires_in_days} onChange={(event) => setBulkInviteState((current) => ({ ...current, expires_in_days: Number(event.target.value) || 14 }))} placeholder="Expires in days" style={inputStyle} /></label>
                       </div>
-                      <button type="submit" style={secondaryButtonStyle}>Create bulk invites</button>
+                      <div style={helperCopyStyle}>Use this when a training company sends you a member or coach list. Each new account gets the selected platform role, and choosing an organization places that person into the roster automatically.</div>
+                      <button type="submit" style={primaryButtonStyle}>Create bulk invites</button>
                     </form>
                   </details>
                   {canManageRoles ? (
                     <details style={detailsStyle}>
-                      <summary style={summaryStyle}>Link external identity</summary>
+                      <summary style={summaryStyle}>Advanced · link external identity</summary>
                       <form onSubmit={handleLinkExternal} style={stackStyle}>
-                        <select value={externalState.user_id} onChange={(event) => setExternalState((current) => ({ ...current, user_id: event.target.value }))} style={inputStyle} required><option value="">Select member</option>{users.map((entry) => <option key={entry.user_id} value={entry.user_id}>{entry.display_name || entry.email}</option>)}</select>
+                        <select value={externalState.user_id} onChange={(event) => setExternalState((current) => ({ ...current, user_id: event.target.value }))} style={inputStyle} required><option value="">Select user</option>{users.map((entry) => <option key={entry.user_id} value={entry.user_id}>{entry.display_name || entry.email}</option>)}</select>
                         <input value={externalState.provider} onChange={(event) => setExternalState((current) => ({ ...current, provider: event.target.value }))} placeholder="Provider" style={inputStyle} required />
                         <input value={externalState.external_user_id} onChange={(event) => setExternalState((current) => ({ ...current, external_user_id: event.target.value }))} placeholder="External user ID" style={inputStyle} required />
                         <input value={externalState.external_email} onChange={(event) => setExternalState((current) => ({ ...current, external_email: event.target.value }))} placeholder="External email (optional)" style={inputStyle} />
@@ -557,7 +660,7 @@ const headerStatValueStyle: CSSProperties = { marginTop: 6, fontSize: 28, fontWe
 const headerStatHelperStyle: CSSProperties = { marginTop: 4, opacity: 0.88, fontSize: 12, lineHeight: 1.45 };
 const stackStyle: CSSProperties = { display: "grid", gap: 12 };
 const rowStyle: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 14, alignItems: "center", paddingTop: 14, borderTop: "1px solid var(--line-soft)" };
-const memberAdminRowStyle: CSSProperties = { ...rowStyle, alignItems: "flex-start" };
+const memberAdminRowStyle: CSSProperties = { ...rowStyle, alignItems: "flex-start", padding: "18px 18px", border: "1px solid var(--line)", borderRadius: 18, background: "var(--surface-fill)", boxShadow: "0 10px 24px rgba(0,0,0,0.16)" };
 const rowTitleStyle: CSSProperties = { fontWeight: 800, fontSize: 15, color: PALETTE.cream };
 const rowMetaStyle: CSSProperties = { color: PALETTE.muted, fontSize: 13, marginTop: 4, lineHeight: 1.5 };
 const rowHelperStyle: CSSProperties = { color: "rgba(240,235,224,0.65)", fontSize: 13, lineHeight: 1.55, marginTop: 4 };
@@ -576,8 +679,20 @@ const compactInputStyle: CSSProperties = { ...inputStyle, width: 120, padding: "
 const requiredStyle: CSSProperties = { color: PALETTE.coral, fontWeight: 900 };
 const primaryButtonStyle: CSSProperties = { padding: "11px 15px", borderRadius: 14, border: "1px solid rgba(231,111,81,0.45)", background: "var(--accent)", color: PALETTE.cream, fontWeight: 800 };
 const secondaryButtonStyle: CSSProperties = { padding: "10px 14px", borderRadius: 14, border: "1px solid var(--line)", background: "var(--surface-fill)", color: PALETTE.cream, fontWeight: 700 };
+const successButtonStyle: CSSProperties = { padding: "10px 14px", borderRadius: 14, border: `1px solid ${PALETTE.green}`, background: PALETTE.green, color: "#141210", fontWeight: 800 };
+const dangerButtonStyle: CSSProperties = { padding: "10px 14px", borderRadius: 14, border: `1px solid ${PALETTE.coral}`, background: PALETTE.coral, color: PALETTE.cream, fontWeight: 800 };
+const deleteButtonStyle: CSSProperties = { padding: "10px 14px", borderRadius: 14, border: "1px solid rgba(164, 64, 48, 0.8)", background: "#7C2D22", color: PALETTE.cream, fontWeight: 800 };
+const helperCopyStyle: CSSProperties = { color: "rgba(240,235,224,0.62)", lineHeight: 1.6, fontSize: 13 };
 const tagStyle: CSSProperties = { padding: "6px 10px", borderRadius: 999, background: "var(--surface-fill)", border: "1px solid var(--line)", color: PALETTE.cream, fontSize: 12, fontWeight: 800, textTransform: "uppercase" };
-const actionWrapStyle: CSSProperties = { display: "grid", gap: 8, justifyItems: "end" };
-const detailsStyle: CSSProperties = { borderRadius: 16, border: "1px solid var(--line)", background: "var(--surface-fill)", padding: 14 };
-const summaryStyle: CSSProperties = { cursor: "pointer", fontWeight: 800, color: PALETTE.cream, marginBottom: 12 };
+const actionWrapStyle: CSSProperties = { display: "flex", gap: 10, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap" };
+const actionClusterStyle: CSSProperties = { display: "flex", gap: 10, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap" };
+const pillWrapStyle: CSSProperties = { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" };
+const softTagStyle: CSSProperties = { padding: "6px 10px", borderRadius: 999, background: "rgba(240,235,224,0.06)", border: "1px solid var(--line)", color: "rgba(240,235,224,0.72)", fontSize: 12, fontWeight: 700 };
+const activeTagStyle: CSSProperties = { ...tagStyle, background: PALETTE.green, border: `1px solid ${PALETTE.green}`, color: "#141210" };
+const inactiveTagStyle: CSSProperties = { ...tagStyle, background: "rgba(231,111,81,0.14)", border: `1px solid rgba(231,111,81,0.55)`, color: PALETTE.coral };
+const inviteCardRowStyle: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 14, alignItems: "flex-start", padding: "16px 18px", borderRadius: 18, border: "1px solid var(--line)", background: "var(--surface-fill)" };
+const inviteUrlStyle: CSSProperties = { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12, lineHeight: 1.55, color: "rgba(240,235,224,0.72)", wordBreak: "break-all" };
+const detailsStyle: CSSProperties = { borderRadius: 18, border: "1px solid var(--line)", background: "var(--surface-fill)", padding: 16, boxShadow: "0 12px 30px rgba(0,0,0,0.18)" };
+const summaryStyle: CSSProperties = { cursor: "pointer", fontWeight: 900, color: PALETTE.cream, marginBottom: 12, fontSize: 18, listStyle: "none" };
 const emptyStateStyle: CSSProperties = { color: PALETTE.muted, padding: "8px 0 4px", lineHeight: 1.6 };
+const helperPanelStyle: CSSProperties = { padding: "14px 16px", borderRadius: 16, border: "1px solid var(--line)", background: "var(--surface-fill)", color: "rgba(240,235,224,0.7)", lineHeight: 1.65, fontSize: 13 };

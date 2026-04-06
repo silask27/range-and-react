@@ -94,9 +94,11 @@ def signup_route(request: Request, response: Response, payload: dict = Body(...)
 
     if not email or not password:
         raise HTTPException(status_code=400, detail='email and password are required')
+    if settings.require_signup_invite and not invite_code:
+        raise HTTPException(status_code=400, detail='invite_code is required')
 
     try:
-        if settings.require_signup_invite:
+        if invite_code:
             user = create_user_from_signup_invite(
                 invite_code=invite_code,
                 email=email,

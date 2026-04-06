@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { getStoredAuthToken, persistAuth } from "../../lib/auth";
+import { clearStoredAuth, getStoredAuthToken, getStoredAuthUser, persistAuth } from "../../lib/auth";
 import SiteFooter from "../../components/app/SiteFooter";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
@@ -24,6 +24,12 @@ type InvitePreview = {
   expires_at: string | null;
 };
 
+function prettyRole(role: string | null | undefined) {
+  const value = (role || "").trim().toLowerCase();
+  if (!value) return "member";
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -38,6 +44,7 @@ export default function LoginPage() {
   const [signupPassword, setSignupPassword] = useState("");
   const [inviteCode, setInviteCode] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [sessionNotice, setSessionNotice] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
   const queryMode = searchParams.get("mode");
@@ -46,10 +53,18 @@ export default function LoginPage() {
     [searchParams],
   );
   const emailFromQuery = useMemo(() => searchParams.get("email")?.trim().toLowerCase() || "", [searchParams]);
+  const isInviteFlow = Boolean(inviteCode.trim()) || inviteOnly;
 
   useEffect(() => {
-    if (getStoredAuthToken()) router.replace("/dashboard");
-  }, [router]);
+    const token = getStoredAuthToken();
+    if (!token) return;
+    if (inviteCodeFromQuery) {
+      const currentUser = getStoredAuthUser();
+      setSessionNotice(currentUser ? `You are currently signed in as ${currentUser.email}. Accepting this invite will switch this browser to the new account.` : "You are currently signed in in this browser. Accepting this invite will switch this browser to the new account.");
+      return;
+    }
+    router.replace("/dashboard");
+  }, [router, inviteCodeFromQuery]);
 
   useEffect(() => {
     let cancelled = false;
@@ -112,6 +127,25 @@ export default function LoginPage() {
     };
   }, [inviteCode, mode, signupEmail]);
 
+
+  async function handleInviteSessionReset() {
+    const token = getStoredAuthToken();
+    try {
+      if (token) {
+        await fetch(`${API_BASE}/auth/logout`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      }
+    } catch {
+      // best-effort logout for local browser state
+    } finally {
+      clearStoredAuth();
+      setSessionNotice(null);
+      setError(null);
+    }
+  }
+
   async function handleLogin(event: FormEvent) {
     event.preventDefault();
     setIsBusy(true);
@@ -143,7 +177,7 @@ export default function LoginPage() {
         email: signupEmail.trim().toLowerCase(),
         password: signupPassword,
       };
-      if (inviteOnly) body.invite_code = inviteCode.trim();
+      if (inviteCode.trim()) body.invite_code = inviteCode.trim();
       const res = await fetch(`${API_BASE}/auth/signup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -179,11 +213,19 @@ export default function LoginPage() {
             <p style={subtitleStyle}>
               {mode === "login"
                 ? "Simple access to your training, results, and assignments."
-                : inviteOnly
-                  ? "Account creation is invite-only. Use the code from your coach or the invite link in your email to enter the lab."
+                : isInviteFlow
+                  ? "Use the invite from your coach or company admin to create the right account and join the correct organization."
                   : "Create a member account and get into the lab."}
             </p>
           </div>
+
+          {sessionNotice ? (
+            <div style={sessionCardStyle}>
+              <div style={sessionCardTitleStyle}>Signed-in browser session detected</div>
+              <div style={sessionCardCopyStyle}>{sessionNotice}</div>
+              <button type="button" onClick={handleInviteSessionReset} style={sessionCardButtonStyle}>Log out and continue with invite</button>
+            </div>
+          ) : null}
 
           {mode === "login" ? (
             <form onSubmit={handleLogin} style={formStyle}>
@@ -205,14 +247,18 @@ export default function LoginPage() {
                     {invitePreview.email ? `Invited email: ${invitePreview.email}` : "This invite can be claimed with a new account."}
                     {invitePreview.expires_at ? ` Expires ${new Date(invitePreview.expires_at).toLocaleString()}.` : ""}
                   </div>
+                  <div style={inviteMetaWrapStyle}>
+                    <span style={inviteRoleTagStyle}>Account role {prettyRole(invitePreview.role)}</span>
+                    {invitePreview.organization_name ? <span style={inviteOrgTagStyle}>{invitePreview.organization_name}</span> : null}
+                  </div>
                 </div>
               ) : null}
               <input className="field" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Display name" required />
               <input className="field" value={signupEmail} onChange={(e) => setSignupEmail(e.target.value)} placeholder="Email" type="email" required />
               <input className="field" value={signupPassword} onChange={(e) => setSignupPassword(e.target.value)} placeholder="Password" type="password" required />
-              {inviteOnly ? <input className="field" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} placeholder="Invite code" required /> : null}
+              {isInviteFlow ? <input className="field" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} placeholder="Invite code" required /> : null}
               {error ? <div style={errorStyle}>{error}</div> : null}
-              <button disabled={isBusy} className="btn-primary" style={primaryStyle}>{isBusy ? "Creating account…" : inviteOnly ? "Accept invite" : "Create account"}</button>
+              <button disabled={isBusy} className="btn-primary" style={primaryStyle}>{isBusy ? "Creating account…" : isInviteFlow ? "Accept invite" : "Create account"}</button>
               <button type="button" onClick={() => { setError(null); setMode("login"); }} style={switchStyle}>Already have an account? Log in</button>
             </form>
           )}
@@ -240,5 +286,12 @@ const linkButtonStyle: CSSProperties = { background: "transparent", border: 0, c
 const inviteCardStyle: CSSProperties = { border: "1px solid var(--line)", borderRadius: 18, padding: "14px 16px", background: "var(--panel)", display: "grid", gap: 6 };
 const inviteCardTitleStyle: CSSProperties = { fontSize: 15, fontWeight: 800, color: "var(--text)" };
 const inviteCardCopyStyle: CSSProperties = { fontSize: 14, lineHeight: 1.5, color: "var(--text-65)" };
+const inviteMetaWrapStyle: CSSProperties = { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" };
+const inviteRoleTagStyle: CSSProperties = { padding: "6px 10px", borderRadius: 999, border: "1px solid rgba(231,111,81,0.45)", background: "rgba(231,111,81,0.14)", color: "var(--accent)", fontSize: 12, fontWeight: 800, textTransform: "uppercase" };
+const inviteOrgTagStyle: CSSProperties = { padding: "6px 10px", borderRadius: 999, border: "1px solid var(--line)", background: "var(--surface-fill)", color: "var(--text)", fontSize: 12, fontWeight: 700 };
+const sessionCardStyle: CSSProperties = { border: "1px solid var(--line)", borderRadius: 18, padding: "14px 16px", background: "var(--panel)", display: "grid", gap: 10 };
+const sessionCardTitleStyle: CSSProperties = { fontSize: 15, fontWeight: 800, color: "var(--text)" };
+const sessionCardCopyStyle: CSSProperties = { fontSize: 14, lineHeight: 1.5, color: "var(--text-65)" };
+const sessionCardButtonStyle: CSSProperties = { justifySelf: "start", background: "var(--accent)", color: "var(--text)", border: "none", borderRadius: 999, padding: "10px 14px", fontWeight: 800, cursor: "pointer" };
 const supportStyle: CSSProperties = { margin: 0, textAlign: "center", color: "var(--text-65)", fontSize: 14 };
 const supportLinkStyle: CSSProperties = { color: "var(--text)", textDecoration: "underline" };

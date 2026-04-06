@@ -121,6 +121,49 @@ class RegressionTestCase(unittest.TestCase):
         self.assertIn("token", payload)
         self.assertEqual(payload["user"]["email"], "owner@example.com")
 
+    def test_coach_invite_creates_coach_account(self) -> None:
+        response = self.client.get(
+            "/auth/me",
+            headers={"Authorization": f"Bearer {self.coach_token}"},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["user"]["role"], "coach")
+
+    def test_cannot_invite_existing_email(self) -> None:
+        response = self.client.post(
+            "/admin/signup-invites",
+            headers={"Authorization": f"Bearer {self.owner_token}"},
+            json={"email": "member@example.com", "role": "coach", "organization_id": "org-alpha", "membership_role": "coach"},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("already exists", response.json()["detail"].lower())
+
+    def test_owner_can_delete_user(self) -> None:
+        invite = self.client.post(
+            "/admin/signup-invites",
+            headers={"Authorization": f"Bearer {self.owner_token}"},
+            json={"email": "delete-me@example.com", "role": "member", "organization_id": "org-alpha", "membership_role": "member"},
+        )
+        self.assertEqual(invite.status_code, 200)
+        code = invite.json()["invite"]["invite_code"]
+        signup = self.client.post(
+            "/auth/signup",
+            json={"email": "delete-me@example.com", "password": "Password123!", "display_name": "Delete Me", "invite_code": code},
+        )
+        self.assertEqual(signup.status_code, 200)
+        user_id = signup.json()["user"]["user_id"]
+        delete_response = self.client.delete(
+            f"/admin/users/{user_id}",
+            headers={"Authorization": f"Bearer {self.owner_token}"},
+        )
+        self.assertEqual(delete_response.status_code, 200)
+        lookup = self.client.post(
+            "/auth/login",
+            json={"email": "delete-me@example.com", "password": "Password123!"},
+        )
+        self.assertEqual(lookup.status_code, 400)
+
     def test_public_signup_blocks_role_escalation(self) -> None:
         response = self.client.post(
             "/auth/signup",
