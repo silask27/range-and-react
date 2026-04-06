@@ -1,0 +1,30 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Local env / secrets
+.env
+.env.*
+!.env.example
+
+# Local databases / backups
+data/*.db
+data/*.db.backup
+*.sqlite
+*.sqlite3
+
+# Node / Next
+web/node_modules/
+web/.next/
+node_modules/
+.next/
+
+# OS/editor junk
+.DS_Store
+.vscode/
+.idea/
+
+# Logs
+*.log

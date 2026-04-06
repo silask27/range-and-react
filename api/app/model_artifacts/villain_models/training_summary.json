@@ -1,0 +1,127 @@
+{
+  "trained_at": "2026-03-20T22:20:18.810585+00:00",
+  "db_path": "/Users/silaskluever/Documents/villain-calibration-lab/data/calibration.db",
+  "total_labeled_rows": 400,
+  "feature_version_counts": {
+    "v2": 400
+  },
+  "node_counts": {
+    "facing_bet": 153,
+    "open_action": 132,
+    "facing_raise": 115
+  },
+  "action_counts": {
+    "c": 119,
+    "x": 77,
+    "r": 40,
+    "f": 109,
+    "b": 55
+  },
+  "action_model_results": [
+    {
+      "model_name": "open_action_model",
+      "trained": true,
+      "rows": 132,
+      "class_counts": {
+        "x": 77,
+        "b": 55
+      },
+      "cv_folds": 5,
+      "cv_log_loss": 0.5468957960397811,
+      "cv_balanced_accuracy": 0.7638636363636364,
+      "cv_brier": 0.17594984914359146,
+      "model_path": "/Users/silaskluever/Documents/villain-calibration-lab/data/trained_models/open_action_model.pkl",
+      "note": null
+    },
+    {
+      "model_name": "facing_bet_fold_continue_model",
+      "trained": true,
+      "rows": 153,
+      "class_counts": {
+        "continue": 102,
+        "f": 51
+      },
+      "cv_folds": 5,
+      "cv_log_loss": 0.4829778207707539,
+      "cv_balanced_accuracy": 0.8428138528138527,
+      "cv_brier": 0.13184139322650582,
+      "model_path": "/Users/silaskluever/Documents/villain-calibration-lab/data/trained_models/facing_bet_fold_continue_model.pkl",
+      "note": null
+    },
+    {
+      "model_name": "facing_bet_call_raise_model",
+      "trained": true,
+      "rows": 102,
+      "class_counts": {
+        "c": 72,
+        "r": 30
+      },
+      "cv_folds": 5,
+      "cv_log_loss": 0.73042451669596,
+      "cv_balanced_accuracy": 0.6395238095238096,
+      "cv_brier": 0.21960557113947635,
+      "model_path": "/Users/silaskluever/Documents/villain-calibration-lab/data/trained_models/facing_bet_call_raise_model.pkl",
+      "note": null
+    },
+    {
+      "model_name": "facing_raise_fold_continue_model",
+      "trained": true,
+      "rows": 115,
+      "class_counts": {
+        "continue": 57,
+        "f": 58
+      },
+      "cv_folds": 5,
+      "cv_log_loss": 0.5038015045928574,
+      "cv_balanced_accuracy": 0.8242424242424242,
+      "cv_brier": 0.13273600485004883,
+      "model_path": "/Users/silaskluever/Documents/villain-calibration-lab/data/trained_models/facing_raise_fold_continue_model.pkl",
+      "note": null
+    },
+    {
+      "model_name": "facing_raise_call_reraise_model",
+      "trained": true,
+      "rows": 57,
+      "class_counts": {
+        "c": 47,
+        "r": 10
+      },
+      "cv_folds": 5,
+      "cv_log_loss": 0.4909921130593755,
+      "cv_balanced_accuracy": 0.5466666666666666,
+      "cv_brier": 0.15290198008795236,
+      "model_path": "/Users/silaskluever/Documents/villain-calibration-lab/data/trained_models/facing_raise_call_reraise_model.pkl",
+      "note": null
+    }
+  ],
+  "size_model_results": [
+    {
+      "model_name": "open_bet_size_model",
+      "trained": true,
+      "rows": 55,
+      "cv_folds": 5,
+      "cv_mae": 0.22645972617657448,
+      "cv_median_ae": 0.13704707559099052,
+      "target": "size_pct_pot",
+      "model_path": "/Users/silaskluever/Documents/villain-calibration-lab/data/trained_models/open_bet_size_model.pkl",
+      "note": null
+    },
+    {
+      "model_name": "raise_vs_bet_size_model",
+      "trained": true,
+      "rows": 30,
+      "cv_folds": 5,
+      "cv_mae": 1.265103595515201,
+      "cv_median_ae": 0.8779291106563694,
+      "target": "raise_multiple_vs_facing",
+      "model_path": "/Users/silaskluever/Documents/villain-calibration-lab/data/trained_models/raise_vs_bet_size_model.pkl",
+      "note": null
+    }
+  ],
+  "models_not_trained_yet": [
+    {
+      "model_name": "reraise_vs_raise_size_model",
+      "reason": "Skipped intentionally for now; facing_raise reraises are still too sparse."
+    }
+  ]
+}
