@@ -110,6 +110,17 @@ class RegressionTestCase(unittest.TestCase):
         assert other_signup.status_code == 200, other_signup.text
         cls.outsider_user_id = other_signup.json()["user"]["user_id"]
 
+
+    def test_login_route_returns_success(self) -> None:
+        response = self.client.post(
+            "/auth/login",
+            json={"email": "owner@example.com", "password": "Password123!"},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("token", payload)
+        self.assertEqual(payload["user"]["email"], "owner@example.com")
+
     def test_public_signup_blocks_role_escalation(self) -> None:
         response = self.client.post(
             "/auth/signup",

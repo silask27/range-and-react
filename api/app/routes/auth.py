@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request, Response
 
 from api.app.config import settings
 from api.app.models.auth import UserAccount
@@ -53,7 +53,7 @@ def owner_exists_route() -> dict:
 
 @router.get('/signup-invites/{invite_code}')
 @limiter.limit('30/hour')
-def signup_invite_preview_route(request: Request, invite_code: str) -> dict:
+def signup_invite_preview_route(request: Request, response: Response, invite_code: str) -> dict:
     del request
     try:
         invite = get_active_signup_invite_preview(invite_code=invite_code)
@@ -64,7 +64,7 @@ def signup_invite_preview_route(request: Request, invite_code: str) -> dict:
 
 @router.post('/bootstrap-owner')
 @limiter.limit('3/hour')
-def bootstrap_owner_route(request: Request, payload: dict = Body(...)) -> dict:
+def bootstrap_owner_route(request: Request, response: Response, payload: dict = Body(...)) -> dict:
     del request
     email = str(payload.get('email') or '').strip()
     password = str(payload.get('password') or '')
@@ -85,7 +85,7 @@ def bootstrap_owner_route(request: Request, payload: dict = Body(...)) -> dict:
 
 @router.post('/signup')
 @limiter.limit('10/hour')
-def signup_route(request: Request, payload: dict = Body(...)) -> dict:
+def signup_route(request: Request, response: Response, payload: dict = Body(...)) -> dict:
     del request
     email = str(payload.get('email') or '').strip()
     password = str(payload.get('password') or '')
@@ -120,7 +120,7 @@ def signup_route(request: Request, payload: dict = Body(...)) -> dict:
 
 @router.post('/login')
 @limiter.limit('10/minute')
-def login_route(request: Request, payload: dict = Body(...)) -> dict:
+def login_route(request: Request, response: Response, payload: dict = Body(...)) -> dict:
     del request
     email = str(payload.get('email') or '').strip()
     password = str(payload.get('password') or '')
@@ -185,7 +185,7 @@ def change_password_route(payload: dict = Body(...), current_user: UserAccount =
 
 @router.post('/request-password-reset')
 @limiter.limit('5/hour')
-def request_password_reset_route(request: Request, payload: dict = Body(...)) -> dict:
+def request_password_reset_route(request: Request, response: Response, payload: dict = Body(...)) -> dict:
     del request
     email = str(payload.get('email') or '')
     if not email:
@@ -199,7 +199,7 @@ def request_password_reset_route(request: Request, payload: dict = Body(...)) ->
 
 @router.post('/reset-password')
 @limiter.limit('10/hour')
-def reset_password_route(request: Request, payload: dict = Body(...)) -> dict:
+def reset_password_route(request: Request, response: Response, payload: dict = Body(...)) -> dict:
     del request
     reset_token = str(payload.get('reset_token') or '')
     new_password = str(payload.get('new_password') or '')
