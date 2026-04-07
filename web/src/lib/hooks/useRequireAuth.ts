@@ -7,12 +7,19 @@ import { getStoredAuthToken, getStoredAuthUser, persistAuth, type AuthUser } fro
 
 export function useRequireAuth() {
   const router = useRouter();
-  const [user, setUser] = useState<AuthUser | null>(getStoredAuthUser());
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!getStoredAuthToken()) {
+    const storedToken = getStoredAuthToken();
+    const storedUser = getStoredAuthUser();
+
+    if (storedUser) {
+      setUser(storedUser);
+    }
+
+    if (!storedToken) {
       router.replace("/login");
       return;
     }
@@ -30,7 +37,7 @@ export function useRequireAuth() {
           return;
         }
         const nextUser = data.user as AuthUser;
-        persistAuth(getStoredAuthToken() || "", nextUser);
+        persistAuth(storedToken || "", nextUser);
         if (!cancelled) {
           setUser(nextUser);
         }

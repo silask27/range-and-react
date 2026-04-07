@@ -14,7 +14,7 @@ from api.app.services.access_service import (
     resolve_default_organization_id_for_user,
     shared_organization_ids,
 )
-from api.app.services.analytics_service import get_admin_analytics
+from api.app.services.analytics_service import get_admin_analytics, invalidate_admin_analytics, invalidate_dashboard_overview
 from api.app.services.assignment_service import count_assignments_with_progress, create_assignment, list_assignments_with_progress, summarize_assignments
 from api.app.services.audit_service import count_audit_logs, list_audit_logs, log_audit_event
 from api.app.services.email_service import build_signup_invite_url, send_signup_invite_email
@@ -390,6 +390,12 @@ def admin_create_assignment_route(payload: dict = Body(...), current_user: UserA
             due_at=(str(payload.get('due_at')).strip() or None) if payload.get('due_at') is not None else None,
         )
         log_audit_event(action_type='assignment_created', actor=current_user, target_user_id=assignment['target_user_id'], organization_id=assignment.get('organization_id'), metadata={'assignment_id': assignment['assignment_id'], 'title': assignment['title']})
+        invalidate_dashboard_overview(user_id=assignment['target_user_id'])
+        if current_user.role in {UserRole.OWNER, UserRole.ADMIN}:
+            invalidate_admin_analytics()
+        else:
+            org_scope, user_scope = _scope(current_user)
+            invalidate_admin_analytics(visible_user_ids=user_scope, visible_organization_ids=org_scope)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {'assignment': assignment}

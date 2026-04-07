@@ -120,6 +120,25 @@ def _save_snapshot(*, scope_type: str, scope_key: str, payload: dict[str, Any], 
 
 
 
+
+
+def _delete_snapshot(*, scope_type: str, scope_key: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            'DELETE FROM analytics_snapshots WHERE scope_type = ? AND scope_key = ?',
+            (scope_type, scope_key),
+        )
+
+
+def invalidate_dashboard_overview(*, user_id: str) -> None:
+    scope_key = _scope_key(scope_type='dashboard_overview', visible_user_ids=[user_id])
+    _delete_snapshot(scope_type='dashboard_overview', scope_key=scope_key)
+
+
+def invalidate_admin_analytics(*, visible_user_ids: Iterable[str] | None = None, visible_organization_ids: Iterable[str] | None = None) -> None:
+    scope_key = _scope_key(scope_type='admin_analytics', visible_user_ids=visible_user_ids, visible_organization_ids=visible_organization_ids)
+    _delete_snapshot(scope_type='admin_analytics', scope_key=scope_key)
+
 def _build_results_where(*, visible_user_ids: Sequence[str] | None = None, alias: str = 'hr') -> tuple[str, list[Any]]:
     clauses = [f'{alias}.hand_over = 1']
     params: list[Any] = []
