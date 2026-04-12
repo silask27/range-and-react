@@ -46,7 +46,7 @@ export default function LandingPage() {
       <section style={heroStyle}>
         <div style={heroInnerStyle}>
           <div style={heroTextStyle}>
-            <div className="page-eyebrow">Live Range Lab</div>
+            <div className="page-eyebrow">Range & React</div>
             <h1 style={heroTitleStyle}>
               Know their range. Know their tendencies. Everything else is noise.
             </h1>
@@ -54,7 +54,7 @@ export default function LandingPage() {
               A focused training site for serious live players and coaches who want reading and reacting to feel automatic when the pressure is on.
             </p>
             <p style={bodyStyle}>
-              Most poker mistakes do not come from a lack of knowledge. They come from losing track of what matters in the moment. Live Range Lab drills one repeatable process: narrow the range, predict the reaction, then choose the best line.
+              Most poker mistakes do not come from a lack of knowledge. They come from losing track of what matters in the moment. Range & React drills one repeatable process: narrow the range, predict the reaction, then choose the best line.
             </p>
             <div>
               <Link href={hasToken ? "/dashboard" : "/login"} className="btn-primary" style={ctaStyle}>
@@ -125,7 +125,7 @@ export default function LandingPage() {
           visual={
             <div style={visualCardStyle}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/range_logo_5x5_v3_no_text.svg" alt="Live Range Lab logo" style={logoVisualStyle} />
+              <img src="/range_logo_5x5_v3_no_text.svg" alt="Range & React logo" style={logoVisualStyle} />
             </div>
           }
         />

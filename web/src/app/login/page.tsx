@@ -208,7 +208,7 @@ export default function LoginPage() {
       <section style={authSectionStyle}>
         <div style={authWrapStyle}>
           <div style={{ textAlign: "center", display: "grid", gap: 10 }}>
-            <div className="page-eyebrow">Live Range Lab</div>
+            <div className="page-eyebrow">Range & React</div>
             <h1 style={titleStyle}>{mode === "login" ? "Log in" : inviteOnly ? "Accept your invite" : "Create your account"}</h1>
             <p style={subtitleStyle}>
               {mode === "login"

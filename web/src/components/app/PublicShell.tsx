@@ -8,7 +8,7 @@ export default function PublicShell({ title, subtitle, children }: { title: stri
         <div className="public-stack">
           <section>
             <div className="page-title-group" style={{ marginBottom: 24 }}>
-              <div className="page-eyebrow">Live Range Lab</div>
+              <div className="page-eyebrow">Range & React</div>
               <h1 className="page-title">{title}</h1>
               {subtitle ? <p className="page-subtitle">{subtitle}</p> : null}
             </div>

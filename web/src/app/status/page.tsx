@@ -58,7 +58,7 @@ export default function StatusPage() {
         <div style={gridStyle}>
           <div style={panelStyle}>
             <div style={labelStyle}>Service</div>
-            <div style={valueStyle}>{status?.service ?? config?.app_name ?? "Live Range Lab"}</div>
+            <div style={valueStyle}>{status?.service ?? config?.app_name ?? "Range & React"}</div>
             <div style={metaStyle}>Environment: {status?.environment ?? config?.environment ?? "unknown"} · Version: {status?.version ?? config?.version ?? "unknown"}</div>
           </div>
           <div style={panelStyle}>

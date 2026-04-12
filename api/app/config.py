@@ -28,12 +28,12 @@ def _is_production() -> bool:
 
 @dataclass(frozen=True)
 class Settings:
-    app_name: str = os.getenv("VRT_APP_NAME", "Live Range Lab")
+    app_name: str = os.getenv("VRT_APP_NAME", "Range & React")
     app_env: str = os.getenv("VRT_APP_ENV", "development")
     app_version: str = os.getenv("VRT_APP_VERSION", "0.7.0")
     frontend_url: str = os.getenv("VRT_FRONTEND_URL", "http://127.0.0.1:3000")
     support_email: str = os.getenv("VRT_SUPPORT_EMAIL", "support@example.com")
-    legal_company_name: str = os.getenv("VRT_LEGAL_COMPANY_NAME", os.getenv("VRT_APP_NAME", "Live Range Lab")).strip() or os.getenv("VRT_APP_NAME", "Live Range Lab")
+    legal_company_name: str = os.getenv("VRT_LEGAL_COMPANY_NAME", os.getenv("VRT_APP_NAME", "Range & React")).strip() or os.getenv("VRT_APP_NAME", "Range & React")
     legal_effective_date: str = os.getenv("VRT_LEGAL_EFFECTIVE_DATE", "2026-04-06").strip() or "2026-04-06"
     legal_jurisdiction: str = os.getenv("VRT_LEGAL_JURISDICTION", "Missouri, USA").strip() or "Missouri, USA"
     public_status_detailed_checks: bool = _get_bool("VRT_PUBLIC_STATUS_DETAILED_CHECKS", not _is_production())
@@ -63,7 +63,7 @@ class Settings:
 
     demo_mode_enabled: bool = _get_bool("VRT_DEMO_MODE_ENABLED", False)
     demo_public_credentials: bool = _get_bool("VRT_DEMO_PUBLIC_CREDENTIALS", False)
-    demo_org_name: str = os.getenv("VRT_DEMO_ORG_NAME", "Live Range Lab Demo")
+    demo_org_name: str = os.getenv("VRT_DEMO_ORG_NAME", "Range & React Demo")
     demo_owner_email: str = os.getenv("VRT_DEMO_OWNER_EMAIL", "owner@demo.local")
     demo_coach_email: str = os.getenv("VRT_DEMO_COACH_EMAIL", "coach@demo.local")
     demo_member_email: str = os.getenv("VRT_DEMO_MEMBER_EMAIL", "member@demo.local")

@@ -1,4 +1,4 @@
-export const APP_NAME = "Live Range Lab";
+export const APP_NAME = "Range & React";
 export const APP_SHORT_NAME = "LRL";
 export const APP_TAGLINE = "Narrow down and adapt.";
 

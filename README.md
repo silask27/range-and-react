@@ -98,7 +98,7 @@ Password reset, invite delivery, and welcome emails use Resend when these backen
 ```bash
 VRT_EMAIL_PROVIDER=resend
 VRT_RESEND_API_KEY=re_xxxxx
-VRT_EMAIL_FROM=Live Range Lab <noreply@yourdomain.com>
+VRT_EMAIL_FROM=Range & React <noreply@yourdomain.com>
 VRT_EMAIL_REPLY_TO=support@yourdomain.com
 VRT_WELCOME_EMAIL_ENABLED=true
 ```

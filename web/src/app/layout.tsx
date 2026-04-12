@@ -3,8 +3,8 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "Live Range Lab",
-    template: "%s · Live Range Lab",
+    default: "Range & React",
+    template: "%s · Range & React",
   },
   description: "Poker training platform for live range reading, action prediction, assignments, and coach-ready results.",
 };

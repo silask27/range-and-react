@@ -37,7 +37,7 @@ init_db()
 app = FastAPI(
     title=f"{settings.app_name} API",
     version=settings.app_version,
-    description="Backend API for the Live Range Lab poker training app.",
+    description="Backend API for the Range & React poker training app.",
     docs_url="/docs" if settings.docs_enabled else None,
     redoc_url="/redoc" if settings.docs_enabled else None,
 )

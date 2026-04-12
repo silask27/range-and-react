@@ -94,7 +94,7 @@ def send_password_reset_email(*, email: str, reset_token: str, expires_at: str, 
     reset_url = build_password_reset_url(reset_token, email=email)
     first_name = (display_name or "there").strip() or "there"
     hours = "2 hours"
-    subject = "Reset your Live Range Lab password"
+    subject = "Reset your Range & React password"
     text = (
         f"Hi {first_name},\n\n"
         f"Use this link to reset your password: {reset_url}\n\n"
@@ -104,7 +104,7 @@ def send_password_reset_email(*, email: str, reset_token: str, expires_at: str, 
     html = f"""
     <div style=\"font-family:Inter,Arial,sans-serif;line-height:1.6;color:#141210\">
       <p>Hi {first_name},</p>
-      <p>Use the button below to reset your Live Range Lab password.</p>
+      <p>Use the button below to reset your Range & React password.</p>
       <p><a href=\"{reset_url}\" style=\"display:inline-block;padding:12px 18px;background:#E57257;color:#fff;text-decoration:none;border-radius:10px;font-weight:700\">Reset password</a></p>
       <p>This link expires at <strong>{expires_at}</strong>.</p>
       <p>If you did not request a reset, you can safely ignore this email.</p>
@@ -121,9 +121,9 @@ def send_signup_invite_email(*, email: str | None, invite_code: str, organizatio
     org_label = organization_name or settings.app_name
     inviter = (invited_by_name or "your coach").strip() or "your coach"
     expiry_copy = f"This invite expires at {expires_at}." if expires_at else "This invite expires soon."
-    subject = f"You are invited to join {org_label} on Live Range Lab"
+    subject = f"You are invited to join {org_label} on Range & React"
     text = (
-        f"You have been invited by {inviter} to join {org_label} on Live Range Lab.\n\n"
+        f"You have been invited by {inviter} to join {org_label} on Range & React.\n\n"
         f"Accept your invite here: {invite_url}\n\n"
         f"Invite code: {invite_code}\n"
         f"{expiry_copy}\n\n"
@@ -131,7 +131,7 @@ def send_signup_invite_email(*, email: str | None, invite_code: str, organizatio
     )
     html = f"""
     <div style=\"font-family:Inter,Arial,sans-serif;line-height:1.6;color:#141210\">
-      <p>You have been invited by <strong>{inviter}</strong> to join <strong>{org_label}</strong> on Live Range Lab.</p>
+      <p>You have been invited by <strong>{inviter}</strong> to join <strong>{org_label}</strong> on Range & React.</p>
       <p><a href=\"{invite_url}\" style=\"display:inline-block;padding:12px 18px;background:#E57257;color:#fff;text-decoration:none;border-radius:10px;font-weight:700\">Accept invite</a></p>
       <p style=\"margin:0\">Invite code: <strong>{invite_code}</strong></p>
       <p>{expiry_copy}</p>
@@ -148,17 +148,17 @@ def send_welcome_email(*, email: str, display_name: str | None = None, organizat
     org_copy = ""
     if organization_names:
         org_copy = f" You are now set up for {', '.join(organization_names[:3])}."
-    subject = "Welcome to Live Range Lab"
+    subject = "Welcome to Range & React"
     text = (
         f"Hi {first_name},\n\n"
-        f"Welcome to Live Range Lab.{org_copy}\n"
+        f"Welcome to Range & React.{org_copy}\n"
         f"You can log in here: {settings.frontend_url.rstrip('/')}/login\n\n"
         f"Support: {settings.support_email}\n"
     )
     html = f"""
     <div style=\"font-family:Inter,Arial,sans-serif;line-height:1.6;color:#141210\">
       <p>Hi {first_name},</p>
-      <p>Welcome to <strong>Live Range Lab</strong>.{org_copy}</p>
+      <p>Welcome to <strong>Range &amp; React</strong>.{org_copy}</p>
       <p><a href=\"{settings.frontend_url.rstrip('/')}/login\" style=\"display:inline-block;padding:12px 18px;background:#E57257;color:#fff;text-decoration:none;border-radius:10px;font-weight:700\">Log in</a></p>
       <p style=\"color:#5f5a52\">Support: {settings.support_email}</p>
     </div>

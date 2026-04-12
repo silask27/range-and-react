@@ -39,7 +39,7 @@
 <rect x="486" y="436" width="84" height="84" rx="9" fill="rgba(231,111,81,0.13)" style="fill:rgba(231, 111, 81, 0.13);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
 
 <!-- WORDMARK -->
-<text x="340" y="572" text-anchor="middle" font-size="30" font-weight="700" letter-spacing="-0.5" style="fill:rgb(240, 235, 224);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:-apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:30px;font-weight:700;text-anchor:middle;dominant-baseline:auto">Live Range Lab</text>
+<text x="340" y="572" text-anchor="middle" font-size="30" font-weight="700" letter-spacing="-0.5" style="fill:rgb(240, 235, 224);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:-apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:30px;font-weight:700;text-anchor:middle;dominant-baseline:auto">Range &amp; React</text>
 <text x="340" y="602" text-anchor="middle" style="fill:rgb(107, 101, 96);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:-apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:14px;font-weight:400;text-anchor:middle;dominant-baseline:auto">Narrow down and adapt.</text>
 
 </svg>

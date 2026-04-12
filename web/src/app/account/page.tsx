@@ -110,7 +110,7 @@ export default function AccountPage() {
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = "live-range-lab-account-export.json";
+      anchor.download = "range-and-react-account-export.json";
       anchor.click();
       URL.revokeObjectURL(url);
       setNotice("Account export downloaded.");
