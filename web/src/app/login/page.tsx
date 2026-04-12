@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { FormEvent, Suspense, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { clearStoredAuth, getStoredAuthToken, getStoredAuthUser, persistAuth } from "../../lib/auth";
 import SiteFooter from "../../components/app/SiteFooter";
@@ -30,7 +30,7 @@ function prettyRole(role: string | null | undefined) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-export default function LoginPage() {
+function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [mode, setMode] = useState<Mode>("login");
@@ -295,3 +295,11 @@ const sessionCardCopyStyle: CSSProperties = { fontSize: 14, lineHeight: 1.5, col
 const sessionCardButtonStyle: CSSProperties = { justifySelf: "start", background: "var(--accent)", color: "var(--text)", border: "none", borderRadius: 999, padding: "10px 14px", fontWeight: 800, cursor: "pointer" };
 const supportStyle: CSSProperties = { margin: 0, textAlign: "center", color: "var(--text-65)", fontSize: 14 };
 const supportLinkStyle: CSSProperties = { color: "var(--text)", textDecoration: "underline" };
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageContent />
+    </Suspense>
+  );
+}
