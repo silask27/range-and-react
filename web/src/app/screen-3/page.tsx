@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "../../lib/api";
@@ -236,7 +236,7 @@ const RIVER_CHECKBACK_SHOWDOWN_OPTIONS: Array<{
   { value: "A", label: "L", semantic: "lose" },
 ];
 
-export default function Screen3Page() {
+function Screen3PageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("session_id");
@@ -3360,4 +3360,12 @@ async function safeReadError(res: Response): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+export default function Screen3Page() {
+  return (
+    <Suspense fallback={null}>
+      <Screen3PageContent />
+    </Suspense>
+  );
 }

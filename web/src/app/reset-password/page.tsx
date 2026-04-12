@@ -1,12 +1,12 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { FormEvent, Suspense, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import SiteFooter from "../../components/app/SiteFooter";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
 
-export default function ResetPasswordPage() {
+function ResetPasswordPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tokenFromQuery = useMemo(() => searchParams.get("token")?.trim() || "", [searchParams]);
@@ -72,6 +72,14 @@ export default function ResetPasswordPage() {
       </section>
       <div style={footerWrapStyle}><SiteFooter /></div>
     </main>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={null}>
+      <ResetPasswordPageContent />
+    </Suspense>
   );
 }
 

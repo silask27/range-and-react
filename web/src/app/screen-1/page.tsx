@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Suspense,
   useEffect,
   useMemo,
   useRef,
@@ -531,7 +532,7 @@ function buttonStyle(
   };
 }
 
-export default function Screen1Page() {
+function Screen1PageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const sessionIdFromUrl = searchParams.get("session_id");
@@ -1630,3 +1631,12 @@ const emptyPanelStyle: CSSProperties = {
   textAlign: "center",
   padding: 24,
 };
+
+
+export default function Screen1Page() {
+  return (
+    <Suspense fallback={null}>
+      <Screen1PageContent />
+    </Suspense>
+  );
+}
