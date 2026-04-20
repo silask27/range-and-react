@@ -1,0 +1,133 @@
+{
+  "trained_at": "2026-04-20T01:25:38.406800+00:00",
+  "db_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/calibration.db",
+  "total_labeled_rows": 1807,
+  "feature_version_counts": {
+    "v4": 1807
+  },
+  "node_counts": {
+    "facing_bet": 582,
+    "open_action": 757,
+    "facing_raise": 468
+  },
+  "action_counts": {
+    "c": 492,
+    "x": 483,
+    "r": 148,
+    "f": 410,
+    "b": 274
+  },
+  "action_model_results": [
+    {
+      "model_name": "open_action_model",
+      "trained": true,
+      "rows": 757,
+      "class_counts": {
+        "x": 483,
+        "b": 274
+      },
+      "cv_folds": 5,
+      "cv_log_loss": 0.5058525301809775,
+      "cv_balanced_accuracy": 0.7339218646950605,
+      "cv_brier": 0.1667666558989449,
+      "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models/open_action_model.pkl",
+      "note": null
+    },
+    {
+      "model_name": "facing_bet_fold_continue_model",
+      "trained": true,
+      "rows": 582,
+      "class_counts": {
+        "continue": 405,
+        "f": 177
+      },
+      "cv_folds": 5,
+      "cv_log_loss": 0.3832109851206546,
+      "cv_balanced_accuracy": 0.8307407407407407,
+      "cv_brier": 0.11705954131812417,
+      "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models/facing_bet_fold_continue_model.pkl",
+      "note": null
+    },
+    {
+      "model_name": "facing_bet_call_raise_model",
+      "trained": true,
+      "rows": 405,
+      "class_counts": {
+        "c": 298,
+        "r": 107
+      },
+      "cv_folds": 5,
+      "cv_log_loss": 0.5150350176776702,
+      "cv_balanced_accuracy": 0.7013427250715386,
+      "cv_brier": 0.15829750667883716,
+      "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models/facing_bet_call_raise_model.pkl",
+      "note": null
+    },
+    {
+      "model_name": "facing_raise_fold_continue_model",
+      "trained": true,
+      "rows": 468,
+      "class_counts": {
+        "continue": 235,
+        "f": 233
+      },
+      "cv_folds": 5,
+      "cv_log_loss": 0.4895769769532011,
+      "cv_balanced_accuracy": 0.7800185013876041,
+      "cv_brier": 0.1561604401265932,
+      "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models/facing_raise_fold_continue_model.pkl",
+      "note": null
+    },
+    {
+      "model_name": "facing_raise_call_reraise_model",
+      "trained": true,
+      "rows": 235,
+      "class_counts": {
+        "c": 194,
+        "r": 41
+      },
+      "cv_folds": 5,
+      "cv_log_loss": 0.3635219512637827,
+      "cv_balanced_accuracy": 0.7269624381466486,
+      "cv_brier": 0.10839097781365692,
+      "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models/facing_raise_call_reraise_model.pkl",
+      "note": null
+    }
+  ],
+  "size_model_results": [
+    {
+      "model_name": "open_bet_size_model",
+      "trained": true,
+      "rows": 274,
+      "cv_folds": 5,
+      "cv_mae": 0.15080989596792382,
+      "cv_median_ae": 0.11192973368515972,
+      "target": "size_pct_pot",
+      "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models/open_bet_size_model.pkl",
+      "note": "Shared size model trained on all labeled rows with villain-prioritized interactions."
+    },
+    {
+      "model_name": "raise_vs_bet_size_model",
+      "trained": true,
+      "rows": 107,
+      "cv_folds": 5,
+      "cv_mae": 0.8048956005034803,
+      "cv_median_ae": 0.4907344658610164,
+      "target": "raise_multiple_vs_facing",
+      "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models/raise_vs_bet_size_model.pkl",
+      "note": "Shared size model trained on all labeled rows with villain-prioritized interactions."
+    },
+    {
+      "model_name": "reraise_vs_raise_size_model",
+      "trained": true,
+      "rows": 41,
+      "cv_folds": 5,
+      "cv_mae": 0.7461881714422475,
+      "cv_median_ae": 0.6833588147570618,
+      "target": "reraise_multiple_vs_facing",
+      "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models/reraise_vs_raise_size_model.pkl",
+      "note": "Shared size model trained on all labeled rows with villain-prioritized interactions."
+    }
+  ],
+  "models_not_trained_yet": []
+}

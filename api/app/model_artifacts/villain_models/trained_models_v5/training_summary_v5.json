@@ -1,0 +1,2708 @@
+{
+  "model_name": "v5",
+  "model_family": "dual_target_villain_street_blend",
+  "config_version": "v5_dual_target_villain_street_blend_v1",
+  "config_source": "equal-weight OOF+benchmark tuning using cycle_3_final__manual_compare__20260420T014842Z_long.csv",
+  "target_priority": "equal-weight OOF distribution rows + benchmark rows; avg_prob_abs_error first, soft_brier second",
+  "size_model_stack": "size_model_v2",
+  "expert_model_order": [
+    "v1",
+    "v2",
+    "v3",
+    "v4"
+  ],
+  "training_context": {
+    "benchmark_long_csv": "data/benchmark_runs/cycle_3_final__manual_compare__20260420T014842Z_long.csv",
+    "oof_rows": 628,
+    "benchmark_rows": 100,
+    "group_weighting": {
+      "oof_total": 0.5,
+      "benchmark_total": 0.5
+    }
+  },
+  "selection_thresholds": {
+    "grid_step": 0.05,
+    "street_min_rows": 8,
+    "street_min_gain": 0.01
+  },
+  "node_global_blend_weights": {
+    "facing_bet": {
+      "v1": 0.85,
+      "v2": 0.15,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "facing_raise": {
+      "v1": 0.0,
+      "v2": 0.65,
+      "v3": 0.0,
+      "v4": 0.35
+    },
+    "open_action": {
+      "v1": 0.75,
+      "v2": 0.1,
+      "v3": 0.0,
+      "v4": 0.15
+    }
+  },
+  "villain_node_blend_weights": {
+    "Alex__facing_bet": {
+      "v1": 0.5,
+      "v2": 0.4,
+      "v3": 0.1,
+      "v4": 0.0
+    },
+    "Alex__facing_raise": {
+      "v1": 0.0,
+      "v2": 0.3,
+      "v3": 0.35,
+      "v4": 0.35
+    },
+    "Alex__open_action": {
+      "v1": 0.0,
+      "v2": 0.3,
+      "v3": 0.0,
+      "v4": 0.7
+    },
+    "Blake__facing_bet": {
+      "v1": 0.85,
+      "v2": 0.15,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Blake__facing_raise": {
+      "v1": 0.05,
+      "v2": 0.95,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Blake__open_action": {
+      "v1": 0.95,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 0.05
+    },
+    "Dave__facing_bet": {
+      "v1": 0.9,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 0.1
+    },
+    "Dave__facing_raise": {
+      "v1": 0.15,
+      "v2": 0.7,
+      "v3": 0.0,
+      "v4": 0.15
+    },
+    "Dave__open_action": {
+      "v1": 0.4,
+      "v2": 0.6,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Erik__facing_bet": {
+      "v1": 0.0,
+      "v2": 0.0,
+      "v3": 0.35,
+      "v4": 0.65
+    },
+    "Erik__facing_raise": {
+      "v1": 0.0,
+      "v2": 1.0,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Erik__open_action": {
+      "v1": 1.0,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Mike__facing_bet": {
+      "v1": 1.0,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Mike__facing_raise": {
+      "v1": 0.0,
+      "v2": 0.45,
+      "v3": 0.0,
+      "v4": 0.55
+    },
+    "Mike__open_action": {
+      "v1": 0.65,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 0.35
+    },
+    "Steve__facing_bet": {
+      "v1": 0.8,
+      "v2": 0.2,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Steve__facing_raise": {
+      "v1": 0.0,
+      "v2": 0.5,
+      "v3": 0.3,
+      "v4": 0.2
+    },
+    "Steve__open_action": {
+      "v1": 0.9,
+      "v2": 0.0,
+      "v3": 0.05,
+      "v4": 0.05
+    },
+    "Tom__facing_bet": {
+      "v1": 0.0,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 1.0
+    },
+    "Tom__facing_raise": {
+      "v1": 0.0,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 1.0
+    },
+    "Tom__open_action": {
+      "v1": 0.25,
+      "v2": 0.75,
+      "v3": 0.0,
+      "v4": 0.0
+    }
+  },
+  "villain_node_street_blend_weights": {
+    "Alex__facing_bet__river": {
+      "v1": 0.0,
+      "v2": 1.0,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Alex__facing_bet__turn": {
+      "v1": 0.0,
+      "v2": 0.0,
+      "v3": 0.7,
+      "v4": 0.3
+    },
+    "Alex__open_action__flop": {
+      "v1": 0.0,
+      "v2": 0.0,
+      "v3": 1.0,
+      "v4": 0.0
+    },
+    "Alex__open_action__river": {
+      "v1": 0.0,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 1.0
+    },
+    "Alex__open_action__turn": {
+      "v1": 0.0,
+      "v2": 1.0,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Blake__facing_raise__turn": {
+      "v1": 0.55,
+      "v2": 0.35,
+      "v3": 0.1,
+      "v4": 0.0
+    },
+    "Blake__open_action__flop": {
+      "v1": 0.0,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 1.0
+    },
+    "Blake__open_action__river": {
+      "v1": 0.0,
+      "v2": 1.0,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Dave__facing_raise__flop": {
+      "v1": 1.0,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Dave__open_action__turn": {
+      "v1": 0.0,
+      "v2": 1.0,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Erik__facing_bet__turn": {
+      "v1": 0.45,
+      "v2": 0.55,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Erik__open_action__flop": {
+      "v1": 0.0,
+      "v2": 0.0,
+      "v3": 1.0,
+      "v4": 0.0
+    },
+    "Mike__facing_bet__flop": {
+      "v1": 0.0,
+      "v2": 0.0,
+      "v3": 0.55,
+      "v4": 0.45
+    },
+    "Mike__open_action__flop": {
+      "v1": 0.0,
+      "v2": 0.15,
+      "v3": 0.0,
+      "v4": 0.85
+    },
+    "Steve__facing_bet__river": {
+      "v1": 1.0,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Steve__open_action__river": {
+      "v1": 0.0,
+      "v2": 0.0,
+      "v3": 0.25,
+      "v4": 0.75
+    },
+    "Tom__facing_bet__flop": {
+      "v1": 0.0,
+      "v2": 0.1,
+      "v3": 0.65,
+      "v4": 0.25
+    },
+    "Tom__facing_bet__river": {
+      "v1": 0.0,
+      "v2": 1.0,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Tom__facing_raise__flop": {
+      "v1": 1.0,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Tom__facing_raise__river": {
+      "v1": 0.25,
+      "v2": 0.25,
+      "v3": 0.5,
+      "v4": 0.0
+    }
+  },
+  "design_reference": {
+    "best_single_experts_overall": {
+      "v1": {
+        "mae": 0.15663262598297176,
+        "brier": 0.05401928236948582,
+        "top_action_acc": 0.8189808917197454,
+        "score": 0.17013744657534322
+      },
+      "v2": {
+        "mae": 0.16003895589690217,
+        "brier": 0.056027668447219875,
+        "top_action_acc": 0.7928343949044587,
+        "score": 0.17404587300870714
+      },
+      "v3": {
+        "mae": 0.17057478410961882,
+        "brier": 0.05144596729955157,
+        "top_action_acc": 0.791019108280255,
+        "score": 0.1834362759345067
+      },
+      "v4": {
+        "mae": 0.16797890392140502,
+        "brier": 0.05441813196930442,
+        "top_action_acc": 0.8007961783439492,
+        "score": 0.18158343691373113
+      }
+    },
+    "node_global_blend_metrics": {
+      "facing_bet": {
+        "score": 0.15275566685748598,
+        "mae": 0.1417732410610497,
+        "brier": 0.04392970318574522,
+        "top_action_acc": 0.8370646766169155
+      },
+      "facing_raise": {
+        "score": 0.14438139231868835,
+        "mae": 0.13327043812000472,
+        "brier": 0.044443816794734504,
+        "top_action_acc": 0.8531584169330836
+      },
+      "open_action": {
+        "score": 0.18778835892434773,
+        "mae": 0.17469891861547848,
+        "brier": 0.052357761235476974,
+        "top_action_acc": 0.8256293676854425
+      }
+    },
+    "final_hierarchy_metrics": {
+      "overall": {
+        "mae": 0.13209543676059554,
+        "brier": 0.0371438517073466,
+        "top_action_acc": 0.8717197452229302,
+        "score": 0.14138139968743219
+      },
+      "by_dataset": {
+        "benchmark": {
+          "mae": 0.09600609662151373,
+          "brier": 0.021114641689059327,
+          "top_action_acc": 0.96,
+          "rows": 100,
+          "score": 0.10128475704377857
+        },
+        "oof": {
+          "mae": 0.16818477689967729,
+          "brier": 0.05317306172563386,
+          "top_action_acc": 0.7834394904458599,
+          "rows": 628,
+          "score": 0.18147804233108575
+        }
+      }
+    }
+  },
+  "notes": [
+    "V5 remains a blend of v1/v2/v3/v4 raw action probabilities rather than a standalone learner.",
+    "This revision is tuned against both the full honest OOF distribution-labeled universe and the benchmark library, weighted equally at the dataset level.",
+    "Villain_type remains the main routing variable, with optional street overrides where the combined data strongly supports them.",
+    "Final action selection continues to sample from the blended distribution.",
+    "Sizing is delegated to size-model v2."
+  ],
+  "villain_override_count": 7,
+  "villain_node_override_count": 21,
+  "villain_node_street_override_count": 20,
+  "override_counts_by_villain": {
+    "Alex": 3,
+    "Blake": 3,
+    "Dave": 3,
+    "Erik": 3,
+    "Mike": 3,
+    "Steve": 3,
+    "Tom": 3
+  },
+  "override_counts_by_node": {
+    "facing_bet": 7,
+    "facing_raise": 7,
+    "open_action": 7
+  },
+  "villain_node_records": [
+    {
+      "villain_type": "Alex",
+      "node": "facing_bet",
+      "rows": 30,
+      "benchmark_rows": 4,
+      "oof_rows": 26,
+      "parent_weights": {
+        "v1": 0.85,
+        "v2": 0.15,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 0.5,
+        "v2": 0.4,
+        "v3": 0.1,
+        "v4": 0.0
+      },
+      "gain_vs_node_parent": 0.0014485847628207538,
+      "best_metrics": {
+        "score": 0.16287708867563525,
+        "mae": 0.15012999571380045,
+        "brier": 0.050988371847339155,
+        "top_action_acc": 0.8826291079812209
+      }
+    },
+    {
+      "villain_type": "Alex",
+      "node": "facing_raise",
+      "rows": 33,
+      "benchmark_rows": 4,
+      "oof_rows": 29,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 0.65,
+        "v3": 0.0,
+        "v4": 0.35
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 0.3,
+        "v3": 0.35,
+        "v4": 0.35
+      },
+      "gain_vs_node_parent": 0.004714042044217673,
+      "best_metrics": {
+        "score": 0.10481948848741206,
+        "mae": 0.0977288834984486,
+        "brier": 0.028362419955853813,
+        "top_action_acc": 0.8891352549889135
+      }
+    },
+    {
+      "villain_type": "Alex",
+      "node": "open_action",
+      "rows": 44,
+      "benchmark_rows": 7,
+      "oof_rows": 37,
+      "parent_weights": {
+        "v1": 0.75,
+        "v2": 0.1,
+        "v3": 0.0,
+        "v4": 0.15
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 0.3,
+        "v3": 0.0,
+        "v4": 0.7
+      },
+      "gain_vs_node_parent": 0.040189892525586024,
+      "best_metrics": {
+        "score": 0.1716990048151897,
+        "mae": 0.16186162370746077,
+        "brier": 0.03934952443091581,
+        "top_action_acc": 0.8236166007905138
+      }
+    },
+    {
+      "villain_type": "Blake",
+      "node": "facing_bet",
+      "rows": 30,
+      "benchmark_rows": 4,
+      "oof_rows": 26,
+      "parent_weights": {
+        "v1": 0.85,
+        "v2": 0.15,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 0.85,
+        "v2": 0.15,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_node_parent": 0.0,
+      "best_metrics": {
+        "score": 0.10747205571434305,
+        "mae": 0.10289763526345955,
+        "brier": 0.018297681803534045,
+        "top_action_acc": 1.0
+      }
+    },
+    {
+      "villain_type": "Blake",
+      "node": "facing_raise",
+      "rows": 31,
+      "benchmark_rows": 6,
+      "oof_rows": 25,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 0.65,
+        "v3": 0.0,
+        "v4": 0.35
+      },
+      "best_weights": {
+        "v1": 0.05,
+        "v2": 0.95,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_node_parent": 0.011633175326478978,
+      "best_metrics": {
+        "score": 0.09749569331121227,
+        "mae": 0.09096826937112631,
+        "brier": 0.026109695760343832,
+        "top_action_acc": 0.9202297383535419
+      }
+    },
+    {
+      "villain_type": "Blake",
+      "node": "open_action",
+      "rows": 40,
+      "benchmark_rows": 4,
+      "oof_rows": 36,
+      "parent_weights": {
+        "v1": 0.75,
+        "v2": 0.1,
+        "v3": 0.0,
+        "v4": 0.15
+      },
+      "best_weights": {
+        "v1": 0.95,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.05
+      },
+      "gain_vs_node_parent": 0.0025142038743189155,
+      "best_metrics": {
+        "score": 0.21548093653935957,
+        "mae": 0.20029416141879264,
+        "brier": 0.06074710048226776,
+        "top_action_acc": 0.8363874345549739
+      }
+    },
+    {
+      "villain_type": "Dave",
+      "node": "facing_bet",
+      "rows": 29,
+      "benchmark_rows": 6,
+      "oof_rows": 23,
+      "parent_weights": {
+        "v1": 0.85,
+        "v2": 0.15,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 0.9,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.1
+      },
+      "gain_vs_node_parent": 8.483888123256289e-05,
+      "best_metrics": {
+        "score": 0.1052415713256033,
+        "mae": 0.09951406899944135,
+        "brier": 0.022910009304647806,
+        "top_action_acc": 0.90112063282795
+      }
+    },
+    {
+      "villain_type": "Dave",
+      "node": "facing_raise",
+      "rows": 32,
+      "benchmark_rows": 4,
+      "oof_rows": 28,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 0.65,
+        "v3": 0.0,
+        "v4": 0.35
+      },
+      "best_weights": {
+        "v1": 0.15,
+        "v2": 0.7,
+        "v3": 0.0,
+        "v4": 0.15
+      },
+      "gain_vs_node_parent": 0.008512209785710725,
+      "best_metrics": {
+        "score": 0.11954697571662921,
+        "mae": 0.1102804099098493,
+        "brier": 0.03706626322711964,
+        "top_action_acc": 0.8117469879518072
+      }
+    },
+    {
+      "villain_type": "Dave",
+      "node": "open_action",
+      "rows": 32,
+      "benchmark_rows": 3,
+      "oof_rows": 29,
+      "parent_weights": {
+        "v1": 0.75,
+        "v2": 0.1,
+        "v3": 0.0,
+        "v4": 0.15
+      },
+      "best_weights": {
+        "v1": 0.4,
+        "v2": 0.6,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_node_parent": 0.020245914574265125,
+      "best_metrics": {
+        "score": 0.1119727678478641,
+        "mae": 0.10620725982790659,
+        "brier": 0.02306203207983002,
+        "top_action_acc": 0.8536789297658863
+      }
+    },
+    {
+      "villain_type": "Erik",
+      "node": "facing_bet",
+      "rows": 32,
+      "benchmark_rows": 5,
+      "oof_rows": 27,
+      "parent_weights": {
+        "v1": 0.85,
+        "v2": 0.15,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 0.0,
+        "v3": 0.35,
+        "v4": 0.65
+      },
+      "gain_vs_node_parent": 0.007399966250836498,
+      "best_metrics": {
+        "score": 0.17926342879662766,
+        "mae": 0.16669901721910857,
+        "brier": 0.05025764631007636,
+        "top_action_acc": 0.8458904109589042
+      }
+    },
+    {
+      "villain_type": "Erik",
+      "node": "facing_raise",
+      "rows": 30,
+      "benchmark_rows": 4,
+      "oof_rows": 26,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 0.65,
+        "v3": 0.0,
+        "v4": 0.35
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 1.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_node_parent": 0.02036740501300427,
+      "best_metrics": {
+        "score": 0.14163131678948515,
+        "mae": 0.13055583032727874,
+        "brier": 0.04430194584882565,
+        "top_action_acc": 0.9217527386541471
+      }
+    },
+    {
+      "villain_type": "Erik",
+      "node": "open_action",
+      "rows": 43,
+      "benchmark_rows": 6,
+      "oof_rows": 37,
+      "parent_weights": {
+        "v1": 0.75,
+        "v2": 0.1,
+        "v3": 0.0,
+        "v4": 0.15
+      },
+      "best_weights": {
+        "v1": 1.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_node_parent": 0.006767347541646429,
+      "best_metrics": {
+        "score": 0.20776555002430286,
+        "mae": 0.19282215114928583,
+        "brier": 0.05977359550006816,
+        "top_action_acc": 0.8660953401178361
+      }
+    },
+    {
+      "villain_type": "Mike",
+      "node": "facing_bet",
+      "rows": 38,
+      "benchmark_rows": 7,
+      "oof_rows": 31,
+      "parent_weights": {
+        "v1": 0.85,
+        "v2": 0.15,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 1.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_node_parent": 0.0026869456422629057,
+      "best_metrics": {
+        "score": 0.17061189977980462,
+        "mae": 0.15734016966149922,
+        "brier": 0.053086920473221604,
+        "top_action_acc": 0.8228388473852721
+      }
+    },
+    {
+      "villain_type": "Mike",
+      "node": "facing_raise",
+      "rows": 27,
+      "benchmark_rows": 5,
+      "oof_rows": 22,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 0.65,
+        "v3": 0.0,
+        "v4": 0.35
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 0.45,
+        "v3": 0.0,
+        "v4": 0.55
+      },
+      "gain_vs_node_parent": 0.005315926120324152,
+      "best_metrics": {
+        "score": 0.12174563447040503,
+        "mae": 0.11428105147437854,
+        "brier": 0.02985833198410591,
+        "top_action_acc": 0.9438202247191011
+      }
+    },
+    {
+      "villain_type": "Mike",
+      "node": "open_action",
+      "rows": 34,
+      "benchmark_rows": 2,
+      "oof_rows": 32,
+      "parent_weights": {
+        "v1": 0.75,
+        "v2": 0.1,
+        "v3": 0.0,
+        "v4": 0.15
+      },
+      "best_weights": {
+        "v1": 0.65,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.35
+      },
+      "gain_vs_node_parent": 0.0059578967566907,
+      "best_metrics": {
+        "score": 0.19517435677288617,
+        "mae": 0.18147179396993823,
+        "brier": 0.05481025121179177,
+        "top_action_acc": 0.8429084380610413
+      }
+    },
+    {
+      "villain_type": "Steve",
+      "node": "facing_bet",
+      "rows": 32,
+      "benchmark_rows": 4,
+      "oof_rows": 28,
+      "parent_weights": {
+        "v1": 0.85,
+        "v2": 0.15,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 0.8,
+        "v2": 0.2,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_node_parent": 0.0006709303522743626,
+      "best_metrics": {
+        "score": 0.14129635292308773,
+        "mae": 0.1328377891798628,
+        "brier": 0.033834254972899665,
+        "top_action_acc": 0.8870481927710844
+      }
+    },
+    {
+      "villain_type": "Steve",
+      "node": "facing_raise",
+      "rows": 28,
+      "benchmark_rows": 1,
+      "oof_rows": 27,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 0.65,
+        "v3": 0.0,
+        "v4": 0.35
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 0.5,
+        "v3": 0.3,
+        "v4": 0.2
+      },
+      "gain_vs_node_parent": 0.004036650020013993,
+      "best_metrics": {
+        "score": 0.17542950549905512,
+        "mae": 0.16184694054369547,
+        "brier": 0.05433025982143857,
+        "top_action_acc": 0.7596153846153846
+      }
+    },
+    {
+      "villain_type": "Steve",
+      "node": "open_action",
+      "rows": 57,
+      "benchmark_rows": 10,
+      "oof_rows": 47,
+      "parent_weights": {
+        "v1": 0.75,
+        "v2": 0.1,
+        "v3": 0.0,
+        "v4": 0.15
+      },
+      "best_weights": {
+        "v1": 0.9,
+        "v2": 0.0,
+        "v3": 0.05,
+        "v4": 0.05
+      },
+      "gain_vs_node_parent": 0.0025196633632799947,
+      "best_metrics": {
+        "score": 0.18845739637528383,
+        "mae": 0.17439143546569488,
+        "brier": 0.05626384363835581,
+        "top_action_acc": 0.7854280510018214
+      }
+    },
+    {
+      "villain_type": "Tom",
+      "node": "facing_bet",
+      "rows": 37,
+      "benchmark_rows": 6,
+      "oof_rows": 31,
+      "parent_weights": {
+        "v1": 0.85,
+        "v2": 0.15,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 1.0
+      },
+      "gain_vs_node_parent": 0.043194024920711005,
+      "best_metrics": {
+        "score": 0.13365013499394446,
+        "mae": 0.125510000791872,
+        "brier": 0.03256053680828985,
+        "top_action_acc": 0.8066394874781596
+      }
+    },
+    {
+      "villain_type": "Tom",
+      "node": "facing_raise",
+      "rows": 34,
+      "benchmark_rows": 4,
+      "oof_rows": 30,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 0.65,
+        "v3": 0.0,
+        "v4": 0.35
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 1.0
+      },
+      "gain_vs_node_parent": 0.05546894156123863,
+      "best_metrics": {
+        "score": 0.15820291342213358,
+        "mae": 0.1458989096490341,
+        "brier": 0.0492160150923979,
+        "top_action_acc": 0.8004354136429609
+      }
+    },
+    {
+      "villain_type": "Tom",
+      "node": "open_action",
+      "rows": 35,
+      "benchmark_rows": 4,
+      "oof_rows": 31,
+      "parent_weights": {
+        "v1": 0.75,
+        "v2": 0.1,
+        "v3": 0.0,
+        "v4": 0.15
+      },
+      "best_weights": {
+        "v1": 0.25,
+        "v2": 0.75,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_node_parent": 0.004633961559851504,
+      "best_metrics": {
+        "score": 0.11043575535237032,
+        "mae": 0.10343786841042898,
+        "brier": 0.027991547767765374,
+        "top_action_acc": 0.8930862437633642
+      }
+    }
+  ],
+  "street_override_records": [
+    {
+      "villain_type": "Alex",
+      "node": "facing_bet",
+      "street": "flop",
+      "rows": 6,
+      "benchmark_rows": 1,
+      "oof_rows": 5,
+      "parent_weights": {
+        "v1": 0.5,
+        "v2": 0.4,
+        "v3": 0.1,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 0.8,
+        "v2": 0.0,
+        "v3": 0.2,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.016182274005893782,
+      "best_metrics": {
+        "score": 0.044130949416273685,
+        "mae": 0.04245829494861884,
+        "brier": 0.006690617870619401,
+        "top_action_acc": 1.0
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Alex",
+      "node": "facing_bet",
+      "street": "river",
+      "rows": 16,
+      "benchmark_rows": 1,
+      "oof_rows": 15,
+      "parent_weights": {
+        "v1": 0.5,
+        "v2": 0.4,
+        "v3": 0.1,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 1.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.032812803506793,
+      "best_metrics": {
+        "score": 0.22840931058425157,
+        "mae": 0.20816707572072382,
+        "brier": 0.080968939454111,
+        "top_action_acc": 0.7650375939849624
+      },
+      "selected_as_override": true
+    },
+    {
+      "villain_type": "Alex",
+      "node": "facing_bet",
+      "street": "turn",
+      "rows": 8,
+      "benchmark_rows": 2,
+      "oof_rows": 6,
+      "parent_weights": {
+        "v1": 0.5,
+        "v2": 0.4,
+        "v3": 0.1,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 0.0,
+        "v3": 0.7,
+        "v4": 0.3
+      },
+      "gain_vs_villain_node_parent": 0.02720865331488455,
+      "best_metrics": {
+        "score": 0.08524485018937171,
+        "mae": 0.08176944353641948,
+        "brier": 0.013901626611808935,
+        "top_action_acc": 1.0
+      },
+      "selected_as_override": true
+    },
+    {
+      "villain_type": "Alex",
+      "node": "facing_raise",
+      "street": "flop",
+      "rows": 13,
+      "benchmark_rows": 3,
+      "oof_rows": 10,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 0.3,
+        "v3": 0.35,
+        "v4": 0.35
+      },
+      "best_weights": {
+        "v1": 0.05,
+        "v2": 0.2,
+        "v3": 0.4,
+        "v4": 0.35
+      },
+      "gain_vs_villain_node_parent": 0.0015639915167611207,
+      "best_metrics": {
+        "score": 0.06458883346368499,
+        "mae": 0.06062898828056256,
+        "brier": 0.01583938073248975,
+        "top_action_acc": 0.9306518723994452
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Alex",
+      "node": "facing_raise",
+      "street": "river",
+      "rows": 13,
+      "benchmark_rows": 1,
+      "oof_rows": 12,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 0.3,
+        "v3": 0.35,
+        "v4": 0.35
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 0.8,
+        "v3": 0.0,
+        "v4": 0.2
+      },
+      "gain_vs_villain_node_parent": 0.006917241725276468,
+      "best_metrics": {
+        "score": 0.1071453072671461,
+        "mae": 0.09967973244689828,
+        "brier": 0.029862299280991326,
+        "top_action_acc": 0.9452954048140044
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Alex",
+      "node": "facing_raise",
+      "street": "turn",
+      "rows": 7,
+      "benchmark_rows": 0,
+      "oof_rows": 7,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 0.3,
+        "v3": 0.35,
+        "v4": 0.35
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 1.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.02785377461506061,
+      "best_metrics": {
+        "score": 0.2121347752308238,
+        "mae": 0.19270470255270433,
+        "brier": 0.07772029071247784,
+        "top_action_acc": 0.7142857142857143
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Alex",
+      "node": "open_action",
+      "street": "flop",
+      "rows": 11,
+      "benchmark_rows": 3,
+      "oof_rows": 8,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 0.3,
+        "v3": 0.0,
+        "v4": 0.7
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 0.0,
+        "v3": 1.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.018028822279295503,
+      "best_metrics": {
+        "score": 0.10383752540712379,
+        "mae": 0.09980815469993665,
+        "brier": 0.016117482828748572,
+        "top_action_acc": 0.9254843517138599
+      },
+      "selected_as_override": true
+    },
+    {
+      "villain_type": "Alex",
+      "node": "open_action",
+      "street": "river",
+      "rows": 14,
+      "benchmark_rows": 2,
+      "oof_rows": 12,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 0.3,
+        "v3": 0.0,
+        "v4": 0.7
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 1.0
+      },
+      "gain_vs_villain_node_parent": 0.02610106631669623,
+      "best_metrics": {
+        "score": 0.2320554685425023,
+        "mae": 0.2176445371081588,
+        "brier": 0.05764372573737413,
+        "top_action_acc": 0.8778501628664496
+      },
+      "selected_as_override": true
+    },
+    {
+      "villain_type": "Alex",
+      "node": "open_action",
+      "street": "turn",
+      "rows": 19,
+      "benchmark_rows": 2,
+      "oof_rows": 17,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 0.3,
+        "v3": 0.0,
+        "v4": 0.7
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 1.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.02328456734421469,
+      "best_metrics": {
+        "score": 0.12182822567988374,
+        "mae": 0.11527204693465568,
+        "brier": 0.02622471498091226,
+        "top_action_acc": 0.86468200270636
+      },
+      "selected_as_override": true
+    },
+    {
+      "villain_type": "Blake",
+      "node": "facing_bet",
+      "street": "flop",
+      "rows": 10,
+      "benchmark_rows": 2,
+      "oof_rows": 8,
+      "parent_weights": {
+        "v1": 0.85,
+        "v2": 0.15,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 1.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.0036172936508207104,
+      "best_metrics": {
+        "score": 0.08862381676093549,
+        "mae": 0.08541182442413633,
+        "brier": 0.012847969347196614,
+        "top_action_acc": 1.0
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Blake",
+      "node": "facing_bet",
+      "street": "river",
+      "rows": 13,
+      "benchmark_rows": 2,
+      "oof_rows": 11,
+      "parent_weights": {
+        "v1": 0.85,
+        "v2": 0.15,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 0.75,
+        "v2": 0.25,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.0003764182398559579,
+      "best_metrics": {
+        "score": 0.11828095265858415,
+        "mae": 0.11307677188983221,
+        "brier": 0.020816723075007773,
+        "top_action_acc": 1.0
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Blake",
+      "node": "facing_bet",
+      "street": "turn",
+      "rows": 7,
+      "benchmark_rows": 0,
+      "oof_rows": 7,
+      "parent_weights": {
+        "v1": 0.85,
+        "v2": 0.15,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 0.7,
+        "v2": 0.0,
+        "v3": 0.05,
+        "v4": 0.25
+      },
+      "gain_vs_villain_node_parent": 0.020068661960172235,
+      "best_metrics": {
+        "score": 0.09449228085186491,
+        "mae": 0.08991683736219128,
+        "brier": 0.018301773958694555,
+        "top_action_acc": 1.0
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Blake",
+      "node": "facing_raise",
+      "street": "flop",
+      "rows": 8,
+      "benchmark_rows": 1,
+      "oof_rows": 7,
+      "parent_weights": {
+        "v1": 0.05,
+        "v2": 0.95,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 0.5,
+        "v2": 0.5,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.0009082885995647244,
+      "best_metrics": {
+        "score": 0.0988028404713133,
+        "mae": 0.09286307540324742,
+        "brier": 0.02375906027226346,
+        "top_action_acc": 0.8493975903614458
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Blake",
+      "node": "facing_raise",
+      "street": "river",
+      "rows": 14,
+      "benchmark_rows": 3,
+      "oof_rows": 11,
+      "parent_weights": {
+        "v1": 0.05,
+        "v2": 0.95,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 1.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.0023121824064997465,
+      "best_metrics": {
+        "score": 0.07240249020092056,
+        "mae": 0.06813165010890247,
+        "brier": 0.017083360368072363,
+        "top_action_acc": 0.9664879356568364
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Blake",
+      "node": "facing_raise",
+      "street": "turn",
+      "rows": 9,
+      "benchmark_rows": 2,
+      "oof_rows": 7,
+      "parent_weights": {
+        "v1": 0.05,
+        "v2": 0.95,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 0.55,
+        "v2": 0.35,
+        "v3": 0.1,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.041665730033745796,
+      "best_metrics": {
+        "score": 0.08907969082924516,
+        "mae": 0.08224908167189904,
+        "brier": 0.027322436629384494,
+        "top_action_acc": 0.9488752556237219
+      },
+      "selected_as_override": true
+    },
+    {
+      "villain_type": "Blake",
+      "node": "open_action",
+      "street": "flop",
+      "rows": 9,
+      "benchmark_rows": 1,
+      "oof_rows": 8,
+      "parent_weights": {
+        "v1": 0.95,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.05
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 1.0
+      },
+      "gain_vs_villain_node_parent": 0.08518433052046023,
+      "best_metrics": {
+        "score": 0.20689728482305544,
+        "mae": 0.1912773635490017,
+        "brier": 0.06247968509621495,
+        "top_action_acc": 0.8599439775910365
+      },
+      "selected_as_override": true
+    },
+    {
+      "villain_type": "Blake",
+      "node": "open_action",
+      "street": "river",
+      "rows": 17,
+      "benchmark_rows": 1,
+      "oof_rows": 16,
+      "parent_weights": {
+        "v1": 0.95,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.05
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 1.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.03753762671069433,
+      "best_metrics": {
+        "score": 0.17550669543101044,
+        "mae": 0.16448688942096276,
+        "brier": 0.044079224040190705,
+        "top_action_acc": 0.8204667863554759
+      },
+      "selected_as_override": true
+    },
+    {
+      "villain_type": "Blake",
+      "node": "open_action",
+      "street": "turn",
+      "rows": 14,
+      "benchmark_rows": 2,
+      "oof_rows": 12,
+      "parent_weights": {
+        "v1": 0.95,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.05
+      },
+      "best_weights": {
+        "v1": 0.95,
+        "v2": 0.0,
+        "v3": 0.05,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.0020525354117735817,
+      "best_metrics": {
+        "score": 0.17110063547027332,
+        "mae": 0.15901616606024294,
+        "brier": 0.04833787764012152,
+        "top_action_acc": 0.8371335504885994
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Dave",
+      "node": "facing_bet",
+      "street": "flop",
+      "rows": 12,
+      "benchmark_rows": 2,
+      "oof_rows": 10,
+      "parent_weights": {
+        "v1": 0.9,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.1
+      },
+      "best_weights": {
+        "v1": 0.25,
+        "v2": 0.75,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.0031444499174495683,
+      "best_metrics": {
+        "score": 0.10714577755664131,
+        "mae": 0.10151371738015323,
+        "brier": 0.02252824070595232,
+        "top_action_acc": 0.9556737588652482
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Dave",
+      "node": "facing_bet",
+      "street": "river",
+      "rows": 7,
+      "benchmark_rows": 1,
+      "oof_rows": 6,
+      "parent_weights": {
+        "v1": 0.9,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.1
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 1.0
+      },
+      "gain_vs_villain_node_parent": 0.03384634492277584,
+      "best_metrics": {
+        "score": 0.08861522220486681,
+        "mae": 0.08318138456091616,
+        "brier": 0.021735350575802625,
+        "top_action_acc": 0.9185667752442996
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Dave",
+      "node": "facing_bet",
+      "street": "turn",
+      "rows": 10,
+      "benchmark_rows": 3,
+      "oof_rows": 7,
+      "parent_weights": {
+        "v1": 0.9,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.1
+      },
+      "best_weights": {
+        "v1": 0.8,
+        "v2": 0.2,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.0035728005746287206,
+      "best_metrics": {
+        "score": 0.08907746923553636,
+        "mae": 0.08584980733716174,
+        "brier": 0.012910647593498477,
+        "top_action_acc": 1.0
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Dave",
+      "node": "facing_raise",
+      "street": "flop",
+      "rows": 10,
+      "benchmark_rows": 1,
+      "oof_rows": 9,
+      "parent_weights": {
+        "v1": 0.15,
+        "v2": 0.7,
+        "v3": 0.0,
+        "v4": 0.15
+      },
+      "best_weights": {
+        "v1": 1.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.03135163093171188,
+      "best_metrics": {
+        "score": 0.07726777380053805,
+        "mae": 0.07409506017213187,
+        "brier": 0.012690854513624738,
+        "top_action_acc": 1.0
+      },
+      "selected_as_override": true
+    },
+    {
+      "villain_type": "Dave",
+      "node": "facing_raise",
+      "street": "river",
+      "rows": 13,
+      "benchmark_rows": 2,
+      "oof_rows": 11,
+      "parent_weights": {
+        "v1": 0.15,
+        "v2": 0.7,
+        "v3": 0.0,
+        "v4": 0.15
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 0.9,
+        "v3": 0.0,
+        "v4": 0.1
+      },
+      "gain_vs_villain_node_parent": 0.00347595679038884,
+      "best_metrics": {
+        "score": 0.14722110540039196,
+        "mae": 0.1331781647817307,
+        "brier": 0.05617176247464511,
+        "top_action_acc": 0.7453310696095077
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Dave",
+      "node": "facing_raise",
+      "street": "turn",
+      "rows": 9,
+      "benchmark_rows": 1,
+      "oof_rows": 8,
+      "parent_weights": {
+        "v1": 0.15,
+        "v2": 0.7,
+        "v3": 0.0,
+        "v4": 0.15
+      },
+      "best_weights": {
+        "v1": 0.45,
+        "v2": 0.55,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.009645946284625118,
+      "best_metrics": {
+        "score": 0.07020055655457441,
+        "mae": 0.06741976873525793,
+        "brier": 0.011123151277265935,
+        "top_action_acc": 0.9299719887955182
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Dave",
+      "node": "open_action",
+      "street": "flop",
+      "rows": 14,
+      "benchmark_rows": 2,
+      "oof_rows": 12,
+      "parent_weights": {
+        "v1": 0.4,
+        "v2": 0.6,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 0.6,
+        "v2": 0.4,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.004763178291873962,
+      "best_metrics": {
+        "score": 0.07180990006340798,
+        "mae": 0.06903750426524398,
+        "brier": 0.011089583192656006,
+        "top_action_acc": 0.9592833876221498
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Dave",
+      "node": "open_action",
+      "street": "river",
+      "rows": 7,
+      "benchmark_rows": 1,
+      "oof_rows": 6,
+      "parent_weights": {
+        "v1": 0.4,
+        "v2": 0.6,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 0.8,
+        "v2": 0.0,
+        "v3": 0.2,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.010524001694891913,
+      "best_metrics": {
+        "score": 0.1160386848622121,
+        "mae": 0.11084469927549567,
+        "brier": 0.020775942346865684,
+        "top_action_acc": 0.8371335504885994
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Dave",
+      "node": "open_action",
+      "street": "turn",
+      "rows": 11,
+      "benchmark_rows": 0,
+      "oof_rows": 11,
+      "parent_weights": {
+        "v1": 0.4,
+        "v2": 0.6,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 1.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.03024055679426732,
+      "best_metrics": {
+        "score": 0.144482408525265,
+        "mae": 0.13664446661927135,
+        "brier": 0.031351767623974625,
+        "top_action_acc": 0.9090909090909091
+      },
+      "selected_as_override": true
+    },
+    {
+      "villain_type": "Erik",
+      "node": "facing_bet",
+      "street": "flop",
+      "rows": 13,
+      "benchmark_rows": 3,
+      "oof_rows": 10,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 0.0,
+        "v3": 0.35,
+        "v4": 0.65
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 0.0,
+        "v3": 0.35,
+        "v4": 0.65
+      },
+      "gain_vs_villain_node_parent": 0.0,
+      "best_metrics": {
+        "score": 0.1592946167664734,
+        "mae": 0.1497537182066071,
+        "brier": 0.03816359423946525,
+        "top_action_acc": 0.8959778085991679
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Erik",
+      "node": "facing_bet",
+      "street": "river",
+      "rows": 11,
+      "benchmark_rows": 2,
+      "oof_rows": 9,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 0.0,
+        "v3": 0.35,
+        "v4": 0.65
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 0.0,
+        "v3": 0.15,
+        "v4": 0.85
+      },
+      "gain_vs_villain_node_parent": 0.00036641833609971086,
+      "best_metrics": {
+        "score": 0.19721082184568767,
+        "mae": 0.18048301463374097,
+        "brier": 0.0669112288477868,
+        "top_action_acc": 0.8144712430426717
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Erik",
+      "node": "facing_bet",
+      "street": "turn",
+      "rows": 8,
+      "benchmark_rows": 0,
+      "oof_rows": 8,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 0.0,
+        "v3": 0.35,
+        "v4": 0.65
+      },
+      "best_weights": {
+        "v1": 0.45,
+        "v2": 0.55,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.012772903705435323,
+      "best_metrics": {
+        "score": 0.18912237077689298,
+        "mae": 0.1735201080171037,
+        "brier": 0.062409051039157115,
+        "top_action_acc": 0.7500000000000001
+      },
+      "selected_as_override": true
+    },
+    {
+      "villain_type": "Erik",
+      "node": "facing_raise",
+      "street": "flop",
+      "rows": 12,
+      "benchmark_rows": 2,
+      "oof_rows": 10,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 1.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 1.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.0,
+      "best_metrics": {
+        "score": 0.2162657714669574,
+        "mae": 0.19876621347176768,
+        "brier": 0.06999823198075898,
+        "top_action_acc": 0.9556737588652482
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Erik",
+      "node": "facing_raise",
+      "street": "river",
+      "rows": 13,
+      "benchmark_rows": 2,
+      "oof_rows": 11,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 1.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 1.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.0,
+      "best_metrics": {
+        "score": 0.041377932770528085,
+        "mae": 0.040315439485349776,
+        "brier": 0.0042499731407132394,
+        "top_action_acc": 1.0
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Erik",
+      "node": "facing_raise",
+      "street": "turn",
+      "rows": 5,
+      "benchmark_rows": 0,
+      "oof_rows": 5,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 1.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 0.6,
+        "v3": 0.0,
+        "v4": 0.4
+      },
+      "gain_vs_villain_node_parent": 0.005335684219129833,
+      "best_metrics": {
+        "score": 0.27193891856292624,
+        "mae": 0.24163903996323308,
+        "brier": 0.12119951439877265,
+        "top_action_acc": 0.6000000000000001
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Erik",
+      "node": "open_action",
+      "street": "flop",
+      "rows": 9,
+      "benchmark_rows": 1,
+      "oof_rows": 8,
+      "parent_weights": {
+        "v1": 1.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 0.0,
+        "v3": 1.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.01194730583937284,
+      "best_metrics": {
+        "score": 0.1793394833397926,
+        "mae": 0.16977381942871264,
+        "brier": 0.03826265564431987,
+        "top_action_acc": 1.0
+      },
+      "selected_as_override": true
+    },
+    {
+      "villain_type": "Erik",
+      "node": "open_action",
+      "street": "river",
+      "rows": 24,
+      "benchmark_rows": 3,
+      "oof_rows": 21,
+      "parent_weights": {
+        "v1": 1.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 0.25,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.75
+      },
+      "gain_vs_villain_node_parent": 0.007511950787395583,
+      "best_metrics": {
+        "score": 0.19093305507789982,
+        "mae": 0.1742360814558527,
+        "brier": 0.06678789448818849,
+        "top_action_acc": 0.8242971887550201
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Erik",
+      "node": "open_action",
+      "street": "turn",
+      "rows": 10,
+      "benchmark_rows": 2,
+      "oof_rows": 8,
+      "parent_weights": {
+        "v1": 1.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 1.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.0,
+      "best_metrics": {
+        "score": 0.23727173602446908,
+        "mae": 0.22231050934349939,
+        "brier": 0.05984490672387873,
+        "top_action_acc": 0.9027237354085603
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Mike",
+      "node": "facing_bet",
+      "street": "flop",
+      "rows": 10,
+      "benchmark_rows": 1,
+      "oof_rows": 9,
+      "parent_weights": {
+        "v1": 1.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 0.0,
+        "v3": 0.55,
+        "v4": 0.45
+      },
+      "gain_vs_villain_node_parent": 0.10545273166096959,
+      "best_metrics": {
+        "score": 0.11863749323928095,
+        "mae": 0.1091065217756879,
+        "brier": 0.038123885854372215,
+        "top_action_acc": 0.8036649214659686
+      },
+      "selected_as_override": true
+    },
+    {
+      "villain_type": "Mike",
+      "node": "facing_bet",
+      "street": "river",
+      "rows": 17,
+      "benchmark_rows": 1,
+      "oof_rows": 16,
+      "parent_weights": {
+        "v1": 1.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 1.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.0,
+      "best_metrics": {
+        "score": 0.12695308345500964,
+        "mae": 0.11783552719003636,
+        "brier": 0.03647022505989313,
+        "top_action_acc": 0.9102333931777379
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Mike",
+      "node": "facing_bet",
+      "street": "turn",
+      "rows": 11,
+      "benchmark_rows": 5,
+      "oof_rows": 6,
+      "parent_weights": {
+        "v1": 1.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 1.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.0,
+      "best_metrics": {
+        "score": 0.1747715152845109,
+        "mae": 0.1637071994368096,
+        "brier": 0.044257263390805233,
+        "top_action_acc": 0.8053475935828877
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Mike",
+      "node": "facing_raise",
+      "street": "flop",
+      "rows": 10,
+      "benchmark_rows": 2,
+      "oof_rows": 8,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 0.45,
+        "v3": 0.0,
+        "v4": 0.55
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 0.45,
+        "v3": 0.0,
+        "v4": 0.55
+      },
+      "gain_vs_villain_node_parent": 0.0,
+      "best_metrics": {
+        "score": 0.07895478045452987,
+        "mae": 0.07336530790315625,
+        "brier": 0.02235789020549452,
+        "top_action_acc": 0.9027237354085603
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Mike",
+      "node": "facing_raise",
+      "street": "river",
+      "rows": 10,
+      "benchmark_rows": 1,
+      "oof_rows": 9,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 0.45,
+        "v3": 0.0,
+        "v4": 0.55
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 1.0
+      },
+      "gain_vs_villain_node_parent": 0.009476126948572625,
+      "best_metrics": {
+        "score": 0.09899926343926237,
+        "mae": 0.09270495254532979,
+        "brier": 0.025177243575730313,
+        "top_action_acc": 0.9345549738219895
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Mike",
+      "node": "facing_raise",
+      "street": "turn",
+      "rows": 7,
+      "benchmark_rows": 2,
+      "oof_rows": 5,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 0.45,
+        "v3": 0.0,
+        "v4": 0.55
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 0.0,
+        "v3": 1.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.049996183077590184,
+      "best_metrics": {
+        "score": 0.13339804411195283,
+        "mae": 0.12692816728397785,
+        "brier": 0.025879507311899915,
+        "top_action_acc": 1.0
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Mike",
+      "node": "open_action",
+      "street": "flop",
+      "rows": 13,
+      "benchmark_rows": 1,
+      "oof_rows": 12,
+      "parent_weights": {
+        "v1": 0.65,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.35
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 0.15,
+        "v3": 0.0,
+        "v4": 0.85
+      },
+      "gain_vs_villain_node_parent": 0.015889759740068732,
+      "best_metrics": {
+        "score": 0.1914106228702354,
+        "mae": 0.18011207860369696,
+        "brier": 0.04519417706615368,
+        "top_action_acc": 0.8905908096280087
+      },
+      "selected_as_override": true
+    },
+    {
+      "villain_type": "Mike",
+      "node": "open_action",
+      "street": "river",
+      "rows": 12,
+      "benchmark_rows": 0,
+      "oof_rows": 12,
+      "parent_weights": {
+        "v1": 0.65,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.35
+      },
+      "best_weights": {
+        "v1": 1.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.0038251514469455627,
+      "best_metrics": {
+        "score": 0.24205783644168882,
+        "mae": 0.22364673511497452,
+        "brier": 0.07364440530685717,
+        "top_action_acc": 0.9166666666666666
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Mike",
+      "node": "open_action",
+      "street": "turn",
+      "rows": 9,
+      "benchmark_rows": 1,
+      "oof_rows": 8,
+      "parent_weights": {
+        "v1": 0.65,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.35
+      },
+      "best_weights": {
+        "v1": 0.05,
+        "v2": 0.75,
+        "v3": 0.0,
+        "v4": 0.2
+      },
+      "gain_vs_villain_node_parent": 0.00963288121740305,
+      "best_metrics": {
+        "score": 0.1274065087699805,
+        "mae": 0.11857678742560016,
+        "brier": 0.03531888537752135,
+        "top_action_acc": 0.9299719887955182
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Steve",
+      "node": "facing_bet",
+      "street": "flop",
+      "rows": 7,
+      "benchmark_rows": 1,
+      "oof_rows": 6,
+      "parent_weights": {
+        "v1": 0.8,
+        "v2": 0.2,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 1.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.05703082174944074,
+      "best_metrics": {
+        "score": 0.11150721038793956,
+        "mae": 0.1058659715803552,
+        "brier": 0.022564955230337472,
+        "top_action_acc": 0.9185667752442996
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Steve",
+      "node": "facing_bet",
+      "street": "river",
+      "rows": 8,
+      "benchmark_rows": 1,
+      "oof_rows": 7,
+      "parent_weights": {
+        "v1": 0.8,
+        "v2": 0.2,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 1.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.011790431703148696,
+      "best_metrics": {
+        "score": 0.1778933165045423,
+        "mae": 0.1663923620458987,
+        "brier": 0.04600381783457446,
+        "top_action_acc": 0.7740963855421688
+      },
+      "selected_as_override": true
+    },
+    {
+      "villain_type": "Steve",
+      "node": "facing_bet",
+      "street": "turn",
+      "rows": 17,
+      "benchmark_rows": 2,
+      "oof_rows": 15,
+      "parent_weights": {
+        "v1": 0.8,
+        "v2": 0.2,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 0.8,
+        "v2": 0.2,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.0,
+      "best_metrics": {
+        "score": 0.10584234602428347,
+        "mae": 0.1001273863135865,
+        "brier": 0.022859838842787868,
+        "top_action_acc": 0.927431059506531
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Steve",
+      "node": "facing_raise",
+      "street": "flop",
+      "rows": 10,
+      "benchmark_rows": 1,
+      "oof_rows": 9,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 0.5,
+        "v3": 0.3,
+        "v4": 0.2
+      },
+      "best_weights": {
+        "v1": 0.05,
+        "v2": 0.45,
+        "v3": 0.0,
+        "v4": 0.5
+      },
+      "gain_vs_villain_node_parent": 0.0021738608567160866,
+      "best_metrics": {
+        "score": 0.18348906536290313,
+        "mae": 0.1691260644557297,
+        "brier": 0.0574520036286937,
+        "top_action_acc": 0.8691099476439791
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Steve",
+      "node": "facing_raise",
+      "street": "river",
+      "rows": 7,
+      "benchmark_rows": 0,
+      "oof_rows": 7,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 0.5,
+        "v3": 0.3,
+        "v4": 0.2
+      },
+      "best_weights": {
+        "v1": 0.55,
+        "v2": 0.0,
+        "v3": 0.05,
+        "v4": 0.4
+      },
+      "gain_vs_villain_node_parent": 0.0260301564424682,
+      "best_metrics": {
+        "score": 0.1757605550146219,
+        "mae": 0.16121932037487285,
+        "brier": 0.05816493855899616,
+        "top_action_acc": 0.7142857142857143
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Steve",
+      "node": "facing_raise",
+      "street": "turn",
+      "rows": 11,
+      "benchmark_rows": 0,
+      "oof_rows": 11,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 0.5,
+        "v3": 0.3,
+        "v4": 0.2
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 0.75,
+        "v3": 0.25,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.0037846812150959253,
+      "best_metrics": {
+        "score": 0.1406543597097352,
+        "mae": 0.1308782418398035,
+        "brier": 0.039104471479726746,
+        "top_action_acc": 0.7272727272727273
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Steve",
+      "node": "open_action",
+      "street": "flop",
+      "rows": 17,
+      "benchmark_rows": 2,
+      "oof_rows": 15,
+      "parent_weights": {
+        "v1": 0.9,
+        "v2": 0.0,
+        "v3": 0.05,
+        "v4": 0.05
+      },
+      "best_weights": {
+        "v1": 1.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.004714671939576448,
+      "best_metrics": {
+        "score": 0.1409540150079166,
+        "mae": 0.13344357389062708,
+        "brier": 0.03004176446915806,
+        "top_action_acc": 0.927431059506531
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Steve",
+      "node": "open_action",
+      "street": "river",
+      "rows": 25,
+      "benchmark_rows": 5,
+      "oof_rows": 20,
+      "parent_weights": {
+        "v1": 0.9,
+        "v2": 0.0,
+        "v3": 0.05,
+        "v4": 0.05
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 0.0,
+        "v3": 0.25,
+        "v4": 0.75
+      },
+      "gain_vs_villain_node_parent": 0.029358096176468257,
+      "best_metrics": {
+        "score": 0.1953630320412182,
+        "mae": 0.18015149463637703,
+        "brier": 0.06084614961936461,
+        "top_action_acc": 0.8
+      },
+      "selected_as_override": true
+    },
+    {
+      "villain_type": "Steve",
+      "node": "open_action",
+      "street": "turn",
+      "rows": 15,
+      "benchmark_rows": 3,
+      "oof_rows": 12,
+      "parent_weights": {
+        "v1": 0.9,
+        "v2": 0.0,
+        "v3": 0.05,
+        "v4": 0.05
+      },
+      "best_weights": {
+        "v1": 0.95,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.05
+      },
+      "gain_vs_villain_node_parent": 0.0013019814063375545,
+      "best_metrics": {
+        "score": 0.16495376176305854,
+        "mae": 0.15608172693155375,
+        "brier": 0.03548813932601909,
+        "top_action_acc": 0.6342412451361867
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Tom",
+      "node": "facing_bet",
+      "street": "flop",
+      "rows": 14,
+      "benchmark_rows": 1,
+      "oof_rows": 13,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 1.0
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 0.1,
+        "v3": 0.65,
+        "v4": 0.25
+      },
+      "gain_vs_villain_node_parent": 0.010681895244484069,
+      "best_metrics": {
+        "score": 0.13447333996732264,
+        "mae": 0.12529483644034287,
+        "brier": 0.03671401410791905,
+        "top_action_acc": 0.8962655601659751
+      },
+      "selected_as_override": true
+    },
+    {
+      "villain_type": "Tom",
+      "node": "facing_bet",
+      "street": "river",
+      "rows": 12,
+      "benchmark_rows": 2,
+      "oof_rows": 10,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 1.0
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 1.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.03717041464758501,
+      "best_metrics": {
+        "score": 0.10738490835662128,
+        "mae": 0.10125015639644885,
+        "brier": 0.024539007840689697,
+        "top_action_acc": 0.8670212765957447
+      },
+      "selected_as_override": true
+    },
+    {
+      "villain_type": "Tom",
+      "node": "facing_bet",
+      "street": "turn",
+      "rows": 11,
+      "benchmark_rows": 3,
+      "oof_rows": 8,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 1.0
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 1.0
+      },
+      "gain_vs_villain_node_parent": 0.0,
+      "best_metrics": {
+        "score": 0.11621945788098273,
+        "mae": 0.11100488245912236,
+        "brier": 0.020858301687441457,
+        "top_action_acc": 0.7287630402384501
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Tom",
+      "node": "facing_raise",
+      "street": "flop",
+      "rows": 10,
+      "benchmark_rows": 0,
+      "oof_rows": 10,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 1.0
+      },
+      "best_weights": {
+        "v1": 1.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.053184731763645715,
+      "best_metrics": {
+        "score": 0.1694573397510318,
+        "mae": 0.1559494551761408,
+        "brier": 0.05403153829956397,
+        "top_action_acc": 0.7000000000000001
+      },
+      "selected_as_override": true
+    },
+    {
+      "villain_type": "Tom",
+      "node": "facing_raise",
+      "street": "river",
+      "rows": 13,
+      "benchmark_rows": 1,
+      "oof_rows": 12,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 1.0
+      },
+      "best_weights": {
+        "v1": 0.25,
+        "v2": 0.25,
+        "v3": 0.5,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.023335706519642535,
+      "best_metrics": {
+        "score": 0.08933707208136481,
+        "mae": 0.08392455864986069,
+        "brier": 0.021650053726016485,
+        "top_action_acc": 0.8905908096280087
+      },
+      "selected_as_override": true
+    },
+    {
+      "villain_type": "Tom",
+      "node": "facing_raise",
+      "street": "turn",
+      "rows": 11,
+      "benchmark_rows": 3,
+      "oof_rows": 8,
+      "parent_weights": {
+        "v1": 0.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 1.0
+      },
+      "best_weights": {
+        "v1": 0.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 1.0
+      },
+      "gain_vs_villain_node_parent": 0.0,
+      "best_metrics": {
+        "score": 0.16520363188728812,
+        "mae": 0.1524527477442584,
+        "brier": 0.05100353657211889,
+        "top_action_acc": 0.8137108792846498
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Tom",
+      "node": "open_action",
+      "street": "flop",
+      "rows": 9,
+      "benchmark_rows": 2,
+      "oof_rows": 7,
+      "parent_weights": {
+        "v1": 0.25,
+        "v2": 0.75,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 0.65,
+        "v2": 0.35,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.007689809147157681,
+      "best_metrics": {
+        "score": 0.08440740718297214,
+        "mae": 0.0783686846349192,
+        "brier": 0.024154890192211797,
+        "top_action_acc": 0.7955010224948876
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Tom",
+      "node": "open_action",
+      "street": "river",
+      "rows": 14,
+      "benchmark_rows": 1,
+      "oof_rows": 13,
+      "parent_weights": {
+        "v1": 0.25,
+        "v2": 0.75,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 1.0,
+        "v2": 0.0,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "gain_vs_villain_node_parent": 0.00922065627487273,
+      "best_metrics": {
+        "score": 0.12574561669797907,
+        "mae": 0.11898319159273228,
+        "brier": 0.02704970042098716,
+        "top_action_acc": 1.0
+      },
+      "selected_as_override": false
+    },
+    {
+      "villain_type": "Tom",
+      "node": "open_action",
+      "street": "turn",
+      "rows": 12,
+      "benchmark_rows": 1,
+      "oof_rows": 11,
+      "parent_weights": {
+        "v1": 0.25,
+        "v2": 0.75,
+        "v3": 0.0,
+        "v4": 0.0
+      },
+      "best_weights": {
+        "v1": 0.15,
+        "v2": 0.75,
+        "v3": 0.0,
+        "v4": 0.1
+      },
+      "gain_vs_villain_node_parent": 0.0027229248447948745,
+      "best_metrics": {
+        "score": 0.10110133997239844,
+        "mae": 0.09501328319197143,
+        "brier": 0.024352227121708044,
+        "top_action_acc": 0.9421296296296297
+      },
+      "selected_as_override": false
+    }
+  ]
+}

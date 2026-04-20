@@ -6,3 +6,5 @@ sentry-sdk[fastapi]>=2.0,<3.0
 numpy
 pandas
 catboost
+scikit-learn
+httpx

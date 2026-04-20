@@ -1,0 +1,377 @@
+{
+  "model_name": "v5",
+  "model_family": "dual_target_villain_street_blend",
+  "config_version": "v5_dual_target_villain_street_blend_v1",
+  "config_source": "equal-weight OOF+benchmark tuning using cycle_3_final__manual_compare__20260420T014842Z_long.csv",
+  "target_priority": "equal-weight OOF distribution rows + benchmark rows; avg_prob_abs_error first, soft_brier second",
+  "size_model_stack": "size_model_v2",
+  "expert_model_order": [
+    "v1",
+    "v2",
+    "v3",
+    "v4"
+  ],
+  "training_context": {
+    "benchmark_long_csv": "data/benchmark_runs/cycle_3_final__manual_compare__20260420T014842Z_long.csv",
+    "oof_rows": 628,
+    "benchmark_rows": 100,
+    "group_weighting": {
+      "oof_total": 0.5,
+      "benchmark_total": 0.5
+    }
+  },
+  "selection_thresholds": {
+    "grid_step": 0.05,
+    "street_min_rows": 8,
+    "street_min_gain": 0.01
+  },
+  "node_global_blend_weights": {
+    "facing_bet": {
+      "v1": 0.85,
+      "v2": 0.15,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "facing_raise": {
+      "v1": 0.0,
+      "v2": 0.65,
+      "v3": 0.0,
+      "v4": 0.35
+    },
+    "open_action": {
+      "v1": 0.75,
+      "v2": 0.1,
+      "v3": 0.0,
+      "v4": 0.15
+    }
+  },
+  "villain_node_blend_weights": {
+    "Alex__facing_bet": {
+      "v1": 0.5,
+      "v2": 0.4,
+      "v3": 0.1,
+      "v4": 0.0
+    },
+    "Alex__facing_raise": {
+      "v1": 0.0,
+      "v2": 0.3,
+      "v3": 0.35,
+      "v4": 0.35
+    },
+    "Alex__open_action": {
+      "v1": 0.0,
+      "v2": 0.3,
+      "v3": 0.0,
+      "v4": 0.7
+    },
+    "Blake__facing_bet": {
+      "v1": 0.85,
+      "v2": 0.15,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Blake__facing_raise": {
+      "v1": 0.05,
+      "v2": 0.95,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Blake__open_action": {
+      "v1": 0.95,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 0.05
+    },
+    "Dave__facing_bet": {
+      "v1": 0.9,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 0.1
+    },
+    "Dave__facing_raise": {
+      "v1": 0.15,
+      "v2": 0.7,
+      "v3": 0.0,
+      "v4": 0.15
+    },
+    "Dave__open_action": {
+      "v1": 0.4,
+      "v2": 0.6,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Erik__facing_bet": {
+      "v1": 0.0,
+      "v2": 0.0,
+      "v3": 0.35,
+      "v4": 0.65
+    },
+    "Erik__facing_raise": {
+      "v1": 0.0,
+      "v2": 1.0,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Erik__open_action": {
+      "v1": 1.0,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Mike__facing_bet": {
+      "v1": 1.0,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Mike__facing_raise": {
+      "v1": 0.0,
+      "v2": 0.45,
+      "v3": 0.0,
+      "v4": 0.55
+    },
+    "Mike__open_action": {
+      "v1": 0.65,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 0.35
+    },
+    "Steve__facing_bet": {
+      "v1": 0.8,
+      "v2": 0.2,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Steve__facing_raise": {
+      "v1": 0.0,
+      "v2": 0.5,
+      "v3": 0.3,
+      "v4": 0.2
+    },
+    "Steve__open_action": {
+      "v1": 0.9,
+      "v2": 0.0,
+      "v3": 0.05,
+      "v4": 0.05
+    },
+    "Tom__facing_bet": {
+      "v1": 0.0,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 1.0
+    },
+    "Tom__facing_raise": {
+      "v1": 0.0,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 1.0
+    },
+    "Tom__open_action": {
+      "v1": 0.25,
+      "v2": 0.75,
+      "v3": 0.0,
+      "v4": 0.0
+    }
+  },
+  "villain_node_street_blend_weights": {
+    "Alex__facing_bet__river": {
+      "v1": 0.0,
+      "v2": 1.0,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Alex__facing_bet__turn": {
+      "v1": 0.0,
+      "v2": 0.0,
+      "v3": 0.7,
+      "v4": 0.3
+    },
+    "Alex__open_action__flop": {
+      "v1": 0.0,
+      "v2": 0.0,
+      "v3": 1.0,
+      "v4": 0.0
+    },
+    "Alex__open_action__river": {
+      "v1": 0.0,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 1.0
+    },
+    "Alex__open_action__turn": {
+      "v1": 0.0,
+      "v2": 1.0,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Blake__facing_raise__turn": {
+      "v1": 0.55,
+      "v2": 0.35,
+      "v3": 0.1,
+      "v4": 0.0
+    },
+    "Blake__open_action__flop": {
+      "v1": 0.0,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 1.0
+    },
+    "Blake__open_action__river": {
+      "v1": 0.0,
+      "v2": 1.0,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Dave__facing_raise__flop": {
+      "v1": 1.0,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Dave__open_action__turn": {
+      "v1": 0.0,
+      "v2": 1.0,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Erik__facing_bet__turn": {
+      "v1": 0.45,
+      "v2": 0.55,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Erik__open_action__flop": {
+      "v1": 0.0,
+      "v2": 0.0,
+      "v3": 1.0,
+      "v4": 0.0
+    },
+    "Mike__facing_bet__flop": {
+      "v1": 0.0,
+      "v2": 0.0,
+      "v3": 0.55,
+      "v4": 0.45
+    },
+    "Mike__open_action__flop": {
+      "v1": 0.0,
+      "v2": 0.15,
+      "v3": 0.0,
+      "v4": 0.85
+    },
+    "Steve__facing_bet__river": {
+      "v1": 1.0,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Steve__open_action__river": {
+      "v1": 0.0,
+      "v2": 0.0,
+      "v3": 0.25,
+      "v4": 0.75
+    },
+    "Tom__facing_bet__flop": {
+      "v1": 0.0,
+      "v2": 0.1,
+      "v3": 0.65,
+      "v4": 0.25
+    },
+    "Tom__facing_bet__river": {
+      "v1": 0.0,
+      "v2": 1.0,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Tom__facing_raise__flop": {
+      "v1": 1.0,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Tom__facing_raise__river": {
+      "v1": 0.25,
+      "v2": 0.25,
+      "v3": 0.5,
+      "v4": 0.0
+    }
+  },
+  "design_reference": {
+    "best_single_experts_overall": {
+      "v1": {
+        "mae": 0.15663262598297176,
+        "brier": 0.05401928236948582,
+        "top_action_acc": 0.8189808917197454,
+        "score": 0.17013744657534322
+      },
+      "v2": {
+        "mae": 0.16003895589690217,
+        "brier": 0.056027668447219875,
+        "top_action_acc": 0.7928343949044587,
+        "score": 0.17404587300870714
+      },
+      "v3": {
+        "mae": 0.17057478410961882,
+        "brier": 0.05144596729955157,
+        "top_action_acc": 0.791019108280255,
+        "score": 0.1834362759345067
+      },
+      "v4": {
+        "mae": 0.16797890392140502,
+        "brier": 0.05441813196930442,
+        "top_action_acc": 0.8007961783439492,
+        "score": 0.18158343691373113
+      }
+    },
+    "node_global_blend_metrics": {
+      "facing_bet": {
+        "score": 0.15275566685748598,
+        "mae": 0.1417732410610497,
+        "brier": 0.04392970318574522,
+        "top_action_acc": 0.8370646766169155
+      },
+      "facing_raise": {
+        "score": 0.14438139231868835,
+        "mae": 0.13327043812000472,
+        "brier": 0.044443816794734504,
+        "top_action_acc": 0.8531584169330836
+      },
+      "open_action": {
+        "score": 0.18778835892434773,
+        "mae": 0.17469891861547848,
+        "brier": 0.052357761235476974,
+        "top_action_acc": 0.8256293676854425
+      }
+    },
+    "final_hierarchy_metrics": {
+      "overall": {
+        "mae": 0.13209543676059554,
+        "brier": 0.0371438517073466,
+        "top_action_acc": 0.8717197452229302,
+        "score": 0.14138139968743219
+      },
+      "by_dataset": {
+        "benchmark": {
+          "mae": 0.09600609662151373,
+          "brier": 0.021114641689059327,
+          "top_action_acc": 0.96,
+          "rows": 100,
+          "score": 0.10128475704377857
+        },
+        "oof": {
+          "mae": 0.16818477689967729,
+          "brier": 0.05317306172563386,
+          "top_action_acc": 0.7834394904458599,
+          "rows": 628,
+          "score": 0.18147804233108575
+        }
+      }
+    }
+  },
+  "notes": [
+    "V5 remains a blend of v1/v2/v3/v4 raw action probabilities rather than a standalone learner.",
+    "This revision is tuned against both the full honest OOF distribution-labeled universe and the benchmark library, weighted equally at the dataset level.",
+    "Villain_type remains the main routing variable, with optional street overrides where the combined data strongly supports them.",
+    "Final action selection continues to sample from the blended distribution.",
+    "Sizing is delegated to size-model v2."
+  ]
+}

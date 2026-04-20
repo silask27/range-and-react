@@ -1,0 +1,85 @@
+{
+  "trained_at": "2026-04-20T01:27:29.186014+00:00",
+  "feature_version": "v4",
+  "action_rows_all_labels": 1807,
+  "action_rows_distribution_labels": 628,
+  "action_rows_hard_labels": 1179,
+  "node_counts": {
+    "facing_bet": 582,
+    "open_action": 757,
+    "facing_raise": 468
+  },
+  "villain_counts": {
+    "Tom": 261,
+    "Steve": 256,
+    "Mike": 249,
+    "Erik": 275,
+    "Dave": 280,
+    "Alex": 245,
+    "Blake": 241
+  },
+  "action_model_results": [
+    {
+      "model_name": "open_action_prob_model_v3",
+      "trained": true,
+      "rows": 757,
+      "cv_folds": 5,
+      "cv_mae": 0.28754355635214784,
+      "cv_rmse": 0.3462256595155175,
+      "cv_weighted_mae": 0.2816363687362794,
+      "target_name": "p_b",
+      "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models_v3/open_action_prob_model_v3.pkl",
+      "note": "V3 uses CatBoost soft regression, all labels, and the same flattened predictor framework as v1 (lab/features.py)."
+    },
+    {
+      "model_name": "facing_bet_continue_prob_model_v3",
+      "trained": true,
+      "rows": 582,
+      "cv_folds": 5,
+      "cv_mae": 0.2109343800160798,
+      "cv_rmse": 0.30559538040599504,
+      "cv_weighted_mae": 0.2073369025010084,
+      "target_name": "p_continue",
+      "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models_v3/facing_bet_continue_prob_model_v3.pkl",
+      "note": "Stage 1 continue probability using all labels and the v1 predictor framework."
+    },
+    {
+      "model_name": "facing_bet_raise_given_continue_prob_model_v3",
+      "trained": true,
+      "rows": 444,
+      "cv_folds": 5,
+      "cv_mae": 0.25380096889796855,
+      "cv_rmse": 0.33746316622102307,
+      "cv_weighted_mae": 0.24902829644664273,
+      "target_name": "p_raise_given_continue",
+      "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models_v3/facing_bet_raise_given_continue_prob_model_v3.pkl",
+      "note": "Stage 2 raise-given-continue with hard rows included when villain actually continued; predictors now match v1."
+    },
+    {
+      "model_name": "facing_raise_continue_prob_model_v3",
+      "trained": true,
+      "rows": 468,
+      "cv_folds": 5,
+      "cv_mae": 0.24441004818909015,
+      "cv_rmse": 0.3232374398754517,
+      "cv_weighted_mae": 0.24275864023934157,
+      "target_name": "p_continue",
+      "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models_v3/facing_raise_continue_prob_model_v3.pkl",
+      "note": "Stage 1 continue probability using all labels and the v1 predictor framework."
+    },
+    {
+      "model_name": "facing_raise_reraise_given_continue_prob_model_v3",
+      "trained": true,
+      "rows": 304,
+      "cv_folds": 5,
+      "cv_mae": 0.1846668252827421,
+      "cv_rmse": 0.2862141173961812,
+      "cv_weighted_mae": 0.18279068274908689,
+      "target_name": "p_reraise_given_continue",
+      "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models_v3/facing_raise_reraise_given_continue_prob_model_v3.pkl",
+      "note": "Stage 2 reraise-given-continue with hard rows included when villain actually continued; predictors now match v1."
+    }
+  ],
+  "size_model_results": [],
+  "target_strategy": "All labels. Distribution rows use actual entered distributions. Hard rows are softened with hierarchical distribution priors before training. Predictors use the same flattened framework as v1 from lab/features.py."
+}

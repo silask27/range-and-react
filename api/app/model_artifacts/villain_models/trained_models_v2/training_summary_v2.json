@@ -1,0 +1,113 @@
+{
+  "trained_at": "2026-04-20T01:26:42.878686+00:00",
+  "db_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/calibration.db",
+  "all_labeled_rows": 1807,
+  "distribution_rows": 628,
+  "hard_rows": 1179,
+  "feature_versions": {
+    "v4": 1807
+  },
+  "node_counts": {
+    "facing_bet": 582,
+    "open_action": 757,
+    "facing_raise": 468
+  },
+  "villain_counts": {
+    "Tom": 261,
+    "Steve": 256,
+    "Mike": 249,
+    "Erik": 275,
+    "Dave": 280,
+    "Alex": 245,
+    "Blake": 241
+  },
+  "action_counts": {
+    "c": 492,
+    "x": 483,
+    "r": 148,
+    "f": 410,
+    "b": 274
+  },
+  "notes": [
+    "V2 now clones V1 training structure: all labeled rows, hard-label targets, hierarchical CatBoost classifiers.",
+    "The only intentional differences vs V1 are: (1) V4 action features, and (2) weighted random final action selection from predicted probabilities.",
+    "V2 continues to reuse the shared V1 sizing stack."
+  ],
+  "action_results": [
+    {
+      "model_name": "open_action_model_v2",
+      "trained": true,
+      "rows": 757,
+      "class_counts": {
+        "x": 483,
+        "b": 274
+      },
+      "cv_folds": 5,
+      "cv_log_loss": 0.5095766083399498,
+      "cv_balanced_accuracy": 0.7052853491964316,
+      "cv_brier": 0.1688161490994124,
+      "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models_v2/open_action_model_v2.pkl",
+      "note": "V2 clone of V1: CatBoost hierarchical classifiers on all labels, but using V4 feature prioritization."
+    },
+    {
+      "model_name": "facing_bet_fold_continue_model_v2",
+      "trained": true,
+      "rows": 582,
+      "class_counts": {
+        "continue": 405,
+        "f": 177
+      },
+      "cv_folds": 5,
+      "cv_log_loss": 0.3895646921855524,
+      "cv_balanced_accuracy": 0.8242592592592592,
+      "cv_brier": 0.12124159189989676,
+      "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models_v2/facing_bet_fold_continue_model_v2.pkl",
+      "note": "V2 clone of V1: CatBoost hierarchical classifiers on all labels, but using V4 feature prioritization."
+    },
+    {
+      "model_name": "facing_bet_call_raise_model_v2",
+      "trained": true,
+      "rows": 405,
+      "class_counts": {
+        "c": 298,
+        "r": 107
+      },
+      "cv_folds": 5,
+      "cv_log_loss": 0.49932963357904,
+      "cv_balanced_accuracy": 0.6934591679506934,
+      "cv_brier": 0.16004100709734642,
+      "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models_v2/facing_bet_call_raise_model_v2.pkl",
+      "note": "V2 clone of V1: CatBoost hierarchical classifiers on all labels, but using V4 feature prioritization."
+    },
+    {
+      "model_name": "facing_raise_fold_continue_model_v2",
+      "trained": true,
+      "rows": 468,
+      "class_counts": {
+        "continue": 235,
+        "f": 233
+      },
+      "cv_folds": 5,
+      "cv_log_loss": 0.46663883142246376,
+      "cv_balanced_accuracy": 0.8056891766882515,
+      "cv_brier": 0.14650977791916842,
+      "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models_v2/facing_raise_fold_continue_model_v2.pkl",
+      "note": "V2 clone of V1: CatBoost hierarchical classifiers on all labels, but using V4 feature prioritization."
+    },
+    {
+      "model_name": "facing_raise_call_reraise_model_v2",
+      "trained": true,
+      "rows": 235,
+      "class_counts": {
+        "c": 194,
+        "r": 41
+      },
+      "cv_folds": 5,
+      "cv_log_loss": 0.35121168482639276,
+      "cv_balanced_accuracy": 0.7655026990553305,
+      "cv_brier": 0.10377706670880445,
+      "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models_v2/facing_raise_call_reraise_model_v2.pkl",
+      "note": "V2 clone of V1: CatBoost hierarchical classifiers on all labels, but using V4 feature prioritization."
+    }
+  ]
+}
