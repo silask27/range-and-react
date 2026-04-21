@@ -25,8 +25,18 @@ class EmailDeliveryResult:
         return asdict(self)
 
 
+def _clean(value: str | None) -> str:
+    if value is None:
+        return ""
+    return value.strip().strip('"').strip("'")
+
+
 def email_delivery_enabled() -> bool:
-    return settings.email_provider == "resend" and bool(settings.resend_api_key) and bool(settings.email_from)
+    return (
+        _clean(settings.email_provider) == "resend"
+        and bool(_clean(settings.resend_api_key))
+        and bool(_clean(settings.email_from))
+    )
 
 
 def build_password_reset_url(reset_token: str, email: str | None = None) -> str:
@@ -46,61 +56,87 @@ def build_signup_invite_url(invite_code: str, email: str | None = None) -> str:
 
 
 def _resend_headers() -> dict[str, str]:
+    api_key = _clean(settings.resend_api_key)
     return {
-        "Authorization": f"Bearer {settings.resend_api_key}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
+        "Accept": "application/json",
     }
 
 
 def _post_resend(payload: dict[str, Any]) -> EmailDeliveryResult:
+    provider = _clean(settings.email_provider) or "disabled"
+    email_from = _clean(settings.email_from)
+    reply_to = _clean(settings.email_reply_to)
+
     if not email_delivery_enabled():
         detail = "Email delivery is not configured"
         logger.info("Skipping email delivery: %s", detail)
-        return EmailDeliveryResult(status="skipped", provider=settings.email_provider or "disabled", skipped=True, detail=detail)
+        return EmailDeliveryResult(
+            status="skipped",
+            provider=provider,
+            skipped=True,
+            detail=detail,
+        )
 
     body = {
-        "from": settings.email_from,
+        "from": email_from,
         **payload,
     }
-    if settings.email_reply_to:
-        body["reply_to"] = settings.email_reply_to
+    if reply_to:
+        body["reply_to"] = reply_to
+
     request = Request(
         "https://api.resend.com/emails",
         data=json.dumps(body).encode("utf-8"),
         headers=_resend_headers(),
         method="POST",
     )
+
     try:
         with urlopen(request, timeout=10) as response:
-            raw = response.read().decode("utf-8")
+            raw = response.read().decode("utf-8", errors="replace")
         parsed = json.loads(raw) if raw else {}
-        return EmailDeliveryResult(status="sent", provider="resend", message_id=parsed.get("id"))
+        return EmailDeliveryResult(
+            status="sent",
+            provider="resend",
+            message_id=parsed.get("id"),
+        )
     except HTTPError as exc:
         try:
-            raw = exc.read().decode("utf-8")
-            parsed = json.loads(raw) if raw else {}
-            detail = parsed.get("message") or raw or str(exc)
+            raw = exc.read().decode("utf-8", errors="replace")
         except Exception:
-            detail = str(exc)
-        logger.warning("Resend email send failed: %s", detail)
-        return EmailDeliveryResult(status="failed", provider="resend", detail=detail)
+            raw = ""
+
+        logger.warning(
+            "Resend email send failed: status=%s from=%r reply_to=%r payload_keys=%s body=%s",
+            getattr(exc, "code", None),
+            email_from,
+            reply_to,
+            sorted(body.keys()),
+            raw or str(exc),
+        )
+        return EmailDeliveryResult(
+            status="failed",
+            provider="resend",
+            detail=raw or str(exc),
+        )
     except URLError as exc:
         detail = str(exc.reason)
         logger.warning("Resend email send failed: %s", detail)
         return EmailDeliveryResult(status="failed", provider="resend", detail=detail)
 
 
-def send_password_reset_email(*, email: str, reset_token: str, expires_at: str, display_name: str | None = None) -> EmailDeliveryResult:
+def send_password_reset_email(
+    *,
+    email: str,
+    reset_token: str,
+    expires_at: str,
+    display_name: str | None = None,
+) -> EmailDeliveryResult:
     reset_url = build_password_reset_url(reset_token, email=email)
     first_name = (display_name or "there").strip() or "there"
-    hours = "2 hours"
     subject = "Reset your Range & React password"
-    text = (
-        f"Hi {first_name},\n\n"
-        f"Use this link to reset your password: {reset_url}\n\n"
-        f"This link expires in {hours}. If you did not request a reset, you can ignore this email.\n\n"
-        f"Support: {settings.support_email}\n"
-    )
     html = f"""
     <div style=\"font-family:Inter,Arial,sans-serif;line-height:1.6;color:#141210\">
       <p>Hi {first_name},</p>
@@ -111,24 +147,38 @@ def send_password_reset_email(*, email: str, reset_token: str, expires_at: str, 
       <p style=\"color:#5f5a52\">Support: {settings.support_email}</p>
     </div>
     """
-    return _post_resend({"to": [email], "subject": subject, "html": html, "text": text})
+    return _post_resend(
+        {
+            "to": [email],
+            "subject": subject,
+            "html": html,
+        }
+    )
 
 
-def send_signup_invite_email(*, email: str | None, invite_code: str, organization_name: str | None = None, invited_by_name: str | None = None, expires_at: str | None = None) -> EmailDeliveryResult:
+def send_signup_invite_email(
+    *,
+    email: str | None,
+    invite_code: str,
+    organization_name: str | None = None,
+    invited_by_name: str | None = None,
+    expires_at: str | None = None,
+) -> EmailDeliveryResult:
     if not email:
-        return EmailDeliveryResult(status="skipped", provider=settings.email_provider or "disabled", skipped=True, detail="Invite has no email address")
+        return EmailDeliveryResult(
+            status="skipped",
+            provider=_clean(settings.email_provider) or "disabled",
+            skipped=True,
+            detail="Invite has no email address",
+        )
+
     invite_url = build_signup_invite_url(invite_code, email=email)
     org_label = organization_name or settings.app_name
     inviter = (invited_by_name or "your coach").strip() or "your coach"
-    expiry_copy = f"This invite expires at {expires_at}." if expires_at else "This invite expires soon."
-    subject = f"You are invited to join {org_label} on Range & React"
-    text = (
-        f"You have been invited by {inviter} to join {org_label} on Range & React.\n\n"
-        f"Accept your invite here: {invite_url}\n\n"
-        f"Invite code: {invite_code}\n"
-        f"{expiry_copy}\n\n"
-        f"Support: {settings.support_email}\n"
+    expiry_copy = (
+        f"This invite expires at {expires_at}." if expires_at else "This invite expires soon."
     )
+    subject = f"You are invited to join {org_label} on Range & React"
     html = f"""
     <div style=\"font-family:Inter,Arial,sans-serif;line-height:1.6;color:#141210\">
       <p>You have been invited by <strong>{inviter}</strong> to join <strong>{org_label}</strong> on Range & React.</p>
@@ -138,23 +188,35 @@ def send_signup_invite_email(*, email: str | None, invite_code: str, organizatio
       <p style=\"color:#5f5a52\">Support: {settings.support_email}</p>
     </div>
     """
-    return _post_resend({"to": [email], "subject": subject, "html": html, "text": text})
+    return _post_resend(
+        {
+            "to": [email],
+            "subject": subject,
+            "html": html,
+        }
+    )
 
 
-def send_welcome_email(*, email: str, display_name: str | None = None, organization_names: list[str] | None = None) -> EmailDeliveryResult:
+def send_welcome_email(
+    *,
+    email: str,
+    display_name: str | None = None,
+    organization_names: list[str] | None = None,
+) -> EmailDeliveryResult:
     if not settings.welcome_email_enabled:
-        return EmailDeliveryResult(status="skipped", provider=settings.email_provider or "disabled", skipped=True, detail="Welcome email disabled")
+        return EmailDeliveryResult(
+            status="skipped",
+            provider=_clean(settings.email_provider) or "disabled",
+            skipped=True,
+            detail="Welcome email disabled",
+        )
+
     first_name = (display_name or "there").strip() or "there"
     org_copy = ""
     if organization_names:
         org_copy = f" You are now set up for {', '.join(organization_names[:3])}."
+
     subject = "Welcome to Range & React"
-    text = (
-        f"Hi {first_name},\n\n"
-        f"Welcome to Range & React.{org_copy}\n"
-        f"You can log in here: {settings.frontend_url.rstrip('/')}/login\n\n"
-        f"Support: {settings.support_email}\n"
-    )
     html = f"""
     <div style=\"font-family:Inter,Arial,sans-serif;line-height:1.6;color:#141210\">
       <p>Hi {first_name},</p>
@@ -163,4 +225,10 @@ def send_welcome_email(*, email: str, display_name: str | None = None, organizat
       <p style=\"color:#5f5a52\">Support: {settings.support_email}</p>
     </div>
     """
-    return _post_resend({"to": [email], "subject": subject, "html": html, "text": text})
+    return _post_resend(
+        {
+            "to": [email],
+            "subject": subject,
+            "html": html,
+        }
+    )
