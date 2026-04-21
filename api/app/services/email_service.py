@@ -61,6 +61,7 @@ def _resend_headers() -> dict[str, str]:
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
         "Accept": "application/json",
+        "User-Agent": f"range-and-react-backend/{settings.app_version or '1.0'}",
     }
 
 
