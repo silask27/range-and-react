@@ -6,7 +6,7 @@ export const metadata: Metadata = {
     default: "Range & React",
     template: "%s · Range & React",
   },
-  description: "Poker training platform for live range reading, action prediction, assignments, and coach-ready results.",
+  description: "Poker training platform for players and coaches built around opponent range analysis, tendency recognition, and actionable performance insights. Players can see where they struggle, where they excel, and what to practice next, while coaches can track individual and pool performance, spot weaknesses, and assign targeted reps."
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
