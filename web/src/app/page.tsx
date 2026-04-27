@@ -6,19 +6,54 @@ import { getStoredAuthToken } from "../lib/auth";
 import SiteFooter from "../components/app/SiteFooter";
 
 const VILLAINS = [
-  { src: "/villains/mike.png", name: "Mike", type: "Nit", desc: "Tight, face-up, and under-bluffing. Lets you make disciplined folds and value-bet thinner." },
-  { src: "/villains/tom.png", name: "Tom", type: "Calling Station", desc: "Overcalls too often and pays off wider than he should." },
-  { src: "/villains/blake.png", name: "Blake", type: "Loose Reg", desc: "Knows the basics, opens wider, and pressures weak passivity." },
-  { src: "/villains/dave.png", name: "Dave", type: "Chaser", desc: "Hangs on with draws and weak made hands longer than he should." },
-  { src: "/villains/alex.png", name: "Alex", type: "ABC Reg", desc: "Straightforward and structured, but still leaves exploitable patterns." },
-  { src: "/villains/steve.png", name: "Steve", type: "Maniac", desc: "Aggressive, splashy, and willing to force action too often." },
-  { src: "/villains/erik.png", name: "Erik", type: "Crusher", desc: "Balanced, sharp, and the toughest pool baseline to train against." },
+  {
+    src: "/villains/mike.png",
+    name: "Mike",
+    type: "Nit",
+    desc: "A tight, face-up opponent who under-bluffs, avoids big bets, and rarely goes for thin value.",
+  },
+  {
+    src: "/villains/tom.png",
+    name: "Tom",
+    type: "Calling Station",
+    desc: "A passive, sticky opponent who overcalls across streets, stays fairly inelastic, and is value-heavy when aggressive.",
+  },
+  {
+    src: "/villains/blake.png",
+    name: "Blake",
+    type: "Loose Reg",
+    desc: "A somewhat thinking opponent who opens too wide, overcalls a bit too much, and can become face-up in tougher spots.",
+  },
+  {
+    src: "/villains/dave.png",
+    name: "Dave",
+    type: "Chaser",
+    desc: "A passive, draw-driven opponent who overcalls early streets, value-oriented when aggressive, and wants to see all five cards.",
+  },
+  {
+    src: "/villains/alex.png",
+    name: "Alex",
+    type: "ABC Reg",
+    desc: "A straightforward, slightly winning opponent who is capable of bluffing, but ties aggression to stronger holdings and rarely finds creative lines.",
+  },
+  {
+    src: "/villains/steve.png",
+    name: "Steve",
+    type: "Maniac",
+    desc: "An erratic, action-driven opponent who loves to bluff, hates folding, and is not afraid to play big pots.",
+  },
+  {
+    src: "/villains/erik.png",
+    name: "Erik",
+    type: "TAG",
+    desc: "A sharp, aggressive opponent who is more balanced, applies pressure well, and is the toughest player in the pool to train against.",
+  },
 ];
 
 const SUMMARY_CARDS = [
   {
     title: "Built for live poker",
-    copy: "The goal is not to memorize solver output. It is to make range reading and reaction planning feel automatic at the table.",
+    copy: "The goal is not to memorize solver output. It is to understand how our opponents arrive at a spot and how they will react.",
   },
   {
     title: "Train the decision loop",
@@ -26,7 +61,7 @@ const SUMMARY_CARDS = [
   },
   {
     title: "Track what improves",
-    copy: "Villain Ranging and Action Prediction stay separate, so players and coaches can see what is actually getting better.",
+    copy: "Our two core metrics, Villain Ranging and Action Prediction, stay separate so players and coaches can see where players excel, where they struggle, and how they progress over time.",
   },
   {
     title: "Coach-ready workflow",
@@ -51,10 +86,10 @@ export default function LandingPage() {
               Know their range. Know their tendencies. Everything else is noise.
             </h1>
             <p style={heroCopyStyle}>
-              A focused training site for serious live players and coaches who want reading and reacting to feel automatic when the pressure is on.
+              A training site for serious live players and coaches who want to prioritize focusing on what really matters.
             </p>
             <p style={bodyStyle}>
-              Most poker mistakes do not come from a lack of knowledge. They come from losing track of what matters in the moment. Range & React drills one repeatable process: narrow the range, predict the reaction, then choose the best line.
+             Most poker mistakes do not come from a lack of knowledge. They come from losing focus on what matters most in the moment. Range & React helps players develop a repeatable thought process centered around our two core pillars: understanding how previous actions shape an opponent’s current range and how player-specific tendencies affect how that range will react.
             </p>
             <div>
               <Link href={hasToken ? "/dashboard" : "/login"} className="btn-primary" style={ctaStyle}>
@@ -71,9 +106,9 @@ export default function LandingPage() {
             <div className="page-eyebrow">Website summary</div>
           </div>
           <div style={statsRowStyle}>
-            <Stat value="7" label="Opponent types with real tendencies" />
+            <Stat value="7" label="Common live opponent types with real tendencies" />
             <Stat value="5" label="Range buckets you can actually hold in your head" />
-            <Stat value="2" label="Core scores that show progress" />
+            <Stat value="2" label="Core metrics that track progress over time and reveal where players excel or struggle" />
           </div>
           <div style={featureGridStyle}>
             {SUMMARY_CARDS.map((item) => (
@@ -89,8 +124,7 @@ export default function LandingPage() {
             <div className="page-eyebrow">Meet your opponents</div>
             <h2 style={sectionTitleStyle}>Every villain is built around a real, defined tendency profile.</h2>
             <p style={bodyStyle}>
-              The drill changes because the opponent changes. Each player type carries a different betting, calling, raising, and folding pattern, so the habits you train stay tied to how live poker is actually played.
-            </p>
+              Each opponent has clearly defined tendencies, so training stays centered on the player in front of you, not generic strategy.            </p>
           </div>
           <div style={villainGridStyle}>
             {VILLAINS.map((villain) => (
@@ -115,10 +149,10 @@ export default function LandingPage() {
           description={
             <>
               <p style={bodyStyle}>
-                Every rep starts with a realistic opponent profile and a live starting range. From there, the lab forces you to keep that range honest as the hand develops.
+                Every rep starts with a selected preflop scenario and a default range tied to that spot. From there, you adjust that starting range based on the specific opponent type you are playing against.
               </p>
               <p style={bodyStyle}>
-                After each action, you remove what no longer fits, save what still survives, and carry that thread forward street by street. The point is not to guess once. It is to stay connected to the range all the way through the hand.
+                As the hand develops, each action gives you new information. You remove what no longer fits, keep what still makes sense, and carry that updated range from preflop all the way to the river.
               </p>
             </>
           }
@@ -138,10 +172,10 @@ export default function LandingPage() {
           description={
             <>
               <p style={bodyStyle}>
-                Once you have narrowed down their range, it is time to anticipate how each part of that range will react to the options in front of you.
+                Once you have an understanding of their current range, it is time to focus on how each part of that range will react to the available actions in front of you.
               </p>
               <p style={bodyStyle}>
-                In the lab, you map each bucket to likely reactions before you act. That turns every decision into a clean what-happens-if exercise, so you can compare lines, understand the likely outcomes, and land at the best decision instead of just a decent one.
+                In the training environment, you map how each bucket in your opponent’s range is likely to respond to each action available to you, helping you compare outcomes and choose the best line instead of just a good one.
               </p>
             </>
           }
