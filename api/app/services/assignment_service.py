@@ -383,7 +383,7 @@ def build_suggested_practice(*, user_id: str, limit: int = 4) -> list[dict[str, 
             suggestions.append({
                 'title': 'Tighten your pruning discipline',
                 'description': 'Your ranging score trails your response score. Keep more plausible combos alive before cutting deeper.',
-                'reason': f'Avg ranging {overall_ranging} vs response {overall_response}',
+                'reason': f'Avg Villain Ranging {overall_ranging} vs Action Response {overall_response}',
                 'scenario_id': focus_target,
                 'villain_profile_id': None,
                 'quick_start_url': f'/screen-1?scenario_id={focus_target}' if focus_target else '/screen-1',
