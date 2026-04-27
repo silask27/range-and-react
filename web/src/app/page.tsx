@@ -89,7 +89,7 @@ export default function LandingPage() {
               A training site for serious live players and coaches who want to prioritize focusing on what really matters.
             </p>
             <p style={bodyStyle}>
-             Most poker mistakes do not come from a lack of knowledge. They come from losing focus on what matters most in the moment. Range & React helps players develop a repeatable thought process around two core pillars: how past actions shape an opponent’s current range and how player-specific tendencies influence how they react.
+             Most poker mistakes do not come from a lack of knowledge. They come from losing focus on what matters most in the moment. Range & React helps players build a repeatable process for updating an opponent’s range based on previous actions and predicting how that range will react based on player-specific tendencies.
             </p>
             <div>
               <Link href={hasToken ? "/dashboard" : "/login"} className="btn-primary" style={ctaStyle}>
