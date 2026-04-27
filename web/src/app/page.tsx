@@ -28,7 +28,7 @@ const VILLAINS = [
     src: "/villains/dave.png",
     name: "Dave",
     type: "Chaser",
-    desc: "A passive, draw-driven opponent who overcalls early streets, value-oriented when aggressive, and wants to see all five cards.",
+    desc: "A passive, draw-driven opponent who overcalls early streets, is value-heavy when aggressive, and wants to see all five cards.",
   },
   {
     src: "/villains/alex.png",
@@ -53,11 +53,11 @@ const VILLAINS = [
 const SUMMARY_CARDS = [
   {
     title: "Built for live poker",
-    copy: "The goal is not to memorize solver output. It is to understand how our opponents arrive at a spot and how they will react.",
+    copy: "The goal is not to memorize solver output. It is to understand how real opponents arrive at a spot and how they are likely to react.",
   },
   {
     title: "Train the decision loop",
-    copy: "Start with a player type, narrow their range street by street, then predict how each bucket responds before you act.",
+    copy: "Start with a player type, adjust their starting range, narrow it street by street, then predict how each bucket responds before you act.",
   },
   {
     title: "Track what improves",
@@ -86,7 +86,7 @@ export default function LandingPage() {
               Know their range. Know their tendencies. Everything else is noise.
             </h1>
             <p style={heroCopyStyle}>
-              A training site for serious live players and coaches who want to prioritize focusing on what really matters.
+              A training site for serious live players and coaches who want to focus on what actually drives decisions.
             </p>
             <p style={bodyStyle}>
              Most poker mistakes do not come from a lack of knowledge. They come from losing focus on what matters most in the moment. Range & React helps players build a repeatable process for updating an opponent’s range based on previous actions and predicting how that range will react based on player-specific tendencies.
@@ -123,8 +123,6 @@ export default function LandingPage() {
           <div style={sectionHeaderStyle}>
             <div className="page-eyebrow">Meet your opponents</div>
             <h2 style={sectionTitleStyle}>Every villain is built around a real, defined tendency profile.</h2>
-            <p style={bodyStyle}>
-              Each opponent has clearly defined tendencies, so training stays centered on the player in front of you, not generic strategy.            </p>
           </div>
           <div style={villainGridStyle}>
             {VILLAINS.map((villain) => (
