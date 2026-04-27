@@ -61,7 +61,7 @@ const SUMMARY_CARDS = [
   },
   {
     title: "Track what improves",
-    copy: "Our two core metrics, Villain Ranging and Action Prediction, stay separate so players and coaches can see where players excel, where they struggle, and how they progress over time.",
+    copy: "Villain Ranging and Action Prediction stay separate, making it clear where players excel, where they struggle, and how they improve over time.",
   },
   {
     title: "Coach-ready workflow",
@@ -89,7 +89,7 @@ export default function LandingPage() {
               A training site for serious live players and coaches who want to prioritize focusing on what really matters.
             </p>
             <p style={bodyStyle}>
-             Most poker mistakes do not come from a lack of knowledge. They come from losing focus on what matters most in the moment. Range & React helps players develop a repeatable thought process centered around our two core pillars: understanding how previous actions shape an opponent’s current range and how player-specific tendencies affect how that range will react.
+             Most poker mistakes do not come from a lack of knowledge. They come from losing focus on what matters most in the moment. Range & React helps players develop a repeatable thought process around two core pillars: how past actions shape an opponent’s current range and how player-specific tendencies influence how they react.
             </p>
             <div>
               <Link href={hasToken ? "/dashboard" : "/login"} className="btn-primary" style={ctaStyle}>
@@ -108,7 +108,7 @@ export default function LandingPage() {
           <div style={statsRowStyle}>
             <Stat value="7" label="Common live opponent types with real tendencies" />
             <Stat value="5" label="Range buckets you can actually hold in your head" />
-            <Stat value="2" label="Core metrics that track progress over time and reveal where players excel or struggle" />
+            <Stat value="2" label="Core metrics that reveal where players excel or struggle" />
           </div>
           <div style={featureGridStyle}>
             {SUMMARY_CARDS.map((item) => (
