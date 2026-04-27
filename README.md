@@ -35,7 +35,7 @@ uvicorn api.app.main:app --reload --port 8000
 ### Backend (PostgreSQL)
 Set `VRT_DATABASE_URL` before starting the API, for example:
 ```bash
-export VRT_DATABASE_URL=postgresql://live_range_lab:live_range_lab@127.0.0.1:5432/live_range_lab
+export VRT_DATABASE_URL=postgresql://range_and_react:range_and_react@127.0.0.1:5432/range_and_react
 uvicorn api.app.main:app --reload --port 8000
 ```
 
@@ -119,7 +119,7 @@ If you already have local data in SQLite, bootstrap PostgreSQL first and then ru
 ```bash
 python -m api.scripts.migrate_sqlite_to_postgres \
   --source-path ./data/villain_range_trainer.db \
-  --target-url postgresql://live_range_lab:live_range_lab@127.0.0.1:5432/live_range_lab \
+  --target-url postgresql://range_and_react:range_and_react@127.0.0.1:5432/range_and_react \
   --reset-target
 ```
 

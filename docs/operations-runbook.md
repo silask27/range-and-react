@@ -78,13 +78,13 @@ For managed PostgreSQL, enable daily automated backups in the platform provider.
 For manual backups:
 
 ```bash
-pg_dump "$VRT_DATABASE_URL" --format=custom --file=live_range_lab.backup
+pg_dump "$VRT_DATABASE_URL" --format=custom --file=range_and_react.backup
 ```
 
 Restore:
 
 ```bash
-pg_restore --clean --if-exists --no-owner --dbname "$VRT_DATABASE_URL" live_range_lab.backup
+pg_restore --clean --if-exists --no-owner --dbname "$VRT_DATABASE_URL" range_and_react.backup
 ```
 
 ## Rollback checklist
