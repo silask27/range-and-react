@@ -108,7 +108,7 @@ export default function LandingPage() {
           <div style={statsRowStyle}>
             <Stat value="7" label="Common live opponent types with real tendencies" />
             <Stat value="5" label="Range buckets you can actually hold in your head" />
-            <Stat value="2" label="Core metrics that reveal where players excel or struggle" />
+            <Stat value="2" label="Metrics that reveal where players excel or struggle" />
           </div>
           <div style={featureGridStyle}>
             {SUMMARY_CARDS.map((item) => (
