@@ -65,6 +65,28 @@ type TabKey = "analytics" | "assignments" | "members";
 const PALETTE = { cream: "#F0EBE0", coral: "#E76F51", green: "#6A9E72", muted: "rgba(240,235,224,0.45)", soft: "rgba(240,235,224,0.08)" };
 const ACCOUNT_ROLE_OPTIONS = ["member", "coach", "admin"] as const;
 const ORG_ROLE_OPTIONS = ["member", "coach", "admin", "owner"] as const;
+const ADMIN_TOOL_DISCLOSURE_CSS = `
+  .admin-tool-disclosure > summary::-webkit-details-marker { display: none; }
+  .admin-tool-disclosure > summary::marker { content: ""; }
+  .admin-tool-caret {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    min-width: 18px;
+    height: 18px;
+    color: var(--text-main, #F0EBE0);
+    font-size: 18px;
+    font-weight: 900;
+    line-height: 1;
+    transform: rotate(0deg);
+    transform-origin: center;
+    transition: transform 140ms ease;
+  }
+  .admin-tool-disclosure[open] > summary .admin-tool-caret {
+    transform: rotate(90deg);
+  }
+`;
 
 function roleOptionsForUser(canManageRoles: boolean) {
   return canManageRoles ? ACCOUNT_ROLE_OPTIONS : (["member"] as const);
@@ -455,6 +477,7 @@ export default function AdminPage() {
 
   return (
     <AppShell title="Coach" subtitle="See what the member pool is struggling with, assign the next reps, and keep operations clean." headerContent={headerStats}>
+      <style>{ADMIN_TOOL_DISCLOSURE_CSS}</style>
       {isAuthLoading ? <div style={panelStyle}>Loading coach tools…</div> : null}
       {authError ? <div style={errorStyle}>{authError}</div> : null}
       {error ? <div style={errorStyle}>{error}</div> : null}
@@ -612,8 +635,8 @@ export default function AdminPage() {
                   <div style={helperCopyStyle}>Create the organization first, then send signup links. Existing users can be attached later without creating a new account.</div>
                   <div style={toolStackStyle}>
                     {canManageRoles ? (
-                      <details style={detailsStyle}>
-                        <summary style={summaryStyle}><span style={summaryIconStyle}>⌄</span><span>Create organization</span></summary>
+                      <details className="admin-tool-disclosure" style={detailsStyle}>
+                        <summary style={summaryStyle}><span className="admin-tool-caret" aria-hidden="true">›</span><span>Create organization</span></summary>
                         <form onSubmit={handleCreateOrg} style={stackStyle}>
                           <input value={orgState.name} onChange={(event) => setOrgState((current) => ({ ...current, name: event.target.value }))} placeholder="Organization name" style={inputStyle} required />
                           <input value={orgState.slug} onChange={(event) => setOrgState((current) => ({ ...current, slug: event.target.value }))} placeholder="organization-slug" style={inputStyle} required />
@@ -624,8 +647,8 @@ export default function AdminPage() {
                       </details>
                     ) : null}
 
-                    <details style={detailsStyle}>
-                      <summary style={summaryStyle}><span style={summaryIconStyle}>⌄</span><span>Add existing user to organization</span></summary>
+                    <details className="admin-tool-disclosure" style={detailsStyle}>
+                      <summary style={summaryStyle}><span className="admin-tool-caret" aria-hidden="true">›</span><span>Add existing user to organization</span></summary>
                       <form onSubmit={handleAddOrgMember} style={stackStyle}>
                         <select value={orgMemberState.organization_id} onChange={(event) => setOrgMemberState((current) => ({ ...current, organization_id: event.target.value }))} style={inputStyle} required><option value="">Select organization</option>{organizations.map((org) => <option key={org.organization_id} value={org.organization_id}>{org.name}</option>)}</select>
                         <select value={orgMemberState.user_id} onChange={(event) => setOrgMemberState((current) => ({ ...current, user_id: event.target.value }))} style={inputStyle} required><option value="">Select user</option>{users.map((entry) => <option key={entry.user_id} value={entry.user_id}>{entry.display_name || entry.email}</option>)}</select>
@@ -634,8 +657,8 @@ export default function AdminPage() {
                       </form>
                     </details>
 
-                    <details style={detailsStyle}>
-                      <summary style={summaryStyle}><span style={summaryIconStyle}>⌄</span><span>Create signup invite</span></summary>
+                    <details className="admin-tool-disclosure" style={detailsStyle}>
+                      <summary style={summaryStyle}><span className="admin-tool-caret" aria-hidden="true">›</span><span>Create signup invite</span></summary>
                       <form onSubmit={handleCreateInvite} style={stackStyle}>
                         <label style={labelStyle}><span style={labelTitleStyle}>Invite email</span><input value={inviteState.email} onChange={(event) => setInviteState((current) => ({ ...current, email: event.target.value }))} placeholder="Required for account-specific invites" style={inputStyle} /></label>
                         <div style={twoColStyle}>
@@ -654,8 +677,8 @@ export default function AdminPage() {
                       </form>
                     </details>
 
-                    <details style={detailsStyle}>
-                      <summary style={summaryStyle}><span style={summaryIconStyle}>⌄</span><span>Bulk roster invites</span></summary>
+                    <details className="admin-tool-disclosure" style={detailsStyle}>
+                      <summary style={summaryStyle}><span className="admin-tool-caret" aria-hidden="true">›</span><span>Bulk roster invites</span></summary>
                       <form onSubmit={handleCreateBulkInvites} style={stackStyle}>
                         <label style={labelStyle}><span style={labelTitleStyle}>Email list</span><textarea value={bulkInviteState.emails} onChange={(event) => setBulkInviteState((current) => ({ ...current, emails: event.target.value }))} placeholder="One email per line" style={{ ...inputStyle, minHeight: 140, resize: "vertical" }} required /></label>
                         <div style={twoColStyle}>
@@ -675,8 +698,8 @@ export default function AdminPage() {
                     </details>
 
                     {canManageRoles ? (
-                      <details style={detailsStyle}>
-                        <summary style={summaryStyle}><span style={summaryIconStyle}>⌄</span><span>Advanced · link external identity</span></summary>
+                      <details className="admin-tool-disclosure" style={detailsStyle}>
+                        <summary style={summaryStyle}><span className="admin-tool-caret" aria-hidden="true">›</span><span>Advanced · link external identity</span></summary>
                         <form onSubmit={handleLinkExternal} style={stackStyle}>
                           <select value={externalState.user_id} onChange={(event) => setExternalState((current) => ({ ...current, user_id: event.target.value }))} style={inputStyle} required><option value="">Select user</option>{users.map((entry) => <option key={entry.user_id} value={entry.user_id}>{entry.display_name || entry.email}</option>)}</select>
                           <input value={externalState.provider} onChange={(event) => setExternalState((current) => ({ ...current, provider: event.target.value }))} placeholder="Provider" style={inputStyle} required />
@@ -857,6 +880,5 @@ const inviteCardRowStyle: CSSProperties = { display: "flex", justifyContent: "sp
 const inviteUrlStyle: CSSProperties = { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12, lineHeight: 1.55, color: "rgba(240,235,224,0.72)", wordBreak: "break-all" };
 const detailsStyle: CSSProperties = { borderTop: "1px solid var(--line-soft)", padding: "14px 0", margin: 0 };
 const summaryStyle: CSSProperties = { cursor: "pointer", fontWeight: 900, color: PALETTE.cream, marginBottom: 12, fontSize: 17, listStyle: "none", display: "flex", alignItems: "center", gap: 10 };
-const summaryIconStyle: CSSProperties = { width: 28, height: 28, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 999, border: "1px solid var(--line)", color: PALETTE.cream, fontSize: 18, lineHeight: 1 };
 const emptyStateStyle: CSSProperties = { color: PALETTE.muted, padding: "8px 0 4px", lineHeight: 1.6 };
 const helperPanelStyle: CSSProperties = { padding: "14px 16px", borderRadius: 16, border: "1px solid var(--line)", background: "var(--surface-fill)", color: "rgba(240,235,224,0.7)", lineHeight: 1.65, fontSize: 13 };
