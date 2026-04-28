@@ -275,6 +275,7 @@ function Screen3PageContent() {
   const activeTimerTargetRef = useRef<number | null>(null);
   const timeoutHandledSignatureRef = useRef<string | null>(null);
   const responseSelectionsRef = useRef<Record<string, Record<string, string>>>({});
+  const responseNodeSignatureRef = useRef<string>("");
 
   useEffect(() => {
     if (!getStoredAuthToken()) {
@@ -340,8 +341,8 @@ function Screen3PageContent() {
     [hand, isVillainThinking, isTimeoutTransitioning],
   );
   const workflowSteps = useMemo(
-    () => buildWorkflowSteps(currentStep, hand?.hand_over ?? false),
-    [currentStep, hand?.hand_over],
+    () => buildWorkflowSteps(currentStep, hand?.hand_over ?? false, scenario?.hero_is_ip === false),
+    [currentStep, hand?.hand_over, scenario?.hero_is_ip],
   );
   const workflowHelperText = useMemo(
     () => getWorkflowHelperText(hand, isVillainThinking),
@@ -506,12 +507,20 @@ function Screen3PageContent() {
       setStableResponseColumns(resolvedColumns);
     }
 
+    const responseNodeSignature = getResponseNodeSignature(hand, resolvedColumns);
+    const isNewResponseNode =
+      hand.ui_gate === "must_fill_response_matrix" &&
+      responseNodeSignature !== responseNodeSignatureRef.current;
     const nextSelections = initializeSelectionsFromHand(
       hand,
       resolvedColumns,
-      responseSelectionsRef.current,
+      isNewResponseNode ? undefined : responseSelectionsRef.current,
+      hand.ui_gate !== "must_fill_response_matrix",
     );
     setResponseSelections(nextSelections);
+    if (hand.ui_gate === "must_fill_response_matrix") {
+      responseNodeSignatureRef.current = responseNodeSignature;
+    }
 
     if (hand.betting_round.current_bet > 0) {
       const toCall = getToCallForHero(hand);
@@ -1991,6 +2000,18 @@ var(--bg);
           --pill-text: #F0EBE0;
         }
 
+        .response-pill.tone-positive {
+          --pill-bg: rgba(106, 158, 114, 1);
+          --pill-border: rgba(106, 158, 114, 1);
+          --pill-text: #141210;
+        }
+
+        .response-pill.tone-negative {
+          --pill-bg: rgba(231, 111, 81, 0.75);
+          --pill-border: rgba(231, 111, 81, 0.75);
+          --pill-text: #F0EBE0;
+        }
+
         .response-pill:hover:not(:disabled) {
           transform: translateY(-1px);
           border-color: rgba(240, 235, 224, 0.34);
@@ -2480,6 +2501,7 @@ function initializeSelectionsFromHand(
   hand: HandState,
   columns: string[],
   existingSelections?: Record<string, Record<string, string>>,
+  allowPartialExisting = false,
 ): Record<string, Record<string, string>> {
   const rows = hand.bucket_matrix_view.rows.map((row) => row.bucket_name);
 
@@ -2493,6 +2515,13 @@ function initializeSelectionsFromHand(
 
   if (selectionsMatchShape(existingSelections, rows, columns)) {
     return existingSelections as Record<string, Record<string, string>>;
+  }
+
+  if (allowPartialExisting && existingSelections) {
+    const mergedSelections = mergeSelectionsWithShape(blankSelections, existingSelections, rows, columns);
+    if (hasAnySelection(mergedSelections)) {
+      return mergedSelections;
+    }
   }
 
   if (
@@ -2522,6 +2551,40 @@ function selectionsMatchShape(
     const savedCols = Object.keys(selections[row] ?? {});
     return savedCols.length === columns.length && columns.every((column) => column in (selections[row] ?? {}));
   });
+}
+
+
+function mergeSelectionsWithShape(
+  blankSelections: Record<string, Record<string, string>>,
+  existingSelections: Record<string, Record<string, string>>,
+  rows: string[],
+  columns: string[],
+): Record<string, Record<string, string>> {
+  const merged: Record<string, Record<string, string>> = {};
+  for (const row of rows) {
+    merged[row] = {};
+    for (const column of columns) {
+      merged[row][column] = existingSelections[row]?.[column] ?? blankSelections[row]?.[column] ?? "";
+    }
+  }
+  return merged;
+}
+
+function hasAnySelection(selections: Record<string, Record<string, string>>): boolean {
+  return Object.values(selections).some((row) => Object.values(row).some(Boolean));
+}
+
+function getResponseNodeSignature(hand: HandState, columns: string[]): string {
+  return [
+    hand.hand_id,
+    hand.street,
+    hand.ui_gate,
+    hand.history.events.length,
+    hand.betting_round.current_bet,
+    hand.betting_round.hero_contrib,
+    hand.betting_round.villain_contrib,
+    columns.join("|"),
+  ].join(":");
 }
 
 function getSavedResponseColumns(hand: HandState | null): string[] {
@@ -2698,44 +2761,29 @@ function getCurrentStepKey(
 function buildWorkflowSteps(
   currentStep: PhaseKey,
   handOver: boolean,
+  heroIsOop = false,
 ): WorkflowStep[] {
+  const orderedSteps: Array<{ key: Exclude<PhaseKey, null | "done">; label: string }> = heroIsOop
+    ? [
+        { key: "matrix", label: "Step 1 · Fill Matrix" },
+        { key: "action", label: "Step 2 · Take Action" },
+        { key: "prune", label: "Step 3 · Prune Range" },
+      ]
+    : [
+        { key: "prune", label: "Step 1 · Prune Range" },
+        { key: "matrix", label: "Step 2 · Fill Matrix" },
+        { key: "action", label: "Step 3 · Take Action" },
+      ];
+
   if (handOver) {
-    return [
-      { key: "prune", label: "Step 1 · Prune Range", state: "complete" },
-      { key: "matrix", label: "Step 2 · Fill Matrix", state: "complete" },
-      { key: "action", label: "Step 3 · Take Action", state: "complete" },
-    ];
+    return orderedSteps.map((step) => ({ ...step, state: "complete" }));
   }
 
-  if (currentStep === "prune") {
-    return [
-      { key: "prune", label: "Step 1 · Prune Range", state: "active" },
-      { key: "matrix", label: "Step 2 · Fill Matrix", state: "upcoming" },
-      { key: "action", label: "Step 3 · Take Action", state: "upcoming" },
-    ];
-  }
-
-  if (currentStep === "matrix") {
-    return [
-      { key: "prune", label: "Step 1 · Prune Range", state: "complete" },
-      { key: "matrix", label: "Step 2 · Fill Matrix", state: "active" },
-      { key: "action", label: "Step 3 · Take Action", state: "upcoming" },
-    ];
-  }
-
-  if (currentStep === "action") {
-    return [
-      { key: "prune", label: "Step 1 · Prune Range", state: "complete" },
-      { key: "matrix", label: "Step 2 · Fill Matrix", state: "complete" },
-      { key: "action", label: "Step 3 · Take Action", state: "active" },
-    ];
-  }
-
-  return [
-    { key: "prune", label: "Step 1 · Prune Range", state: "upcoming" },
-    { key: "matrix", label: "Step 2 · Fill Matrix", state: "upcoming" },
-    { key: "action", label: "Step 3 · Take Action", state: "upcoming" },
-  ];
+  const activeIndex = orderedSteps.findIndex((step) => step.key === currentStep);
+  return orderedSteps.map((step, index): WorkflowStep => ({
+    ...step,
+    state: activeIndex === -1 ? "upcoming" : index < activeIndex ? "complete" : index === activeIndex ? "active" : "upcoming",
+  }));
 }
 
 function getWorkflowHelperText(

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from "react";
+import Link from "next/link";
 import AppShell from "../../components/app/AppShell";
 import TrendChart from "../../components/app/TrendChart";
 import { API_BASE, apiFetch } from "../../lib/api";
@@ -90,7 +91,7 @@ export default function AdminPage() {
   const [bulkInviteState, setBulkInviteState] = useState({ emails: "", role: "member", organization_id: "", expires_in_days: 14 });
 
   const canManageRoles = user?.role === "owner" || user?.role === "admin";
-  const canDeleteUsers = user?.role === "owner";
+  const canDeleteUsers = user?.role === "owner" || user?.role === "admin" || user?.role === "coach";
 
   const membershipSummaryByUserId = useMemo(() => {
     const summary = new Map<string, string[]>();
@@ -112,16 +113,53 @@ export default function AdminPage() {
     return summary;
   }, [organizations]);
 
+  const userNameById = useMemo(() => {
+    const summary = new Map<string, string>();
+    users.forEach((entry) => {
+      summary.set(entry.user_id, entry.display_name || entry.email);
+    });
+    return summary;
+  }, [users]);
+
+  const assignmentCountByUserId = useMemo(() => {
+    const summary = new Map<string, number>();
+    assignments.forEach((assignment) => {
+      if (assignment.status === "completed") return;
+      summary.set(assignment.target_user_id, (summary.get(assignment.target_user_id) ?? 0) + 1);
+    });
+    return summary;
+  }, [assignments]);
+
+  const activeAssignmentsSorted = useMemo(() => {
+    return assignments
+      .filter((assignment) => assignment.status !== "completed")
+      .slice()
+      .sort((a, b) => dueSortValue(a.due_at) - dueSortValue(b.due_at) || a.title.localeCompare(b.title));
+  }, [assignments]);
+
+  const pendingInvitesSorted = useMemo(() => {
+    return invites
+      .filter((invite) => invite.status !== "consumed")
+      .slice()
+      .sort((a, b) => dueSortValue(a.expires_at) - dueSortValue(b.expires_at) || (a.email || "").localeCompare(b.email || ""));
+  }, [invites]);
+
+  const auditLogsSorted = useMemo(() => {
+    return auditLogs.slice().sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+  }, [auditLogs]);
+
   const memberPerformanceRows = useMemo(() => {
     if (!analytics) return [];
 
     const byUserId = new Map<string, {
       user_id: string;
       display_name: string;
+      email?: string;
+      role?: string;
       completed_hands: number;
       avg_ranging_score: number | null;
       avg_response_score: number | null;
-      active_assignments?: number;
+      active_assignments: number;
       overdue_assignments?: number;
       is_active?: boolean;
     }>();
@@ -147,29 +185,31 @@ export default function AdminPage() {
         completed_hands: entry.completed_hands,
         avg_ranging_score: entry.avg_ranging_score,
         avg_response_score: entry.avg_response_score,
+        active_assignments: assignmentCountByUserId.get(entry.user_id) ?? byUserId.get(entry.user_id)?.active_assignments ?? 0,
       });
     });
 
-    users.forEach((entry) => {
-      if (!byUserId.has(entry.user_id)) {
-        byUserId.set(entry.user_id, {
-          user_id: entry.user_id,
-          display_name: entry.display_name || entry.email,
-          completed_hands: 0,
-          avg_ranging_score: null,
-          avg_response_score: null,
-          is_active: entry.is_active,
-        });
-      }
+    users.filter((entry) => entry.role === "member").forEach((entry) => {
+      const existing = byUserId.get(entry.user_id);
+      byUserId.set(entry.user_id, {
+        ...(existing ?? {}),
+        user_id: entry.user_id,
+        display_name: entry.display_name || entry.email,
+        email: entry.email,
+        role: entry.role,
+        completed_hands: existing?.completed_hands ?? 0,
+        avg_ranging_score: existing?.avg_ranging_score ?? null,
+        avg_response_score: existing?.avg_response_score ?? null,
+        active_assignments: assignmentCountByUserId.get(entry.user_id) ?? existing?.active_assignments ?? 0,
+        overdue_assignments: existing?.overdue_assignments ?? 0,
+        is_active: entry.is_active,
+      });
     });
 
-    return Array.from(byUserId.values()).sort((a, b) => {
-      const aHands = a.completed_hands ?? 0;
-      const bHands = b.completed_hands ?? 0;
-      if (aHands !== bHands) return bHands - aHands;
-      return a.display_name.localeCompare(b.display_name);
-    });
-  }, [analytics, users]);
+    return Array.from(byUserId.values())
+      .filter((entry) => users.find((userEntry) => userEntry.user_id === entry.user_id)?.role === "member")
+      .sort((a, b) => combinedScore(a.avg_ranging_score, a.avg_response_score) - combinedScore(b.avg_ranging_score, b.avg_response_score) || a.display_name.localeCompare(b.display_name));
+  }, [analytics, users, assignmentCountByUserId]);
 
   function updateInviteRole(role: string) {
     setInviteState((current) => ({ ...current, role }));
@@ -181,14 +221,14 @@ export default function AdminPage() {
 
   async function loadAll() {
     const [usersRes, assignmentsRes, villainsRes, scenariosRes, analyticsRes, auditsRes, orgsRes, invitesRes] = await Promise.all([
-      apiFetch(`${API_BASE}/admin/users?limit=50`, { cache: "no-store" }),
-      apiFetch(`${API_BASE}/admin/assignments?limit=50`, { cache: "no-store" }),
+      apiFetch(`${API_BASE}/admin/users?limit=500`, { cache: "no-store" }),
+      apiFetch(`${API_BASE}/admin/assignments?limit=500`, { cache: "no-store" }),
       apiFetch(`${API_BASE}/villains`, { cache: "no-store" }),
       apiFetch(`${API_BASE}/scenarios`, { cache: "no-store" }),
       apiFetch(`${API_BASE}/admin/analytics`, { cache: "no-store" }),
-      apiFetch(`${API_BASE}/admin/audit-logs?limit=50`, { cache: "no-store" }),
+      apiFetch(`${API_BASE}/admin/audit-logs?limit=250`, { cache: "no-store" }),
       apiFetch(`${API_BASE}/admin/organizations`, { cache: "no-store" }),
-      apiFetch(`${API_BASE}/admin/signup-invites?limit=50`, { cache: "no-store" }),
+      apiFetch(`${API_BASE}/admin/signup-invites?limit=500`, { cache: "no-store" }),
     ]);
     const [usersData, assignmentsData, villainsData, scenariosData, analyticsData, auditsData, orgsData, invitesData] = await Promise.all([
       usersRes.json(), assignmentsRes.json(), villainsRes.json(), scenariosRes.json(), analyticsRes.json(), auditsRes.json(), orgsRes.json(), invitesRes.json(),
@@ -383,6 +423,28 @@ export default function AdminPage() {
       setError("Unable to copy the signup link.");
     }
   }
+
+  function canMaintainEntry(entry: UserEntry) {
+    if (!user || entry.user_id === user.user_id) return false;
+    if (user.role === "owner") return true;
+    if (user.role === "admin") return entry.role !== "owner";
+    if (user.role === "coach") return entry.role === "member";
+    return false;
+  }
+
+  function canRoleEditEntry(entry: UserEntry) {
+    if (!user || entry.user_id === user.user_id) return false;
+    if (user.role === "owner") return true;
+    if (user.role === "admin") return entry.role !== "owner";
+    return false;
+  }
+
+  function roleOptionsForEntry(entry: UserEntry) {
+    if (user?.role === "owner") return ["member", "coach", "admin", "owner"];
+    if (user?.role === "admin" && entry.role !== "owner") return ["member", "coach", "admin"];
+    return ["member"];
+  }
+
   const headerStats = analytics ? (
     <>
       <HeaderStat label="Avg villain ranging" value={formatScore(analytics.summary.avg_ranging_score)} tone="coral" />
@@ -415,29 +477,20 @@ export default function AdminPage() {
                   {analytics.trend_points.length ? <TrendChart points={buildRunningAverageTrend(analytics.trend_points)} /> : <EmptyState copy="Complete more finished hands to unlock the pool trend." />}
                 </section>
                 <section style={panelStyle}>
-                  <SectionHeader eyebrow="Member focus" title="Who needs help next" />
-                  <div style={stackStyle}>
-                    {analytics.users_needing_attention.length ? analytics.users_needing_attention.slice(0, 5).map((entry) => (
-                      <MemberRow key={entry.user_id} title={entry.display_name} subtitle={`${entry.completed_hands} hands · ${entry.overdue_assignments} overdue assignments`} ranging={entry.avg_ranging_score} response={entry.avg_response_score} />
-                    )) : <EmptyState copy="No members need attention yet." />}
-                  </div>
-                </section>
-                <section style={panelStyle}>
-                  <SectionHeader eyebrow="Individual results" title="Member performance snapshot" />
-                  <div style={helperCopyStyle}>A coach-facing view of individual member volume, scores, and assignment pressure.</div>
-                  <div style={{ ...stackStyle, marginTop: 14 }}>
-                    {memberPerformanceRows.length ? memberPerformanceRows.slice(0, 10).map((entry) => (
-                      <MemberDetailRow
-                        key={entry.user_id}
-                        title={entry.display_name}
-                        hands={entry.completed_hands}
-                        ranging={entry.avg_ranging_score}
-                        response={entry.avg_response_score}
-                        activeAssignments={entry.active_assignments}
-                        overdueAssignments={entry.overdue_assignments}
-                        isActive={entry.is_active}
-                      />
-                    )) : <EmptyState copy="No individual member results yet." />}
+                  <SectionHeader eyebrow="Member focus" title="Lowest combined scores first" />
+                  <div style={scrollBoxStyle}>
+                    {memberPerformanceRows.length ? memberPerformanceRows.map((entry) => (
+                      <Link key={entry.user_id} href={`/results?member_id=${encodeURIComponent(entry.user_id)}`} style={memberFocusRowStyle}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={rowTitleStyle}>{entry.display_name}</div>
+                          <div style={rowMetaStyle}>{entry.completed_hands} hands · {entry.active_assignments} assignments</div>
+                        </div>
+                        <div style={memberFocusMetricWrapStyle}>
+                          <MetricPill label="Range" value={entry.avg_ranging_score} tone="coral" />
+                          <MetricPill label="Action" value={entry.avg_response_score} tone="green" />
+                        </div>
+                      </Link>
+                    )) : <EmptyState copy="No member performance rows yet." />}
                   </div>
                 </section>
               </div>
@@ -451,26 +504,18 @@ export default function AdminPage() {
                     <InsightCard tone="green" title="Action-read strength" copy={analytics.insight_drivers.response.high} />
                   </div>
                 </section>
-                <section style={panelStyle}>
-                  <SectionHeader eyebrow="Top performers" title="Who is excelling" />
-                  <div style={stackStyle}>
-                    {analytics.strongest_users.length ? analytics.strongest_users.slice(0, 5).map((entry) => (
-                      <MemberRow key={entry.user_id} title={entry.display_name} subtitle={`${entry.completed_hands} hands`} ranging={entry.avg_ranging_score} response={entry.avg_response_score} />
-                    )) : <EmptyState copy="No top-performer data yet." />}
-                  </div>
-                </section>
               </div>
             </section>
           ) : null}
 
           {activeTab === "assignments" ? (
             <section style={mainGridStyle}>
-              <section style={panelStyle}>
+              <section style={assignmentPanelStyle}>
                 <SectionHeader eyebrow="Create" title="Assign the next reps" />
                 <form onSubmit={handleCreateAssignment} style={formGridStyle}>
                   <label style={labelStyle}>Member<select value={createState.target_user_id} onChange={(event) => setCreateState((current) => ({ ...current, target_user_id: event.target.value }))} style={inputStyle} required>
                     <option value="">Select member</option>
-                    {users.map((entry) => <option key={entry.user_id} value={entry.user_id}>{entry.display_name || entry.email}</option>)}
+                    {users.filter((entry) => entry.role === "member").map((entry) => <option key={entry.user_id} value={entry.user_id}>{entry.display_name || entry.email}</option>)}
                   </select></label>
                   <label style={labelStyle}><span style={labelTitleStyle}>Title <span style={requiredStyle}>*</span></span><input value={createState.title} onChange={(event) => setCreateState((current) => ({ ...current, title: event.target.value }))} style={inputStyle} placeholder="Ex. 25 reps of 3Bet IP vs Tom" required /></label>
                   <label style={labelStyle}>Description<textarea value={createState.description} onChange={(event) => setCreateState((current) => ({ ...current, description: event.target.value }))} style={{ ...inputStyle, minHeight: 92 }} placeholder="Optional assignment note" /></label>
@@ -486,19 +531,19 @@ export default function AdminPage() {
                   <button type="submit" style={primaryButtonStyle}>Create assignment</button>
                 </form>
               </section>
-              <section style={panelStyle}>
+              <section style={assignmentPanelStyle}>
                 <SectionHeader eyebrow="Queue" title="Active coach assignments" />
-                <div style={stackStyle}>
-                  {assignments.length ? assignments.slice(0, 8).map((assignment) => (
-                    <div key={assignment.assignment_id} style={rowStyle}>
+                <div style={scrollBoxStyle}>
+                  {activeAssignmentsSorted.length ? activeAssignmentsSorted.map((assignment) => (
+                    <div key={assignment.assignment_id} style={scrollRowStyle}>
                       <div style={{ minWidth: 0 }}>
                         <div style={rowTitleStyle}>{assignment.title}</div>
-                        <div style={rowMetaStyle}>{[assignment.scenario_display_name, assignment.villain_display_name].filter(Boolean).join(" · ") || "Open scope"}</div>
+                        <div style={rowMetaStyle}>{userNameById.get(assignment.target_user_id) || "Member"}</div>
                         <div style={rowHelperStyle}>{assignment.progress.progress_count}/{assignment.progress.repetition_target} reps{assignment.due_at ? ` · due ${new Date(assignment.due_at).toLocaleDateString()}` : ""}</div>
                       </div>
                       <div style={tagStyle}>{assignment.status}</div>
                     </div>
-                  )) : <EmptyState copy="No assignments yet." />}
+                  )) : <EmptyState copy="No active assignments yet." />}
                 </div>
               </section>
             </section>
@@ -507,36 +552,32 @@ export default function AdminPage() {
           {activeTab === "members" ? (
             <section style={mainGridStyle}>
               <section style={{ display: "grid", gap: 18 }}>
-                <section style={panelStyle}>
+                <section style={membersTopPanelStyle}>
                   <SectionHeader eyebrow="Members" title="Accounts, roles, and organization access" />
-                  <div style={helperPanelStyle}>Use signup links for brand-new accounts. Use the role dropdown here for existing accounts. Use organization membership only when you are attaching an existing user to a company roster.</div>
-                  <div style={stackStyle}>
+                  <div style={helperPanelStyle}>Use signup links for brand-new accounts. Keep this table focused on the current roster, role, organization, and maintenance actions.</div>
+                  <div style={scrollBoxStyle}>
                     {users.length ? users.map((entry) => {
                       const memberships = membershipSummaryByUserId.get(entry.user_id) ?? [];
+                      const canMaintain = canMaintainEntry(entry);
+                      const canEditRole = canRoleEditEntry(entry);
                       return (
-                        <div key={entry.user_id} style={memberAdminRowStyle}>
-                          <div style={{ minWidth: 0, display: "grid", gap: 8 }}>
-                            <div>
-                              <div style={rowTitleStyle}>{entry.display_name || entry.email}</div>
-                              <div style={rowMetaStyle}>{entry.email}</div>
-                            </div>
-                            <div style={pillWrapStyle}>
-                              <span style={tagStyle}>platform role {entry.role}</span>
-                              <span style={entry.is_active ? activeTagStyle : inactiveTagStyle}>{entry.is_active ? "active" : "inactive"}</span>
-                              {memberships.length ? memberships.map((membership) => <span key={membership} style={softTagStyle}>{membership}</span>) : <span style={softTagStyle}>No organization linked</span>}
-                            </div>
+                        <div key={entry.user_id} style={scrollRowStyle}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={rowTitleStyle}>{entry.display_name || entry.email}</div>
+                            <div style={rowMetaStyle}>{entry.email}</div>
+                            <div style={rowHelperStyle}>{memberships.length ? memberships.join(" · ") : "No organization linked"}</div>
                           </div>
-                          <div style={actionClusterStyle}>
-                            {canManageRoles ? (
+                          <div style={memberMaintenanceStyle}>
+                            {canEditRole ? (
                               <select value={entry.role} onChange={(event) => void handleRoleChange(entry.user_id, event.target.value)} style={compactInputStyle}>
-                                <option value="member">member</option>
-                                <option value="coach">coach</option>
-                                <option value="admin">admin</option>
-                                <option value="owner">owner</option>
+                                {roleOptionsForEntry(entry).map((option) => <option key={option} value={option}>{option}</option>)}
                               </select>
-                            ) : null}
-                            {canManageRoles ? <button type="button" onClick={() => void handleActiveToggle(entry.user_id, !entry.is_active)} style={entry.is_active ? dangerButtonStyle : successButtonStyle}>{entry.is_active ? "Deactivate" : "Reactivate"}</button> : null}
-                            {canDeleteUsers ? <button type="button" onClick={() => void handleDeleteUser(entry.user_id, entry.display_name || entry.email)} style={deleteButtonStyle}>Delete</button> : null}
+                            ) : (
+                              <span style={tagStyle}>{entry.role}</span>
+                            )}
+                            <span style={entry.is_active ? activeTagStyle : inactiveTagStyle}>{entry.is_active ? "active" : "inactive"}</span>
+                            {canMaintain ? <button type="button" onClick={() => void handleActiveToggle(entry.user_id, !entry.is_active)} style={entry.is_active ? dangerButtonStyle : successButtonStyle}>{entry.is_active ? "Deactivate" : "Reactivate"}</button> : null}
+                            {canMaintain && canDeleteUsers ? <button type="button" onClick={() => void handleDeleteUser(entry.user_id, entry.display_name || entry.email)} style={deleteButtonStyle}>Delete</button> : null}
                           </div>
                         </div>
                       );
@@ -546,121 +587,126 @@ export default function AdminPage() {
 
                 <section style={panelStyle}>
                   <SectionHeader eyebrow="Invites" title="Pending signup links" />
-                  <div style={helperCopyStyle}>Keep these links available until the person finishes account setup. Delete old links once they are no longer needed.</div>
-                  <div style={{ ...stackStyle, marginTop: 14 }}>
-                    {invites.length ? invites.slice(0, 12).map((invite) => (
-                      <div key={invite.invite_id} style={inviteCardRowStyle}>
-                        <div style={{ minWidth: 0, display: "grid", gap: 8 }}>
-                          <div>
-                            <div style={rowTitleStyle}>{invite.email || "Open invite"}</div>
-                            <div style={pillWrapStyle}>
-                              <span style={tagStyle}>platform role {invite.role}</span>
-                              {invite.organization_id ? <span style={softTagStyle}>{inviteOrganizationName.get(invite.organization_id || "") || "Organization"}</span> : <span style={softTagStyle}>No organization</span>}
-                              {invite.membership_role && invite.organization_id ? <span style={softTagStyle}>roster {invite.membership_role}</span> : null}
-                            </div>
-                          </div>
-                          <div style={inviteUrlStyle}>{invite.invite_url || "Invite link unavailable"}</div>
-                          <div style={pillWrapStyle}>
-                            <span style={tagStyle}>{invite.status}</span>
-                            <span style={softTagStyle}>{invite.expires_at ? `expires ${new Date(invite.expires_at).toLocaleDateString()}` : "no expiry"}</span>
-                            <span style={softTagStyle}>code {invite.invite_code}</span>
-                          </div>
+                  <div style={helperCopyStyle}>Pending links are shown until they are consumed or deleted.</div>
+                  <div style={scrollBoxStyle}>
+                    {pendingInvitesSorted.length ? pendingInvitesSorted.map((invite) => (
+                      <div key={invite.invite_id} style={scrollRowStyle}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={rowTitleStyle}>{invite.email || "Open invite"}</div>
+                          <div style={rowMetaStyle}>{invite.expires_at ? `expires ${new Date(invite.expires_at).toLocaleDateString()}` : "no expiry"}</div>
+                          <div style={rowHelperStyle}>{invite.organization_id ? inviteOrganizationName.get(invite.organization_id) || "Organization" : "No organization"} · {invite.role}</div>
                         </div>
                         <div style={actionClusterStyle}>
                           {invite.invite_url ? <button type="button" onClick={() => void handleCopyInvite(invite.invite_url!)} style={secondaryButtonStyle}>Copy link</button> : null}
                           <button type="button" onClick={() => void handleDeleteInvite(invite.invite_id)} style={deleteButtonStyle}>Delete link</button>
                         </div>
                       </div>
-                    )) : <EmptyState copy="No signup invites yet." />}
+                    )) : <EmptyState copy="No pending signup invites." />}
                   </div>
                 </section>
               </section>
-              <section style={{ display: "grid", gap: 18 }}>
-                <section style={panelStyle}>
-                  <SectionHeader eyebrow="Admin tools" title="Organizations and access setup" />
-                  <div style={helperPanelStyle}>Create the organization first, then send signup links. Existing users can be attached later without creating a new account.</div>
-                  {canManageRoles ? (
-                    <details style={detailsStyle}>
-                      <summary style={summaryStyle}>Create organization</summary>
-                      <form onSubmit={handleCreateOrg} style={stackStyle}>
-                        <input value={orgState.name} onChange={(event) => setOrgState((current) => ({ ...current, name: event.target.value }))} placeholder="Organization name" style={inputStyle} required />
-                        <input value={orgState.slug} onChange={(event) => setOrgState((current) => ({ ...current, slug: event.target.value }))} placeholder="organization-slug" style={inputStyle} required />
-                        <input value={orgState.external_provider} onChange={(event) => setOrgState((current) => ({ ...current, external_provider: event.target.value }))} placeholder="External provider (optional)" style={inputStyle} />
-                        <input value={orgState.external_org_id} onChange={(event) => setOrgState((current) => ({ ...current, external_org_id: event.target.value }))} placeholder="External org ID (optional)" style={inputStyle} />
-                        <button type="submit" style={secondaryButtonStyle}>Create organization</button>
-                      </form>
-                    </details>
-                  ) : null}
-                  <details style={detailsStyle}>
-                    <summary style={summaryStyle}>Add existing user to organization</summary>
-                    <form onSubmit={handleAddOrgMember} style={stackStyle}>
-                      <select value={orgMemberState.organization_id} onChange={(event) => setOrgMemberState((current) => ({ ...current, organization_id: event.target.value }))} style={inputStyle} required><option value="">Select organization</option>{organizations.map((org) => <option key={org.organization_id} value={org.organization_id}>{org.name}</option>)}</select>
-                      <select value={orgMemberState.user_id} onChange={(event) => setOrgMemberState((current) => ({ ...current, user_id: event.target.value }))} style={inputStyle} required><option value="">Select user</option>{users.map((entry) => <option key={entry.user_id} value={entry.user_id}>{entry.display_name || entry.email}</option>)}</select>
-                      <label style={labelStyle}><span style={labelTitleStyle}>Organization role</span><select value={orgMemberState.membership_role} onChange={(event) => setOrgMemberState((current) => ({ ...current, membership_role: event.target.value }))} style={inputStyle}>{ORG_ROLE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
-                      <button type="submit" style={secondaryButtonStyle}>Save membership</button>
-                    </form>
-                  </details>
-                  <details style={detailsStyle}>
-                    <summary style={summaryStyle}>Create signup invite</summary>
-                    <form onSubmit={handleCreateInvite} style={stackStyle}>
-                      <label style={labelStyle}><span style={labelTitleStyle}>Invite email</span><input value={inviteState.email} onChange={(event) => setInviteState((current) => ({ ...current, email: event.target.value }))} placeholder="Required for account-specific invites" style={inputStyle} /></label>
-                      <div style={twoColStyle}>
-                        <label style={labelStyle}><span style={labelTitleStyle}>Account role</span><select value={inviteState.role} onChange={(event) => updateInviteRole(event.target.value)} style={inputStyle}>{roleOptionsForUser(canManageRoles).map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
-                        <label style={labelStyle}><span style={labelTitleStyle}>Organization</span><select value={inviteState.organization_id} onChange={(event) => setInviteState((current) => ({ ...current, organization_id: event.target.value }))} style={inputStyle}>
-                          {canManageRoles ? <option value="">No organization</option> : <option value="">Select organization</option>}
-                          {organizations.map((org) => <option key={org.organization_id} value={org.organization_id}>{org.name}</option>)}
-                        </select></label>
-                      </div>
-                      <div style={twoColStyle}>
-                        <div />
-                        <label style={labelStyle}><span style={labelTitleStyle}>Invite expires in</span><input type="number" min={1} max={90} value={inviteState.expires_in_days} onChange={(event) => setInviteState((current) => ({ ...current, expires_in_days: Number(event.target.value) || 14 }))} placeholder="Expires in days" style={inputStyle} /></label>
-                      </div>
-                      <div style={helperCopyStyle}>This is the standard onboarding path for a brand-new person. The selected account role is what they will land with after signup. {inviteState.organization_id ? "Choosing an organization will also place them into that roster automatically." : "Choose an organization only when this new account should start inside a company roster."}</div>
-                      <button type="submit" style={primaryButtonStyle}>Create invite</button>
-                    </form>
-                  </details>
 
-                  <details style={detailsStyle}>
-                    <summary style={summaryStyle}>Bulk roster invites</summary>
-                    <form onSubmit={handleCreateBulkInvites} style={stackStyle}>
-                      <label style={labelStyle}><span style={labelTitleStyle}>Email list</span><textarea value={bulkInviteState.emails} onChange={(event) => setBulkInviteState((current) => ({ ...current, emails: event.target.value }))} placeholder="One email per line" style={{ ...inputStyle, minHeight: 140, resize: "vertical" }} required /></label>
-                      <div style={twoColStyle}>
-                        <label style={labelStyle}><span style={labelTitleStyle}>Account role</span><select value={bulkInviteState.role} onChange={(event) => updateBulkInviteRole(event.target.value)} style={inputStyle}>{roleOptionsForUser(canManageRoles).map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
-                        <label style={labelStyle}><span style={labelTitleStyle}>Organization</span><select value={bulkInviteState.organization_id} onChange={(event) => setBulkInviteState((current) => ({ ...current, organization_id: event.target.value }))} style={inputStyle}>
-                          {canManageRoles ? <option value="">No organization</option> : <option value="">Select organization</option>}
-                          {organizations.map((org) => <option key={org.organization_id} value={org.organization_id}>{org.name}</option>)}
-                        </select></label>
-                      </div>
-                      <div style={twoColStyle}>
-                        <div />
-                        <label style={labelStyle}><span style={labelTitleStyle}>Invite expires in</span><input type="number" min={1} max={90} value={bulkInviteState.expires_in_days} onChange={(event) => setBulkInviteState((current) => ({ ...current, expires_in_days: Number(event.target.value) || 14 }))} placeholder="Expires in days" style={inputStyle} /></label>
-                      </div>
-                      <div style={helperCopyStyle}>Use this when a training company sends you a member or coach list. Each new account gets the selected platform role, and choosing an organization places that person into the roster automatically.</div>
-                      <button type="submit" style={primaryButtonStyle}>Create bulk invites</button>
-                    </form>
-                  </details>
-                  {canManageRoles ? (
+              <section style={{ display: "grid", gap: 18 }}>
+                <section style={membersTopPanelStyle}>
+                  <SectionHeader eyebrow="Admin tools" title="Organizations and access setup" />
+                  <div style={helperCopyStyle}>Create the organization first, then send signup links. Existing users can be attached later without creating a new account.</div>
+                  <div style={toolStackStyle}>
+                    {canManageRoles ? (
+                      <details style={detailsStyle}>
+                        <summary style={summaryStyle}><span style={summaryIconStyle}>⌄</span><span>Create organization</span></summary>
+                        <form onSubmit={handleCreateOrg} style={stackStyle}>
+                          <input value={orgState.name} onChange={(event) => setOrgState((current) => ({ ...current, name: event.target.value }))} placeholder="Organization name" style={inputStyle} required />
+                          <input value={orgState.slug} onChange={(event) => setOrgState((current) => ({ ...current, slug: event.target.value }))} placeholder="organization-slug" style={inputStyle} required />
+                          <input value={orgState.external_provider} onChange={(event) => setOrgState((current) => ({ ...current, external_provider: event.target.value }))} placeholder="External provider (optional)" style={inputStyle} />
+                          <input value={orgState.external_org_id} onChange={(event) => setOrgState((current) => ({ ...current, external_org_id: event.target.value }))} placeholder="External org ID (optional)" style={inputStyle} />
+                          <button type="submit" style={secondaryButtonStyle}>Create organization</button>
+                        </form>
+                      </details>
+                    ) : null}
+
                     <details style={detailsStyle}>
-                      <summary style={summaryStyle}>Advanced · link external identity</summary>
-                      <form onSubmit={handleLinkExternal} style={stackStyle}>
-                        <select value={externalState.user_id} onChange={(event) => setExternalState((current) => ({ ...current, user_id: event.target.value }))} style={inputStyle} required><option value="">Select user</option>{users.map((entry) => <option key={entry.user_id} value={entry.user_id}>{entry.display_name || entry.email}</option>)}</select>
-                        <input value={externalState.provider} onChange={(event) => setExternalState((current) => ({ ...current, provider: event.target.value }))} placeholder="Provider" style={inputStyle} required />
-                        <input value={externalState.external_user_id} onChange={(event) => setExternalState((current) => ({ ...current, external_user_id: event.target.value }))} placeholder="External user ID" style={inputStyle} required />
-                        <input value={externalState.external_email} onChange={(event) => setExternalState((current) => ({ ...current, external_email: event.target.value }))} placeholder="External email (optional)" style={inputStyle} />
-                        <button type="submit" style={secondaryButtonStyle}>Link identity</button>
+                      <summary style={summaryStyle}><span style={summaryIconStyle}>⌄</span><span>Add existing user to organization</span></summary>
+                      <form onSubmit={handleAddOrgMember} style={stackStyle}>
+                        <select value={orgMemberState.organization_id} onChange={(event) => setOrgMemberState((current) => ({ ...current, organization_id: event.target.value }))} style={inputStyle} required><option value="">Select organization</option>{organizations.map((org) => <option key={org.organization_id} value={org.organization_id}>{org.name}</option>)}</select>
+                        <select value={orgMemberState.user_id} onChange={(event) => setOrgMemberState((current) => ({ ...current, user_id: event.target.value }))} style={inputStyle} required><option value="">Select user</option>{users.map((entry) => <option key={entry.user_id} value={entry.user_id}>{entry.display_name || entry.email}</option>)}</select>
+                        <label style={labelStyle}><span style={labelTitleStyle}>Organization role</span><select value={orgMemberState.membership_role} onChange={(event) => setOrgMemberState((current) => ({ ...current, membership_role: event.target.value }))} style={inputStyle}>{ORG_ROLE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+                        <button type="submit" style={secondaryButtonStyle}>Save membership</button>
                       </form>
                     </details>
-                  ) : null}
+
+                    <details style={detailsStyle}>
+                      <summary style={summaryStyle}><span style={summaryIconStyle}>⌄</span><span>Create signup invite</span></summary>
+                      <form onSubmit={handleCreateInvite} style={stackStyle}>
+                        <label style={labelStyle}><span style={labelTitleStyle}>Invite email</span><input value={inviteState.email} onChange={(event) => setInviteState((current) => ({ ...current, email: event.target.value }))} placeholder="Required for account-specific invites" style={inputStyle} /></label>
+                        <div style={twoColStyle}>
+                          <label style={labelStyle}><span style={labelTitleStyle}>Account role</span><select value={inviteState.role} onChange={(event) => updateInviteRole(event.target.value)} style={inputStyle}>{roleOptionsForUser(canManageRoles).map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+                          <label style={labelStyle}><span style={labelTitleStyle}>Organization</span><select value={inviteState.organization_id} onChange={(event) => setInviteState((current) => ({ ...current, organization_id: event.target.value }))} style={inputStyle}>
+                            {canManageRoles ? <option value="">No organization</option> : <option value="">Select organization</option>}
+                            {organizations.map((org) => <option key={org.organization_id} value={org.organization_id}>{org.name}</option>)}
+                          </select></label>
+                        </div>
+                        <div style={twoColStyle}>
+                          <div />
+                          <label style={labelStyle}><span style={labelTitleStyle}>Invite expires in</span><input type="number" min={1} max={90} value={inviteState.expires_in_days} onChange={(event) => setInviteState((current) => ({ ...current, expires_in_days: Number(event.target.value) || 14 }))} placeholder="Expires in days" style={inputStyle} /></label>
+                        </div>
+                        <div style={helperCopyStyle}>This is the standard onboarding path for a brand-new person.</div>
+                        <button type="submit" style={primaryButtonStyle}>Create invite</button>
+                      </form>
+                    </details>
+
+                    <details style={detailsStyle}>
+                      <summary style={summaryStyle}><span style={summaryIconStyle}>⌄</span><span>Bulk roster invites</span></summary>
+                      <form onSubmit={handleCreateBulkInvites} style={stackStyle}>
+                        <label style={labelStyle}><span style={labelTitleStyle}>Email list</span><textarea value={bulkInviteState.emails} onChange={(event) => setBulkInviteState((current) => ({ ...current, emails: event.target.value }))} placeholder="One email per line" style={{ ...inputStyle, minHeight: 140, resize: "vertical" }} required /></label>
+                        <div style={twoColStyle}>
+                          <label style={labelStyle}><span style={labelTitleStyle}>Account role</span><select value={bulkInviteState.role} onChange={(event) => updateBulkInviteRole(event.target.value)} style={inputStyle}>{roleOptionsForUser(canManageRoles).map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+                          <label style={labelStyle}><span style={labelTitleStyle}>Organization</span><select value={bulkInviteState.organization_id} onChange={(event) => setBulkInviteState((current) => ({ ...current, organization_id: event.target.value }))} style={inputStyle}>
+                            {canManageRoles ? <option value="">No organization</option> : <option value="">Select organization</option>}
+                            {organizations.map((org) => <option key={org.organization_id} value={org.organization_id}>{org.name}</option>)}
+                          </select></label>
+                        </div>
+                        <div style={twoColStyle}>
+                          <div />
+                          <label style={labelStyle}><span style={labelTitleStyle}>Invite expires in</span><input type="number" min={1} max={90} value={bulkInviteState.expires_in_days} onChange={(event) => setBulkInviteState((current) => ({ ...current, expires_in_days: Number(event.target.value) || 14 }))} placeholder="Expires in days" style={inputStyle} /></label>
+                        </div>
+                        <div style={helperCopyStyle}>Use this when a training company sends you a member or coach list.</div>
+                        <button type="submit" style={primaryButtonStyle}>Create bulk invites</button>
+                      </form>
+                    </details>
+
+                    {canManageRoles ? (
+                      <details style={detailsStyle}>
+                        <summary style={summaryStyle}><span style={summaryIconStyle}>⌄</span><span>Advanced · link external identity</span></summary>
+                        <form onSubmit={handleLinkExternal} style={stackStyle}>
+                          <select value={externalState.user_id} onChange={(event) => setExternalState((current) => ({ ...current, user_id: event.target.value }))} style={inputStyle} required><option value="">Select user</option>{users.map((entry) => <option key={entry.user_id} value={entry.user_id}>{entry.display_name || entry.email}</option>)}</select>
+                          <input value={externalState.provider} onChange={(event) => setExternalState((current) => ({ ...current, provider: event.target.value }))} placeholder="Provider" style={inputStyle} required />
+                          <input value={externalState.external_user_id} onChange={(event) => setExternalState((current) => ({ ...current, external_user_id: event.target.value }))} placeholder="External user ID" style={inputStyle} required />
+                          <input value={externalState.external_email} onChange={(event) => setExternalState((current) => ({ ...current, external_email: event.target.value }))} placeholder="External email (optional)" style={inputStyle} />
+                          <button type="submit" style={secondaryButtonStyle}>Link identity</button>
+                        </form>
+                      </details>
+                    ) : null}
+                  </div>
                 </section>
+
                 <section style={panelStyle}>
                   <SectionHeader eyebrow="Audit" title="Recent admin activity" />
-                  <div style={stackStyle}>
-                    {auditLogs.length ? auditLogs.slice(0, 6).map((entry) => <div key={entry.audit_log_id} style={rowStyle}><div><div style={rowTitleStyle}>{entry.action_type}</div><div style={rowMetaStyle}>{new Date(entry.created_at).toLocaleString()}</div></div></div>) : <EmptyState copy="No audit events yet." />}
+                  <div style={scrollBoxStyle}>
+                    {auditLogsSorted.length ? auditLogsSorted.map((entry) => (
+                      <div key={entry.audit_log_id} style={scrollRowStyle}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={rowTitleStyle}>{entry.action_type}</div>
+                          <div style={rowMetaStyle}>{entry.target_user_id ? userNameById.get(entry.target_user_id) || "User" : "System"}</div>
+                        </div>
+                        <div style={rowMetaStyle}>{new Date(entry.created_at).toLocaleDateString()}</div>
+                      </div>
+                    )) : <EmptyState copy="No audit events yet." />}
                   </div>
                 </section>
               </section>
             </section>
           ) : null}
+
         </>
       ) : null}
     </AppShell>
@@ -739,6 +785,18 @@ function buildRunningAverageTrend(points: AnalyticsPayload["trend_points"]) {
 
 function formatScore(value: number | null | undefined) { return value == null ? "—" : `${Math.round(value)}`; }
 
+function combinedScore(ranging: number | null | undefined, response: number | null | undefined) {
+  const values = [ranging, response].filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  if (!values.length) return Number.POSITIVE_INFINITY;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function dueSortValue(value: string | null | undefined) {
+  if (!value) return Number.MAX_SAFE_INTEGER;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : Number.MAX_SAFE_INTEGER;
+}
+
 const panelStyle: CSSProperties = { borderTop: "1px solid var(--line-soft)", paddingTop: 18 };
 const errorStyle: CSSProperties = { color: "var(--accent)", fontWeight: 700 };
 const noticeStyle: CSSProperties = { color: "var(--success)", fontWeight: 700 };
@@ -746,6 +804,14 @@ const tabRowStyle: CSSProperties = { display: "flex", gap: 10, flexWrap: "wrap" 
 const tabButtonStyle: CSSProperties = { padding: "11px 18px", borderRadius: 999, border: "1px solid var(--line)", background: "transparent", color: PALETTE.cream, fontWeight: 700 };
 const activeTabButtonStyle: CSSProperties = { padding: "11px 18px", borderRadius: 999, border: `1px solid ${PALETTE.coral}`, background: PALETTE.coral, color: PALETTE.cream, fontWeight: 700 };
 const mainGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 430px), 1fr))", gap: 24, alignItems: "start" };
+const assignmentPanelStyle: CSSProperties = { ...panelStyle, minHeight: 560, display: "grid", alignContent: "start" };
+const membersTopPanelStyle: CSSProperties = { ...panelStyle, minHeight: 620, display: "grid", alignContent: "start" };
+const scrollBoxStyle: CSSProperties = { maxHeight: 360, overflowY: "auto", display: "grid", gap: 0, border: "1px solid var(--line)", borderRadius: 18, background: "rgba(20,18,16,0.42)" };
+const scrollRowStyle: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center", padding: "15px 16px", borderTop: "1px solid var(--line-soft)" };
+const memberFocusRowStyle: CSSProperties = { ...scrollRowStyle, textDecoration: "none", color: PALETTE.cream };
+const memberFocusMetricWrapStyle: CSSProperties = { display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" };
+const memberMaintenanceStyle: CSSProperties = { display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap", minWidth: 220 };
+const toolStackStyle: CSSProperties = { display: "grid", marginTop: 14 };
 const sectionHeaderStyle: CSSProperties = { display: "grid", gap: 8, marginBottom: 16 };
 const eyebrowStyle: CSSProperties = { color: PALETTE.coral, fontSize: 12, textTransform: "uppercase", letterSpacing: 1.3, fontWeight: 900 };
 const sectionTitleStyle: CSSProperties = { margin: 0, fontSize: 26, lineHeight: 1.08 };
@@ -789,7 +855,8 @@ const activeTagStyle: CSSProperties = { ...tagStyle, background: PALETTE.green, 
 const inactiveTagStyle: CSSProperties = { ...tagStyle, background: "rgba(231,111,81,0.14)", border: `1px solid rgba(231,111,81,0.55)`, color: PALETTE.coral };
 const inviteCardRowStyle: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 14, alignItems: "flex-start", padding: "16px 18px", borderRadius: 18, border: "1px solid var(--line)", background: "var(--surface-fill)" };
 const inviteUrlStyle: CSSProperties = { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12, lineHeight: 1.55, color: "rgba(240,235,224,0.72)", wordBreak: "break-all" };
-const detailsStyle: CSSProperties = { marginTop: 12, borderRadius: 18, border: "1px solid rgba(231,111,81,0.28)", background: "linear-gradient(180deg, rgba(231,111,81,0.08), rgba(20,18,16,0.98))", padding: 14, boxShadow: "0 12px 30px rgba(0,0,0,0.18)" };
-const summaryStyle: CSSProperties = { cursor: "pointer", fontWeight: 900, color: PALETTE.cream, marginBottom: 12, fontSize: 17, listStyle: "none", padding: "10px 12px", borderRadius: 14, border: "1px solid rgba(231,111,81,0.26)", background: "rgba(231,111,81,0.12)" };
+const detailsStyle: CSSProperties = { borderTop: "1px solid var(--line-soft)", padding: "14px 0", margin: 0 };
+const summaryStyle: CSSProperties = { cursor: "pointer", fontWeight: 900, color: PALETTE.cream, marginBottom: 12, fontSize: 17, listStyle: "none", display: "flex", alignItems: "center", gap: 10 };
+const summaryIconStyle: CSSProperties = { width: 28, height: 28, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 999, border: "1px solid var(--line)", color: PALETTE.cream, fontSize: 18, lineHeight: 1 };
 const emptyStateStyle: CSSProperties = { color: PALETTE.muted, padding: "8px 0 4px", lineHeight: 1.6 };
 const helperPanelStyle: CSSProperties = { padding: "14px 16px", borderRadius: 16, border: "1px solid var(--line)", background: "var(--surface-fill)", color: "rgba(240,235,224,0.7)", lineHeight: 1.65, fontSize: 13 };

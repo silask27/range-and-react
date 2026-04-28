@@ -57,11 +57,11 @@ export default function DashboardPage() {
       {error ? <div style={errorStyle}>{error}</div> : null}
       {overview ? (
         <section className="open-grid-four">
-          <HomeLinkCard href="/account" icon={<PersonIcon />} title="Account" copy={`Signed in as ${user?.display_name || user?.email || "your account"}. Update profile, password, and access settings.`} extra={<span className="badge badge-muted">{user?.role}</span>} />
+          <HomeLinkCard href="/account" icon={<PersonIcon />} title="Account" copy={`Signed in as ${user?.display_name || user?.email || "your account"}. Update profile, password, and access settings.`} extra={<span className="badge badge-primary">{user?.role}</span>} />
           <HomeLinkCard href={suggestion?.quick_start_url || "/screen-1"} icon={<TableIcon />} title="Train" copy={cleanedSuggestionReason || "Open the trainer and run the next live rep."} extra={suggestion ? <span className="badge badge-primary">Start next rep</span> : null} />
           <HomeLinkCard href="/results" icon={<ChartIcon />} title="Results" copy={latest ? `Latest finished hand: ${latest.scenario_display_name || "Scenario"} vs ${latest.villain_display_name || "Villain"}.` : "Finished hands, score trends, and debriefs live here."} extra={<div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}><span className="badge badge-success">Villain ranging {formatScore(overview.summary.avg_ranging_score)}</span><span className="badge badge-primary">Action prediction {formatScore(overview.summary.avg_response_score)}</span></div>} />
           {isCoach ? (
-            <HomeLinkCard href="/admin" icon={<CoachIcon />} title="Coach" copy={topAssignment ? `Active assignment: ${topAssignment.title}. Review pool analytics and assign the next reps.` : "Pool analytics, member oversight, and assignments all in one place."} extra={<span className="badge badge-muted">{overview.summary.completed_hands} finished hands</span>} />
+            <HomeLinkCard href="/admin" icon={<CoachIcon />} title="Coach" copy={topAssignment ? `Active assignment: ${topAssignment.title}. Review pool analytics and assign the next reps.` : "Pool analytics, member oversight, and assignments all in one place."} extra={<span className="badge badge-primary">{overview.summary.completed_hands} finished hands</span>} />
           ) : (
             <HomeLinkCard href="/assignments" icon={<ClipboardIcon />} title="Assignments" copy={topAssignment ? `${topAssignment.title} · ${topAssignment.progress.progress_count}/${topAssignment.progress.repetition_target} reps complete.` : "Coach work and guided practice appear here."} extra={<span className="badge badge-muted">{overview.summary.assignments_active} active</span>} />
           )}

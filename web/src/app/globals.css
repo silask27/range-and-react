@@ -327,3 +327,6 @@ select::-ms-expand { display: none; }
     font-size: 15px;
   }
 }
+
+summary::-webkit-details-marker { display: none; }
+summary::marker { content: ""; }

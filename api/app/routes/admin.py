@@ -24,6 +24,7 @@ from api.app.services.auth_service import (
     create_signup_invite,
     delete_signup_invite,
     delete_user_permanently,
+    get_user_by_id,
     link_external_identity,
     list_signup_invites,
     list_users,
@@ -171,37 +172,59 @@ def admin_users_route(
     }
 
 
+def _target_user_for_maintenance(current_user: UserAccount, target_user_id: str) -> UserAccount:
+    target_user_id_clean = str(target_user_id or '').strip()
+    if not target_user_id_clean:
+        raise HTTPException(status_code=400, detail='user_id is required')
+    target = get_user_by_id(target_user_id_clean)
+    if target is None:
+        raise HTTPException(status_code=404, detail='User not found')
+    if target.user_id == current_user.user_id:
+        raise HTTPException(status_code=400, detail='You cannot manage your own account from this table')
+    if current_user.role == UserRole.COACH:
+        ensure_user_access(current_user, target.user_id)
+        if target.role != UserRole.MEMBER:
+            raise HTTPException(status_code=403, detail='Coaches can only manage member accounts in their organization')
+    if current_user.role == UserRole.ADMIN and target.role == UserRole.OWNER:
+        raise HTTPException(status_code=403, detail='Admins cannot manage owner accounts')
+    return target
+
+
 @router.post('/users/{user_id}/role')
-def admin_update_user_role_route(user_id: str, payload: dict = Body(...), current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN))) -> dict:
+def admin_update_user_role_route(user_id: str, payload: dict = Body(...), current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> dict:
+    target = _target_user_for_maintenance(current_user, user_id)
     role_raw = str(payload.get('role') or '').strip().lower()
     try:
         role = UserRole(role_raw)
-        updated = update_user_role(user_id=user_id, role=role)
-        log_audit_event(action_type='user_role_updated', actor=current_user, target_user_id=user_id, metadata={'role': role.value})
+        if current_user.role == UserRole.COACH and role != UserRole.MEMBER:
+            raise HTTPException(status_code=403, detail='Coaches can only keep organization users as members')
+        if current_user.role == UserRole.ADMIN and role == UserRole.OWNER:
+            raise HTTPException(status_code=403, detail='Admins cannot assign owner access')
+        updated = update_user_role(user_id=target.user_id, role=role)
+        log_audit_event(action_type='user_role_updated', actor=current_user, target_user_id=target.user_id, metadata={'role': role.value})
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {'user': updated}
 
 
 @router.post('/users/{user_id}/active')
-def admin_update_user_active_route(user_id: str, payload: dict = Body(...), current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN))) -> dict:
+def admin_update_user_active_route(user_id: str, payload: dict = Body(...), current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> dict:
+    target = _target_user_for_maintenance(current_user, user_id)
     is_active = bool(payload.get('is_active'))
     try:
-        updated = set_user_active(user_id=user_id, is_active=is_active)
-        log_audit_event(action_type='user_active_status_updated', actor=current_user, target_user_id=user_id, metadata={'is_active': is_active})
+        updated = set_user_active(user_id=target.user_id, is_active=is_active)
+        log_audit_event(action_type='user_active_status_updated', actor=current_user, target_user_id=target.user_id, metadata={'is_active': is_active})
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {'user': updated}
 
 
 @router.delete('/users/{user_id}')
-def admin_delete_user_route(user_id: str, current_user: UserAccount = Depends(require_role(UserRole.OWNER))) -> dict:
-    user_id_clean = str(user_id).strip()
-    if user_id_clean == current_user.user_id:
-        raise HTTPException(status_code=400, detail='You cannot delete your own owner account from the admin console')
+def admin_delete_user_route(user_id: str, current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> dict:
+    target = _target_user_for_maintenance(current_user, user_id)
     try:
-        deleted = delete_user_permanently(user_id=user_id_clean)
-        log_audit_event(action_type='user_deleted', actor=current_user, target_user_id=None, metadata={'deleted_user_id': user_id_clean, 'email': deleted['email'], 'role': deleted['role']})
+        deleted = delete_user_permanently(user_id=target.user_id)
+        log_audit_event(action_type='user_deleted', actor=current_user, target_user_id=None, metadata={'deleted_user_id': target.user_id, 'email': deleted['email'], 'role': deleted['role']})
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {'deleted_user': deleted}
@@ -230,7 +253,7 @@ def admin_link_external_identity_route(user_id: str, payload: dict = Body(...), 
 @router.get('/signup-invites')
 def admin_signup_invites_route(current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH)), limit: int = 100) -> dict:
     org_scope, _ = _scope(current_user)
-    invites = [_decorate_invite(invite) for invite in list_signup_invites(limit=limit, organization_ids=org_scope)]
+    invites = [_decorate_invite(invite) for invite in list_signup_invites(limit=limit, include_consumed=False, organization_ids=org_scope)]
     return {'invites': invites}
 
 
@@ -239,7 +262,7 @@ def admin_create_signup_invite_route(payload: dict = Body(...), current_user: Us
     email = (str(payload.get('email') or '').strip() or None)
     role_raw = str(payload.get('role') or UserRole.MEMBER.value).strip().lower()
     requested_org_id = (str(payload.get('organization_id') or '').strip() or None)
-    membership_role = str(payload.get('membership_role') or role_raw).strip().lower() or role_raw
+    membership_role = str(payload.get('membership_role') or 'member').strip().lower() or 'member'
     expires_in_days = int(payload.get('expires_in_days') or 14)
 
     try:
@@ -452,7 +475,7 @@ def admin_create_organization_route(payload: dict = Body(...), current_user: Use
 def admin_add_org_member_route(organization_id: str, payload: dict = Body(...), current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> dict:
     scoped_org_id = ensure_organization_access(current_user, organization_id)
     user_id = str(payload.get('user_id') or '').strip()
-    membership_role = str(payload.get('membership_role') or role_raw).strip().lower() or role_raw
+    membership_role = str(payload.get('membership_role') or 'member').strip().lower() or 'member'
     if not user_id:
         raise HTTPException(status_code=400, detail='user_id is required')
     if current_user.role == UserRole.COACH and membership_role != 'member':

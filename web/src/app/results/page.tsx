@@ -93,15 +93,66 @@ export default function ResultsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [breakdown, setBreakdown] = useState<BreakdownDimension>("villain");
+  const [memberOptions, setMemberOptions] = useState<Option[]>([]);
+  const [membersLoaded, setMembersLoaded] = useState(false);
+  const [selectedMemberId, setSelectedMemberId] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("member_id") ?? "";
+  });
+
+  const isCoachResultsView = user?.role === "owner" || user?.role === "admin" || user?.role === "coach";
 
   useEffect(() => {
     if (!user) return;
+    if (!isCoachResultsView) {
+      setMembersLoaded(true);
+      return;
+    }
+
+    let cancelled = false;
+    async function loadMembers() {
+      setMembersLoaded(false);
+      try {
+        const res = await apiFetch(`${API_BASE}/admin/users?limit=500&role=member`, { cache: "no-store" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to load members.");
+        const options = ((data as { users?: Array<{ user_id: string; display_name: string | null; email: string; role: string }> }).users ?? [])
+          .filter((entry) => entry.role === "member")
+          .map((entry) => ({ id: entry.user_id, display_name: entry.display_name || entry.email }));
+        if (cancelled) return;
+        setMemberOptions(options);
+        setSelectedMemberId((current) => current || options[0]?.id || "");
+        setMembersLoaded(true);
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "Unable to load members.");
+        setMembersLoaded(true);
+      }
+    }
+
+    void loadMembers();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, isCoachResultsView]);
+
+  useEffect(() => {
+    if (!user) return;
+    if (isCoachResultsView && !membersLoaded) return;
+    if (isCoachResultsView && memberOptions.length > 0 && !selectedMemberId) return;
+    if (isCoachResultsView && memberOptions.length === 0) {
+      setPayload(null);
+      setIsLoading(false);
+      return;
+    }
+
     let cancelled = false;
     async function load() {
       setIsLoading(true);
       setError(null);
       try {
-        const res = await apiFetch(`${API_BASE}/results/overview`, { cache: "no-store" });
+        const query = selectedMemberId ? `?user_id=${encodeURIComponent(selectedMemberId)}` : "";
+        const res = await apiFetch(`${API_BASE}/results/overview${query}`, { cache: "no-store" });
         const data = await res.json();
         if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to load results.");
         if (!cancelled) setPayload(data as ResultsPayload);
@@ -115,7 +166,19 @@ export default function ResultsPage() {
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [user, selectedMemberId, isCoachResultsView, membersLoaded, memberOptions.length]);
+
+  function handleMemberChange(memberId: string) {
+    setSelectedMemberId(memberId);
+    setFilters(EMPTY_FILTERS);
+    setBreakdown("villain");
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      if (memberId) url.searchParams.set("member_id", memberId);
+      else url.searchParams.delete("member_id");
+      window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+    }
+  }
 
   const filteredResults = useMemo(() => {
     if (!payload) return [];
@@ -179,6 +242,15 @@ export default function ResultsPage() {
               </div>
               <button type="button" onClick={() => { setFilters(EMPTY_FILTERS); setBreakdown("villain"); }} style={ghostButtonStyle}>Clear</button>
             </div>
+            {isCoachResultsView ? (
+              <div style={memberFilterWrapStyle}>
+                {memberOptions.length ? (
+                  <SelectField label="Member" value={selectedMemberId} onChange={handleMemberChange} options={memberOptions} />
+                ) : (
+                  <EmptyState copy="No organization members are available to review yet." />
+                )}
+              </div>
+            ) : null}
             <div style={filterBarStyle}>
               <SelectField label="Breakdown" value={breakdown} onChange={(value) => setBreakdown(value as BreakdownDimension)} options={BREAKDOWN_OPTIONS.map((option) => ({ id: option.id, display_name: option.label }))} compact />
               <SelectField label="Scenario" value={filters.scenario} onChange={(value) => setFilters((current) => ({ ...current, scenario: value }))} options={[{ id: "all", display_name: "All scenarios" }, ...payload.filter_options.scenarios]} compact />
@@ -383,7 +455,6 @@ function SelectField({ label, value, onChange, options, compact }: { label: stri
         <select value={value} onChange={(event) => onChange(event.target.value)} style={selectStyle}>
           {options.map((option) => <option key={option.id} value={option.id}>{option.display_name}</option>)}
         </select>
-        <span style={selectCaretStyle}>⌄</span>
       </div>
     </label>
   );
@@ -469,7 +540,7 @@ const filterLabelStyle: CSSProperties = { display: "grid", gap: 8 };
 const compactFilterLabelStyle: CSSProperties = { minWidth: 0 };
 const selectWrapStyle: CSSProperties = { position: "relative" };
 const selectStyle: CSSProperties = { width: "100%", padding: "11px 52px 11px 12px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface-fill)", color: PALETTE.cream, appearance: "none", WebkitAppearance: "none", MozAppearance: "none" };
-const selectCaretStyle: CSSProperties = { position: "absolute", right: 16, top: "50%", transform: "translateY(-50%)", color: "var(--text-65)", pointerEvents: "none", fontSize: 19, fontWeight: 900, lineHeight: 1 };
+const memberFilterWrapStyle: CSSProperties = { maxWidth: 360, marginBottom: 18 };
 const topGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 420px), 1fr))", gap: 28, alignItems: "start" };
 const insightGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 16 };
 const insightCardStyle: CSSProperties = { padding: 18, borderRadius: 18, background: "var(--surface-fill)", border: "1px solid var(--line)" };

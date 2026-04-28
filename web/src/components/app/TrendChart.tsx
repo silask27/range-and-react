@@ -47,13 +47,20 @@ function pointCoords(values: Array<number | null>, width: number, height: number
   });
 }
 
-function uniqueLabels(labels: string[]) {
-  const seen = new Map<string, number>();
-  return labels.map((label) => {
-    const count = (seen.get(label) ?? 0) + 1;
-    seen.set(label, count);
-    return count === 1 ? label : `${label} · ${count}`;
-  });
+function buildXAxisTicks(labels: string[], maxTicks = 5) {
+  if (!labels.length) return [];
+  const tickCount = Math.min(maxTicks, labels.length);
+  if (tickCount <= 1) return [{ index: 0, label: labels[0] }];
+
+  const used = new Set<number>();
+  const ticks: Array<{ index: number; label: string }> = [];
+  for (let i = 0; i < tickCount; i += 1) {
+    const index = Math.round((i * (labels.length - 1)) / (tickCount - 1));
+    if (used.has(index)) continue;
+    used.add(index);
+    ticks.push({ index, label: labels[index] });
+  }
+  return ticks;
 }
 
 export default function TrendChart({
@@ -73,7 +80,7 @@ export default function TrendChart({
   const responsePath = buildPath(responseValues, width, height, padding);
   const rangingDots = pointCoords(rangingValues, width, height, padding);
   const responseDots = pointCoords(responseValues, width, height, padding);
-  const displayLabels = uniqueLabels(points.map((point) => point.label));
+  const displayLabels = buildXAxisTicks(points.map((point) => point.label));
   const ticks = [0, 25, 50, 75, 100];
 
   return (
@@ -102,9 +109,9 @@ export default function TrendChart({
               {responseDots.map((point, index) => point ? <circle key={`a-${index}`} cx={point.x} cy={point.y} r="4.5" fill={COLORS.response} stroke="#141210" strokeWidth="2" /> : null)}
             </svg>
           </div>
-          <div style={labelsStyle}>
-            {displayLabels.map((label, index) => (
-              <span key={`${label}-${index}`} style={labelStyle}>{label}</span>
+          <div style={{ ...labelsStyle, gridTemplateColumns: `repeat(${Math.max(displayLabels.length, 1)}, minmax(0, 1fr))` }}>
+            {displayLabels.map((tick) => (
+              <span key={`${tick.index}-${tick.label}`} style={labelStyle}>{tick.label}</span>
             ))}
           </div>
         </div>
@@ -122,5 +129,5 @@ const axisStyle: CSSProperties = { display: "grid", gridTemplateRows: "repeat(5,
 const axisLabelStyle: CSSProperties = { color: COLORS.muted, fontSize: 11, lineHeight: 1 };
 const svgWrapStyle: CSSProperties = { borderRadius: 18, overflow: "hidden", border: `1px solid ${COLORS.border}`, background: "var(--surface-fill)", padding: 8 };
 const svgStyle: CSSProperties = { width: "100%", height: "100%", minHeight: 220, display: "block" };
-const labelsStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(56px, 1fr))", gap: 8, paddingLeft: 2 };
+const labelsStyle: CSSProperties = { display: "grid", gap: 8, paddingLeft: 2 };
 const labelStyle: CSSProperties = { color: COLORS.muted, fontSize: 11, textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
