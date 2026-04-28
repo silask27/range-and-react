@@ -1,5 +1,5 @@
 export const APP_NAME = "Range & React";
-export const APP_SHORT_NAME = "LRL";
+export const APP_SHORT_NAME = "R&R";
 export const APP_TAGLINE = "Narrow the range. Anticipate its reactions.";
 
 export const THEME = {

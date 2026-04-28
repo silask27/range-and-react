@@ -24,22 +24,45 @@ def _round_to_nearest_five(value: float) -> float:
     return float(int(round(value / 5.0) * 5))
 
 
+def _clamp_stack(value: float, *, low: float, high: float) -> float:
+    return max(low, min(high, _round_to_nearest_five(value)))
+
+
+def _sample_hero_stack(rng: random.Random) -> float:
+    """
+    Generate a hero stack that feels like a typical live-training starting stack.
+
+    Hero should usually land in the 250-400bb band and almost never be short.
+    The hard clamp keeps generated sessions from creating odd sub-100bb hero spots
+    unless we intentionally add short-stack scenarios later.
+    """
+    raw = rng.triangular(110.0, 600.0, 335.0)
+    return _clamp_stack(raw, low=110.0, high=600.0)
+
+
 def _sample_stack_for_villain(villain_profile_id: str, rng: random.Random) -> float:
     """
-    Generate a starting stack weighted by villain type.
+    Generate a villain stack from 75-600bb, weighted by villain type.
 
-    These can be tuned later, but for now they preserve the intended feel:
-    - splashier / looser villains trend deeper
-    - tighter / more straightforward villains trend a bit shallower
+    Live player archetypes should not all sit the same depth:
+    - calling stations / chasers tend to be mid-to-deep
+    - maniacs and loose regs are more often deep
+    - tight or fit/fold profiles trend shorter, but still vary widely
     """
-    if villain_profile_id in {"calling_station", "chaser", "maniac"}:
-        raw = rng.triangular(120.0, 450.0, 240.0)
-    elif villain_profile_id in {"weak_tight", "abc_fit_fold", "tag"}:
-        raw = rng.triangular(80.0, 260.0, 150.0)
-    else:  # loose_reg
-        raw = rng.triangular(100.0, 320.0, 180.0)
+    if villain_profile_id == "maniac":
+        raw = rng.triangular(90.0, 600.0, 430.0)
+    elif villain_profile_id in {"calling_station", "chaser"}:
+        raw = rng.triangular(75.0, 600.0, 310.0)
+    elif villain_profile_id == "loose_reg":
+        raw = rng.triangular(100.0, 600.0, 365.0)
+    elif villain_profile_id == "tag":
+        raw = rng.triangular(100.0, 520.0, 280.0)
+    elif villain_profile_id in {"weak_tight", "abc_fit_fold"}:
+        raw = rng.triangular(75.0, 430.0, 165.0)
+    else:
+        raw = rng.triangular(75.0, 600.0, 250.0)
 
-    return _round_to_nearest_five(raw)
+    return _clamp_stack(raw, low=75.0, high=600.0)
 
 
 def _validate_matrix_state(matrix_state: dict[str, bool]) -> None:
@@ -140,7 +163,7 @@ def set_session_scenario(
         resolved_train_timer_seconds = train_timer_seconds
 
     rng = random.Random(seed)
-    hero_stack = _sample_stack_for_villain(session.villain_profile_id, rng)
+    hero_stack = _sample_hero_stack(rng)
     villain_stack = _sample_stack_for_villain(session.villain_profile_id, rng)
 
     hero_default_matrix = matrix_state_from_tokens(scenario.hero_range_tokens)

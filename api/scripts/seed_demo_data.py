@@ -406,7 +406,7 @@ def seed_demo_data(*, reset: bool = False) -> dict[str, Any]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Seed a demo-ready environment for Villain Range Trainer.")
+    parser = argparse.ArgumentParser(description="Seed a demo-ready environment for Range & React.")
     parser.add_argument("--reset", action="store_true", help="Wipe existing data before seeding demo data.")
     args = parser.parse_args()
 

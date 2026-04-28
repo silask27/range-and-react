@@ -116,6 +116,6 @@ export default function StatusPage() {
 
 const gridStyle = { display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" } as const;
 const panelStyle = { background: "rgba(240,235,224,0.03)", border: "1px solid rgba(240,235,224,0.08)", borderRadius: 18, padding: 18 };
-const labelStyle = { color: "rgba(240,235,224,0.45)", fontSize: 12, textTransform: "uppercase", letterSpacing: 1.2 } as const;
+const labelStyle = { color: "var(--text)", fontSize: 12, textTransform: "uppercase", letterSpacing: 1.2, fontWeight: 900 } as const;
 const valueStyle = { marginTop: 8, fontSize: 28, fontWeight: 800 } as const;
 const metaStyle = { marginTop: 8, color: "rgba(240,235,224,0.65)" } as const;

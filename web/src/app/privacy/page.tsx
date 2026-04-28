@@ -54,7 +54,7 @@ export default function PrivacyPage() {
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section>
-      <h2 style={{ margin: "0 0 8px", fontSize: 22 }}>{title}</h2>
+      <h2 style={{ margin: "0 0 8px", fontSize: 22, color: "var(--text)", letterSpacing: "-0.02em" }}>{title}</h2>
       <div>{children}</div>
     </section>
   );

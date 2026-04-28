@@ -344,7 +344,13 @@ def _advance_street_or_end(
         _set_hand_over(hand)
         return
 
-    rng = random.Random(seed)
+    # Use the hand's stable random seed as the base for runouts. The route-level
+    # seed can be constant in the UI, so relying on it alone makes turn/river
+    # cards repeat across hands. Combining it with bucket_seed and action count
+    # keeps runouts per-hand random while preserving deterministic behavior for a
+    # given saved hand state.
+    runout_seed = int(hand.bucket_seed) + int(seed) + len(hand.history.events) * 97 + len(hand.board) * 1009
+    rng = random.Random(runout_seed)
 
     next_card = _deal_next_board_card(hand, rng)
     hand.board.append(next_card)

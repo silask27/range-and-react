@@ -22,7 +22,7 @@ class RuntimeCheckResult:
 
 _LOCAL_HOST_MARKERS = ("localhost", "127.0.0.1")
 _PLACEHOLDER_EMAIL_MARKERS = ("example.com", "support@example.com")
-_PLACEHOLDER_COMPANY_NAMES = ("live range lab", "villain range trainer")
+_PLACEHOLDER_COMPANY_NAMES = ("example company", "your company name", "tbd", "todo")
 
 
 def _check_database() -> RuntimeCheckResult:

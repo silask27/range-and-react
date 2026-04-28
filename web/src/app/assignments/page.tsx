@@ -182,7 +182,7 @@ function SuggestionCard({ item }: { item: Suggestion }) {
 
 const panelStyle: CSSProperties = { borderTop: "1px solid var(--line-soft)", paddingTop: 18 };
 const errorStyle: CSSProperties = { color: "var(--accent)", fontWeight: 700 };
-const gridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1.08fr) minmax(340px, 0.92fr)", gap: 28, alignItems: "start" };
+const gridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 420px), 1fr))", gap: 28, alignItems: "start" };
 const sectionHeaderStyle: CSSProperties = { display: "grid", gap: 8, marginBottom: 18 };
 const eyebrowStyle: CSSProperties = { color: PALETTE.coral, fontSize: 12, textTransform: "uppercase", letterSpacing: 1.3, fontWeight: 900 };
 const sectionTitleStyle: CSSProperties = { margin: 0, fontSize: 24, lineHeight: 1.08 };
@@ -219,5 +219,5 @@ const suggestionCardStyle: CSSProperties = { display: "flex", justifyContent: "s
 const suggestionTitleStyle: CSSProperties = { fontSize: 18, fontWeight: 800, color: PALETTE.cream };
 const suggestionDescriptionStyle: CSSProperties = { marginTop: 6, fontSize: 14, lineHeight: 1.6, color: "rgba(240,235,224,0.72)" };
 const suggestionReasonStyle: CSSProperties = { marginTop: 8, fontSize: 13, lineHeight: 1.55, color: PALETTE.muted };
-const secondaryLinkStyle: CSSProperties = { padding: "10px 16px", borderRadius: 999, border: "1px solid var(--line)", color: PALETTE.cream, textDecoration: "none", fontWeight: 700, whiteSpace: "nowrap", background: "transparent" };
+const secondaryLinkStyle: CSSProperties = { padding: "10px 16px", borderRadius: 999, border: `1px solid ${PALETTE.coral}`, color: PALETTE.cream, textDecoration: "none", fontWeight: 800, whiteSpace: "nowrap", background: PALETTE.coral };
 const emptyStateStyle: CSSProperties = { color: PALETTE.muted, padding: "12px 0 4px" };

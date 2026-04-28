@@ -112,6 +112,65 @@ export default function AdminPage() {
     return summary;
   }, [organizations]);
 
+  const memberPerformanceRows = useMemo(() => {
+    if (!analytics) return [];
+
+    const byUserId = new Map<string, {
+      user_id: string;
+      display_name: string;
+      completed_hands: number;
+      avg_ranging_score: number | null;
+      avg_response_score: number | null;
+      active_assignments?: number;
+      overdue_assignments?: number;
+      is_active?: boolean;
+    }>();
+
+    analytics.users_needing_attention.forEach((entry) => {
+      byUserId.set(entry.user_id, {
+        user_id: entry.user_id,
+        display_name: entry.display_name,
+        completed_hands: entry.completed_hands,
+        avg_ranging_score: entry.avg_ranging_score,
+        avg_response_score: entry.avg_response_score,
+        active_assignments: entry.active_assignments,
+        overdue_assignments: entry.overdue_assignments,
+        is_active: entry.is_active,
+      });
+    });
+
+    analytics.strongest_users.forEach((entry) => {
+      byUserId.set(entry.user_id, {
+        ...(byUserId.get(entry.user_id) ?? {}),
+        user_id: entry.user_id,
+        display_name: entry.display_name,
+        completed_hands: entry.completed_hands,
+        avg_ranging_score: entry.avg_ranging_score,
+        avg_response_score: entry.avg_response_score,
+      });
+    });
+
+    users.forEach((entry) => {
+      if (!byUserId.has(entry.user_id)) {
+        byUserId.set(entry.user_id, {
+          user_id: entry.user_id,
+          display_name: entry.display_name || entry.email,
+          completed_hands: 0,
+          avg_ranging_score: null,
+          avg_response_score: null,
+          is_active: entry.is_active,
+        });
+      }
+    });
+
+    return Array.from(byUserId.values()).sort((a, b) => {
+      const aHands = a.completed_hands ?? 0;
+      const bHands = b.completed_hands ?? 0;
+      if (aHands !== bHands) return bHands - aHands;
+      return a.display_name.localeCompare(b.display_name);
+    });
+  }, [analytics, users]);
+
   function updateInviteRole(role: string) {
     setInviteState((current) => ({ ...current, role }));
   }
@@ -361,6 +420,24 @@ export default function AdminPage() {
                     {analytics.users_needing_attention.length ? analytics.users_needing_attention.slice(0, 5).map((entry) => (
                       <MemberRow key={entry.user_id} title={entry.display_name} subtitle={`${entry.completed_hands} hands · ${entry.overdue_assignments} overdue assignments`} ranging={entry.avg_ranging_score} response={entry.avg_response_score} />
                     )) : <EmptyState copy="No members need attention yet." />}
+                  </div>
+                </section>
+                <section style={panelStyle}>
+                  <SectionHeader eyebrow="Individual results" title="Member performance snapshot" />
+                  <div style={helperCopyStyle}>A coach-facing view of individual member volume, scores, and assignment pressure.</div>
+                  <div style={{ ...stackStyle, marginTop: 14 }}>
+                    {memberPerformanceRows.length ? memberPerformanceRows.slice(0, 10).map((entry) => (
+                      <MemberDetailRow
+                        key={entry.user_id}
+                        title={entry.display_name}
+                        hands={entry.completed_hands}
+                        ranging={entry.avg_ranging_score}
+                        response={entry.avg_response_score}
+                        activeAssignments={entry.active_assignments}
+                        overdueAssignments={entry.overdue_assignments}
+                        isActive={entry.is_active}
+                      />
+                    )) : <EmptyState copy="No individual member results yet." />}
                   </div>
                 </section>
               </div>
@@ -616,6 +693,24 @@ function InsightCard({ tone, title, copy }: { tone: "coral" | "green"; title: st
 function MemberRow({ title, subtitle, ranging, response }: { title: string; subtitle: string; ranging: number | null; response: number | null }) {
   return <div style={rowStyle}><div style={{ minWidth: 0 }}><div style={rowTitleStyle}>{title}</div><div style={rowMetaStyle}>{subtitle}</div></div><div style={memberMetricWrapStyle}><MetricPill label="Range" value={ranging} tone="coral" /><MetricPill label="Action" value={response} tone="green" /></div></div>;
 }
+function MemberDetailRow({ title, hands, ranging, response, activeAssignments, overdueAssignments, isActive }: { title: string; hands: number; ranging: number | null; response: number | null; activeAssignments?: number; overdueAssignments?: number; isActive?: boolean }) {
+  const assignmentCopy = activeAssignments != null || overdueAssignments != null
+    ? `${activeAssignments ?? 0} active · ${overdueAssignments ?? 0} overdue`
+    : "No assignment pressure yet";
+  return (
+    <div style={memberDetailRowStyle}>
+      <div style={{ minWidth: 0 }}>
+        <div style={rowTitleStyle}>{title}</div>
+        <div style={rowMetaStyle}>{hands} finished hands · {assignmentCopy}</div>
+        {isActive === false ? <div style={{ ...rowMetaStyle, color: PALETTE.coral }}>Inactive account</div> : null}
+      </div>
+      <div style={memberDetailScoreWrapStyle}>
+        <MetricPill label="Range" value={ranging} tone="coral" />
+        <MetricPill label="Action" value={response} tone="green" />
+      </div>
+    </div>
+  );
+}
 function MetricPill({ label, value, tone }: { label: string; value: number | null; tone: "coral" | "green" }) { return <div style={{ ...metricPillStyle, color: tone === "coral" ? PALETTE.coral : PALETTE.green }}>{label} {formatScore(value)}</div>; }
 function EmptyState({ copy }: { copy: string }) { return <div style={emptyStateStyle}>{copy}</div>; }
 function parseInsight(copy: string) {
@@ -650,7 +745,7 @@ const noticeStyle: CSSProperties = { color: "var(--success)", fontWeight: 700 };
 const tabRowStyle: CSSProperties = { display: "flex", gap: 10, flexWrap: "wrap" };
 const tabButtonStyle: CSSProperties = { padding: "11px 18px", borderRadius: 999, border: "1px solid var(--line)", background: "transparent", color: PALETTE.cream, fontWeight: 700 };
 const activeTabButtonStyle: CSSProperties = { padding: "11px 18px", borderRadius: 999, border: `1px solid ${PALETTE.coral}`, background: PALETTE.coral, color: PALETTE.cream, fontWeight: 700 };
-const mainGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1.05fr) minmax(380px, 0.95fr)", gap: 18, alignItems: "start" };
+const mainGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 430px), 1fr))", gap: 24, alignItems: "start" };
 const sectionHeaderStyle: CSSProperties = { display: "grid", gap: 8, marginBottom: 16 };
 const eyebrowStyle: CSSProperties = { color: PALETTE.coral, fontSize: 12, textTransform: "uppercase", letterSpacing: 1.3, fontWeight: 900 };
 const sectionTitleStyle: CSSProperties = { margin: 0, fontSize: 26, lineHeight: 1.08 };
@@ -661,6 +756,8 @@ const headerStatHelperStyle: CSSProperties = { marginTop: 4, opacity: 0.88, font
 const stackStyle: CSSProperties = { display: "grid", gap: 12 };
 const rowStyle: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 14, alignItems: "center", paddingTop: 14, borderTop: "1px solid var(--line-soft)" };
 const memberAdminRowStyle: CSSProperties = { ...rowStyle, alignItems: "flex-start", padding: "18px 18px", border: "1px solid var(--line)", borderRadius: 18, background: "var(--surface-fill)", boxShadow: "0 10px 24px rgba(0,0,0,0.16)" };
+const memberDetailRowStyle: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 16, alignItems: "center", padding: "16px 18px", border: "1px solid var(--line)", borderRadius: 18, background: "var(--surface-fill)", boxShadow: "0 10px 24px rgba(0,0,0,0.14)" };
+const memberDetailScoreWrapStyle: CSSProperties = { display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" };
 const rowTitleStyle: CSSProperties = { fontWeight: 800, fontSize: 15, color: PALETTE.cream };
 const rowMetaStyle: CSSProperties = { color: PALETTE.muted, fontSize: 13, marginTop: 4, lineHeight: 1.5 };
 const rowHelperStyle: CSSProperties = { color: "rgba(240,235,224,0.65)", fontSize: 13, lineHeight: 1.55, marginTop: 4 };
@@ -670,15 +767,15 @@ const insightCardStyle: CSSProperties = { padding: 16, borderRadius: 16, backgro
 const insightFocusStyle: CSSProperties = { marginTop: 8, fontSize: 22, fontWeight: 900, color: PALETTE.cream, lineHeight: 1.12 };
 const insightCopyStyle: CSSProperties = { marginTop: 8, color: "rgba(240,235,224,0.65)", lineHeight: 1.65 };
 const formGridStyle: CSSProperties = { display: "grid", gap: 14 };
-const twoColStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 };
-const threeColStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 };
+const twoColStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 12 };
+const threeColStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 150px), 1fr))", gap: 12 };
 const labelStyle: CSSProperties = { display: "grid", gap: 8, color: PALETTE.cream, fontSize: 14 };
 const labelTitleStyle: CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6 };
 const inputStyle: CSSProperties = { width: "100%", padding: "11px 12px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface-fill)", color: PALETTE.cream };
 const compactInputStyle: CSSProperties = { ...inputStyle, width: 120, padding: "9px 10px" };
 const requiredStyle: CSSProperties = { color: PALETTE.coral, fontWeight: 900 };
 const primaryButtonStyle: CSSProperties = { padding: "11px 15px", borderRadius: 14, border: "1px solid rgba(231,111,81,0.45)", background: "var(--accent)", color: PALETTE.cream, fontWeight: 800 };
-const secondaryButtonStyle: CSSProperties = { padding: "10px 14px", borderRadius: 14, border: "1px solid var(--line)", background: "var(--surface-fill)", color: PALETTE.cream, fontWeight: 700 };
+const secondaryButtonStyle: CSSProperties = { padding: "10px 14px", borderRadius: 14, border: `1px solid ${PALETTE.coral}`, background: PALETTE.coral, color: PALETTE.cream, fontWeight: 800 };
 const successButtonStyle: CSSProperties = { padding: "10px 14px", borderRadius: 14, border: `1px solid ${PALETTE.green}`, background: PALETTE.green, color: "#141210", fontWeight: 800 };
 const dangerButtonStyle: CSSProperties = { padding: "10px 14px", borderRadius: 14, border: `1px solid ${PALETTE.coral}`, background: PALETTE.coral, color: PALETTE.cream, fontWeight: 800 };
 const deleteButtonStyle: CSSProperties = { padding: "10px 14px", borderRadius: 14, border: "1px solid rgba(164, 64, 48, 0.8)", background: "#7C2D22", color: PALETTE.cream, fontWeight: 800 };
@@ -692,7 +789,7 @@ const activeTagStyle: CSSProperties = { ...tagStyle, background: PALETTE.green, 
 const inactiveTagStyle: CSSProperties = { ...tagStyle, background: "rgba(231,111,81,0.14)", border: `1px solid rgba(231,111,81,0.55)`, color: PALETTE.coral };
 const inviteCardRowStyle: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 14, alignItems: "flex-start", padding: "16px 18px", borderRadius: 18, border: "1px solid var(--line)", background: "var(--surface-fill)" };
 const inviteUrlStyle: CSSProperties = { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12, lineHeight: 1.55, color: "rgba(240,235,224,0.72)", wordBreak: "break-all" };
-const detailsStyle: CSSProperties = { borderRadius: 18, border: "1px solid var(--line)", background: "var(--surface-fill)", padding: 16, boxShadow: "0 12px 30px rgba(0,0,0,0.18)" };
-const summaryStyle: CSSProperties = { cursor: "pointer", fontWeight: 900, color: PALETTE.cream, marginBottom: 12, fontSize: 18, listStyle: "none" };
+const detailsStyle: CSSProperties = { marginTop: 12, borderRadius: 18, border: "1px solid rgba(231,111,81,0.28)", background: "linear-gradient(180deg, rgba(231,111,81,0.08), rgba(20,18,16,0.98))", padding: 14, boxShadow: "0 12px 30px rgba(0,0,0,0.18)" };
+const summaryStyle: CSSProperties = { cursor: "pointer", fontWeight: 900, color: PALETTE.cream, marginBottom: 12, fontSize: 17, listStyle: "none", padding: "10px 12px", borderRadius: 14, border: "1px solid rgba(231,111,81,0.26)", background: "rgba(231,111,81,0.12)" };
 const emptyStateStyle: CSSProperties = { color: PALETTE.muted, padding: "8px 0 4px", lineHeight: 1.6 };
 const helperPanelStyle: CSSProperties = { padding: "14px 16px", borderRadius: 16, border: "1px solid var(--line)", background: "var(--surface-fill)", color: "rgba(240,235,224,0.7)", lineHeight: 1.65, fontSize: 13 };

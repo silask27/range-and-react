@@ -1,6 +1,6 @@
-# Villain Range Trainer
+# Range & React
 
-Villain Range Trainer is a full-stack poker training platform for building a repeatable live-poker thought process around:
+Range & React is a full-stack poker training platform for building a repeatable live-poker thought process around:
 - tracking villain range street by street
 - pruning without incorrectly removing the true hand
 - predicting likely villain responses by bucket

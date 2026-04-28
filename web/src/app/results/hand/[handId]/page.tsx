@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import AppShell from "../../../../components/app/AppShell";
@@ -67,6 +67,14 @@ type DebriefPayload = {
   }>;
 };
 
+const PALETTE = {
+  cream: "#F0EBE0",
+  coral: "#E76F51",
+  green: "#6A9E72",
+  muted: "rgba(240,235,224,0.65)",
+  soft: "rgba(240,235,224,0.45)",
+};
+
 export default function HandDebriefPage() {
   const params = useParams<{ handId: string }>();
   const handId = Array.isArray(params?.handId) ? params.handId[0] : params?.handId;
@@ -91,133 +99,302 @@ export default function HandDebriefPage() {
     return () => { cancelled = true; };
   }, [user, handId]);
 
+  const rangeTakeaway = useMemo(() => {
+    if (!payload) return null;
+    return summarizePruning(payload.prune_evaluations);
+  }, [payload]);
+
+  const responseTakeaway = useMemo(() => {
+    if (!payload) return null;
+    return summarizeResponses(payload.response_evaluations);
+  }, [payload]);
+
   return (
-    <AppShell title="Hand debrief" subtitle="Review what the true hand was, whether you kept it alive, and how your response predictions matched what actually happened.">
+    <AppShell
+      title="Hand debrief"
+      subtitle="The big-picture review: final truth, ranging quality, action-response reads, and the exact streets that mattered."
+    >
       {isAuthLoading ? <div style={emptyStyle}>Loading hand debrief…</div> : null}
       {authError ? <div style={errorStyle}>{authError}</div> : null}
       {error ? <div style={errorStyle}>{error}</div> : null}
       {payload ? (
-        <>
-          <section className="open-grid-four">
-            <MetricCard label="Avg ranging" value={payload.summary.ranging_score ?? "—"} />
-            <MetricCard label="Avg response" value={payload.summary.response_score ?? "—"} />
-            <MetricCard label="Overall" value={payload.summary.overall_score ?? "—"} />
-            <MetricCard label="Prune steps" value={payload.summary.prune_steps_scored ?? 0} />
-            <MetricCard label="Response nodes" value={payload.summary.response_nodes_scored ?? 0} />
+        <div style={pageStackStyle}>
+          <section style={summaryGridStyle}>
+            <ScoreCard
+              eyebrow="Overall"
+              title={formatScore(payload.summary.overall_score)}
+              copy="Combined result for this hand."
+              tone="neutral"
+            />
+            <ScoreCard
+              eyebrow="Villain ranging"
+              title={formatScore(payload.summary.ranging_score)}
+              copy={rangeTakeaway?.headline ?? "No ranging steps were scored."}
+              tone="coral"
+            />
+            <ScoreCard
+              eyebrow="Action prediction"
+              title={formatScore(payload.summary.response_score)}
+              copy={responseTakeaway?.headline ?? "No action-response nodes were scored."}
+              tone="green"
+            />
           </section>
 
-          <section className="open-grid-two">
-            <div style={{ display: "grid", gap: 18 }}>
-              <div style={panelStyle}>
-                <div style={panelLabelStyle}>Reveal</div>
-                <div style={panelTitleStyle}>Final truth</div>
-                <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
-                  <InfoRow label="Hero hand" value={payload.hero_hand.join(" ")} />
-                  <InfoRow label="Villain hand" value={payload.villain_hand.join(" ")} />
-                  <InfoRow label="Board" value={payload.board.join(" ")} />
-                  <InfoRow label="Final bucket" value={`${payload.actual_final_bucket.bucket_label} · ${payload.actual_final_bucket.subgroup_label}`} />
-                  <InfoRow label="Equity vs hero" value={payload.actual_final_bucket.equity_vs_hero.toFixed(3)} />
-                </div>
+          <section style={truthPanelStyle}>
+            <div style={{ minWidth: 0 }}>
+              <div style={eyebrowStyle}>Final truth</div>
+              <h2 style={sectionTitleStyle}>What villain actually had</h2>
+              <div style={truthHeadlineStyle}>
+                {payload.actual_final_bucket.bucket_label} · {payload.actual_final_bucket.subgroup_label}
               </div>
-
-              <div style={panelStyle}>
-                <div style={panelLabelStyle}>Prune evaluation</div>
-                <div style={panelTitleStyle}>Did you keep the real hand alive?</div>
-                <div style={listStyle}>
-                  {payload.prune_evaluations.length ? payload.prune_evaluations.map((item, index) => (
-                    <div key={`${item.street}-${index}`} style={listRowStyle}>
-                      <div>
-                        <div style={rowTitleStyle}>{item.street.toUpperCase()} · {item.villain_action ?? "villain action"}</div>
-                        <div style={rowMetaStyle}>Bucket {item.actual_bucket} · Subgroup {item.actual_subgroup}</div>
-                        <div style={rowMetaStyle}>Combos {item.start_live_combos} → {item.end_live_combos}</div>
-                      </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ ...tagStyle, ...(item.combo_alive ? successTagStyle : dangerTagStyle) }}>{item.combo_alive ? "kept alive" : "removed"}</div>
-                        <div style={{ marginTop: 8, color: "rgba(240,235,224,0.65)", fontSize: 13 }}>Score {item.overall_score}</div>
-                      </div>
-                    </div>
-                  )) : <div style={emptyStyle}>No prune evaluations were recorded for this hand.</div>}
-                </div>
-              </div>
+              <div style={truthMetaStyle}>Equity vs hero: {payload.actual_final_bucket.equity_vs_hero.toFixed(3)}</div>
             </div>
-
-            <div style={{ display: "grid", gap: 18 }}>
-              <div style={panelStyle}>
-                <div style={panelLabelStyle}>Response matrix</div>
-                <div style={panelTitleStyle}>Prediction vs actual</div>
-                <div style={listStyle}>
-                  {payload.response_evaluations.length ? payload.response_evaluations.map((item, index) => (
-                    <div key={`${item.street}-${index}`} style={listRowStyle}>
-                      <div>
-                        <div style={rowTitleStyle}>{item.street.toUpperCase()} · {item.hero_action}</div>
-                        <div style={rowMetaStyle}>Predicted {item.predicted ?? "—"} · Actual {item.actual ?? "—"}</div>
-                        <div style={rowMetaStyle}>{item.reason ?? `${item.actual_bucket} / ${item.actual_subgroup}`}</div>
-                      </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ ...tagStyle, ...(item.supported ? item.correct ? successTagStyle : dangerTagStyle : neutralTagStyle) }}>
-                          {item.supported ? item.correct ? "correct" : "miss" : "unscored"}
-                        </div>
-                        <div style={{ marginTop: 8, color: "rgba(240,235,224,0.65)", fontSize: 13 }}>Score {item.score ?? "—"}</div>
-                      </div>
-                    </div>
-                  )) : <div style={emptyStyle}>No response evaluations were recorded for this hand.</div>}
-                </div>
-              </div>
-
-              <div style={panelStyle}>
-                <div style={panelLabelStyle}>Recommendations</div>
-                <div style={panelTitleStyle}>Coaching takeaways</div>
-                <ul style={{ margin: "14px 0 0", paddingLeft: 18, color: "rgba(240,235,224,0.65)", lineHeight: 1.7 }}>
-                  {payload.recommendations.map((item) => <li key={item}>{item}</li>)}
-                </ul>
-              </div>
+            <div style={truthGridStyle}>
+              <InfoChip label="Hero hand" value={payload.hero_hand.join(" ")} />
+              <InfoChip label="Villain hand" value={payload.villain_hand.join(" ")} />
+              <InfoChip label="Board" value={payload.board.join(" ")} />
             </div>
           </section>
 
-          <section style={panelStyle}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 14, alignItems: "center" }}>
-              <div>
-                <div style={panelLabelStyle}>Action history</div>
-                <div style={panelTitleStyle}>Street-by-street sequence</div>
+          <section style={twoColumnStyle}>
+            <MetricSection
+              eyebrow="Ranging"
+              title="Did the true hand stay alive?"
+              score={payload.summary.ranging_score}
+              accent={PALETTE.coral}
+              headline={rangeTakeaway?.detail ?? "No prune evaluations were recorded for this hand."}
+            >
+              <div style={compactListStyle}>
+                {payload.prune_evaluations.length ? payload.prune_evaluations.map((item, index) => (
+                  <PruneRow key={`${item.street}-${index}`} item={item} />
+                )) : <EmptyState copy="No prune evaluations were recorded for this hand." />}
               </div>
-              <Link href={`/screen-3?session_id=${encodeURIComponent(payload.session_id)}&hand_id=${encodeURIComponent(payload.hand_id)}`} style={secondaryLinkStyle}>Open hand replay</Link>
-            </div>
-            <div style={listStyle}>
-              {payload.history.map((event, index) => (
-                <div key={`${event.street}-${event.actor}-${index}`} style={listRowStyle}>
-                  <div>
-                    <div style={rowTitleStyle}>{event.street.toUpperCase()} · {event.actor} {event.action}{event.amount ? ` ${event.amount}` : ""}</div>
-                    <div style={rowMetaStyle}>{event.note || (event.forced ? "Forced action" : "Action event")}</div>
+            </MetricSection>
+
+            <MetricSection
+              eyebrow="Action response"
+              title="Were your reaction reads right?"
+              score={payload.summary.response_score}
+              accent={PALETTE.green}
+              headline={responseTakeaway?.detail ?? "No response evaluations were recorded for this hand."}
+            >
+              <div style={compactListStyle}>
+                {payload.response_evaluations.length ? payload.response_evaluations.map((item, index) => (
+                  <ResponseRow key={`${item.street}-${index}`} item={item} />
+                )) : <EmptyState copy="No response evaluations were recorded for this hand." />}
+              </div>
+            </MetricSection>
+          </section>
+
+          <section style={twoColumnStyle}>
+            <section style={panelStyle}>
+              <div style={sectionHeaderStyle}>
+                <div>
+                  <div style={eyebrowStyle}>Coaching takeaways</div>
+                  <h2 style={sectionTitleStyle}>What to carry forward</h2>
+                </div>
+              </div>
+              {payload.recommendations.length ? (
+                <div style={takeawayListStyle}>
+                  {payload.recommendations.map((item, index) => (
+                    <div key={`${item}-${index}`} style={takeawayItemStyle}>
+                      <span style={takeawayNumberStyle}>{index + 1}</span>
+                      <span>{item}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : <EmptyState copy="No coaching takeaways were generated for this hand." />}
+            </section>
+
+            <section style={panelStyle}>
+              <div style={sectionHeaderStyle}>
+                <div>
+                  <div style={eyebrowStyle}>Line recap</div>
+                  <h2 style={sectionTitleStyle}>Street-by-street sequence</h2>
+                </div>
+                <Link href={`/screen-3?session_id=${encodeURIComponent(payload.session_id)}&hand_id=${encodeURIComponent(payload.hand_id)}`} style={secondaryLinkStyle}>Open replay</Link>
+              </div>
+              <div style={historyListStyle}>
+                {payload.history.map((event, index) => (
+                  <div key={`${event.street}-${event.actor}-${index}`} style={historyRowStyle}>
+                    <div style={historyStreetStyle}>{event.street}</div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={rowTitleStyle}>{capitalize(event.actor)} {formatAction(event.action)}{event.amount ? ` ${formatAmount(event.amount)}` : ""}</div>
+                      <div style={rowMetaStyle}>{event.note || (event.forced ? "Forced action" : "Action event")}</div>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            </section>
           </section>
-        </>
+        </div>
       ) : null}
     </AppShell>
   );
 }
 
-function MetricCard({ label, value }: { label: string; value: string | number }) {
-  return <div style={panelStyle}><div style={panelLabelStyle}>{label}</div><div style={{ fontSize: 30, fontWeight: 800, marginTop: 8 }}>{value}</div></div>;
+function ScoreCard({ eyebrow, title, copy, tone }: { eyebrow: string; title: string; copy: string; tone: "coral" | "green" | "neutral" }) {
+  const toneStyle = tone === "coral"
+    ? { background: PALETTE.coral, borderColor: PALETTE.coral, color: PALETTE.cream }
+    : tone === "green"
+      ? { background: PALETTE.green, borderColor: PALETTE.green, color: "#141210" }
+      : { background: "var(--surface-fill-strong)", borderColor: "var(--line)", color: PALETTE.cream };
+
+  return (
+    <div style={{ ...scoreCardStyle, ...toneStyle }}>
+      <div style={scoreEyebrowStyle}>{eyebrow}</div>
+      <div style={scoreValueStyle}>{title}</div>
+      <div style={scoreCopyStyle}>{copy}</div>
+    </div>
+  );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return <div style={{ display: "flex", justifyContent: "space-between", gap: 12, borderBottom: "1px solid rgba(240,235,224,0.06)", paddingBottom: 8 }}><div style={rowMetaStyle}>{label}</div><div style={{ fontWeight: 700 }}>{value}</div></div>;
+function MetricSection({ eyebrow, title, score, accent, headline, children }: { eyebrow: string; title: string; score: number | null | undefined; accent: string; headline: string; children: ReactNode }) {
+  return (
+    <section style={panelStyle}>
+      <div style={sectionHeaderStyle}>
+        <div>
+          <div style={{ ...eyebrowStyle, color: accent }}>{eyebrow}</div>
+          <h2 style={sectionTitleStyle}>{title}</h2>
+          <div style={sectionHeadlineStyle}>{headline}</div>
+        </div>
+        <div style={{ ...scorePillStyle, borderColor: accent, color: accent }}>{formatScore(score)}</div>
+      </div>
+      {children}
+    </section>
+  );
 }
 
+function InfoChip({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={infoChipStyle}>
+      <div style={infoChipLabelStyle}>{label}</div>
+      <div style={infoChipValueStyle}>{value}</div>
+    </div>
+  );
+}
+
+function PruneRow({ item }: { item: DebriefPayload["prune_evaluations"][number] }) {
+  const status = item.combo_alive ? "Kept alive" : "Removed";
+  return (
+    <div style={compactRowStyle}>
+      <div style={{ minWidth: 0 }}>
+        <div style={rowTitleStyle}>{formatStreet(item.street)} · {item.villain_action ?? "Villain action"}</div>
+        <div style={rowMetaStyle}>{item.actual_bucket} · {item.actual_subgroup}</div>
+        <div style={rowMetaStyle}>Live combos {item.start_live_combos} → {item.end_live_combos}</div>
+      </div>
+      <div style={rowRightStyle}>
+        <span style={{ ...tagStyle, ...(item.combo_alive ? successTagStyle : dangerTagStyle) }}>{status}</span>
+        <span style={scoreTextStyle}>Score {formatScore(item.overall_score)}</span>
+      </div>
+    </div>
+  );
+}
+
+function ResponseRow({ item }: { item: DebriefPayload["response_evaluations"][number] }) {
+  const status = !item.supported ? "Unscored" : item.correct ? "Correct" : "Miss";
+  const tone = !item.supported ? neutralTagStyle : item.correct ? successTagStyle : dangerTagStyle;
+  return (
+    <div style={compactRowStyle}>
+      <div style={{ minWidth: 0 }}>
+        <div style={rowTitleStyle}>{formatStreet(item.street)} · Hero {formatAction(item.hero_action)}</div>
+        <div style={rowMetaStyle}>{item.actual_bucket} · {item.actual_subgroup}</div>
+        <div style={rowMetaStyle}>Predicted {item.predicted ?? "—"} · Actual {item.actual ?? "—"}</div>
+      </div>
+      <div style={rowRightStyle}>
+        <span style={{ ...tagStyle, ...tone }}>{status}</span>
+        <span style={scoreTextStyle}>Score {formatScore(item.score)}</span>
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({ copy }: { copy: string }) {
+  return <div style={emptyStyle}>{copy}</div>;
+}
+
+function summarizePruning(items: DebriefPayload["prune_evaluations"]) {
+  if (!items.length) return { headline: "No ranging score yet.", detail: "No prune evaluations were recorded for this hand." };
+  const kept = items.filter((item) => item.combo_alive).length;
+  const missed = items.length - kept;
+  return {
+    headline: `${kept}/${items.length} true-hand checks kept alive.`,
+    detail: missed
+      ? `${missed} prune step removed the exact hand. Review the highlighted miss before the next rep.`
+      : "You kept the true hand alive through every scored prune step.",
+  };
+}
+
+function summarizeResponses(items: DebriefPayload["response_evaluations"]) {
+  const scored = items.filter((item) => item.supported);
+  if (!scored.length) return { headline: "No action-response score yet.", detail: "No scored response nodes were recorded for this hand." };
+  const correct = scored.filter((item) => item.correct).length;
+  const misses = scored.length - correct;
+  return {
+    headline: `${correct}/${scored.length} scored reaction reads correct.`,
+    detail: misses
+      ? `${misses} response read missed villain's actual reaction. Focus on those spots first.`
+      : "Your scored reaction reads matched villain's actual responses.",
+  };
+}
+
+function formatScore(value: number | null | undefined) {
+  return value == null ? "—" : `${Math.round(value)}`;
+}
+
+function formatStreet(value: string) {
+  return capitalize(value);
+}
+
+function formatAction(value: string) {
+  return value.replaceAll("_", " ");
+}
+
+function formatAmount(value: number) {
+  return `${Number(value.toFixed(2)).toString()}bb`;
+}
+
+function capitalize(value: string) {
+  if (!value) return value;
+  return value.slice(0, 1).toUpperCase() + value.slice(1);
+}
+
+const pageStackStyle: CSSProperties = { display: "grid", gap: 28 };
+const summaryGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 16 };
+const twoColumnStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 420px), 1fr))", gap: 28, alignItems: "start" };
 const panelStyle: CSSProperties = { borderTop: "1px solid var(--line-soft)", paddingTop: 18 };
+const truthPanelStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))", gap: 22, alignItems: "center", borderTop: "1px solid var(--line-soft)", paddingTop: 18 };
+const truthGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 };
+const truthHeadlineStyle: CSSProperties = { marginTop: 10, fontSize: 30, lineHeight: 1.08, fontWeight: 900, letterSpacing: "-0.04em", color: PALETTE.cream };
+const truthMetaStyle: CSSProperties = { marginTop: 8, color: PALETTE.muted, fontSize: 14 };
+const sectionHeaderStyle: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", marginBottom: 16 };
+const eyebrowStyle: CSSProperties = { color: PALETTE.coral, fontSize: 12, textTransform: "uppercase", letterSpacing: 1.3, fontWeight: 900 };
+const sectionTitleStyle: CSSProperties = { margin: 0, fontSize: 25, lineHeight: 1.08, letterSpacing: "-0.035em", color: PALETTE.cream };
+const sectionHeadlineStyle: CSSProperties = { marginTop: 8, color: PALETTE.muted, lineHeight: 1.55, fontSize: 14 };
+const scoreCardStyle: CSSProperties = { minHeight: 148, borderRadius: 20, border: "1px solid var(--line)", padding: 18, display: "flex", flexDirection: "column", justifyContent: "space-between" };
+const scoreEyebrowStyle: CSSProperties = { fontSize: 11, textTransform: "uppercase", letterSpacing: 1.15, fontWeight: 900, opacity: 0.9 };
+const scoreValueStyle: CSSProperties = { marginTop: 12, fontSize: 36, lineHeight: 1, fontWeight: 950, letterSpacing: "-0.05em" };
+const scoreCopyStyle: CSSProperties = { marginTop: 12, fontSize: 13, lineHeight: 1.45, opacity: 0.84 };
+const scorePillStyle: CSSProperties = { minWidth: 64, textAlign: "center", padding: "9px 12px", borderRadius: 999, border: "1px solid var(--line)", fontSize: 20, fontWeight: 950 };
+const infoChipStyle: CSSProperties = { padding: "14px 16px", borderRadius: 18, border: "1px solid var(--line)", background: "var(--surface-fill-strong)" };
+const infoChipLabelStyle: CSSProperties = { color: PALETTE.soft, fontSize: 11, textTransform: "uppercase", letterSpacing: 1.05, fontWeight: 900 };
+const infoChipValueStyle: CSSProperties = { marginTop: 8, color: PALETTE.cream, fontSize: 17, fontWeight: 850, lineHeight: 1.25 };
+const compactListStyle: CSSProperties = { display: "grid", gap: 12 };
+const compactRowStyle: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 16, alignItems: "center", padding: "15px 16px", borderRadius: 18, border: "1px solid var(--line)", background: "var(--surface-fill-strong)" };
+const rowTitleStyle: CSSProperties = { fontWeight: 850, fontSize: 15, color: PALETTE.cream, lineHeight: 1.3, textTransform: "capitalize" };
+const rowMetaStyle: CSSProperties = { color: PALETTE.soft, fontSize: 13, marginTop: 4, lineHeight: 1.45 };
+const rowRightStyle: CSSProperties = { display: "grid", gap: 8, justifyItems: "end", textAlign: "right" };
+const tagStyle: CSSProperties = { display: "inline-flex", alignItems: "center", justifyContent: "center", minHeight: 30, padding: "0 11px", borderRadius: 999, fontSize: 11, fontWeight: 900, textTransform: "uppercase", letterSpacing: 0.5 };
+const successTagStyle: CSSProperties = { background: PALETTE.green, border: `1px solid ${PALETTE.green}`, color: "#141210" };
+const dangerTagStyle: CSSProperties = { background: PALETTE.coral, border: `1px solid ${PALETTE.coral}`, color: PALETTE.cream };
+const neutralTagStyle: CSSProperties = { background: "rgba(240,235,224,0.07)", border: "1px solid var(--line)", color: PALETTE.cream };
+const scoreTextStyle: CSSProperties = { color: PALETTE.muted, fontSize: 12, fontWeight: 800 };
+const takeawayListStyle: CSSProperties = { display: "grid", gap: 12 };
+const takeawayItemStyle: CSSProperties = { display: "grid", gridTemplateColumns: "34px minmax(0, 1fr)", gap: 12, alignItems: "start", padding: "14px 16px", borderRadius: 18, border: "1px solid var(--line)", background: "var(--surface-fill-strong)", color: PALETTE.muted, lineHeight: 1.55 };
+const takeawayNumberStyle: CSSProperties = { width: 28, height: 28, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", background: PALETTE.coral, color: PALETTE.cream, fontWeight: 900, fontSize: 12 };
+const historyListStyle: CSSProperties = { display: "grid", gap: 10 };
+const historyRowStyle: CSSProperties = { display: "grid", gridTemplateColumns: "76px minmax(0, 1fr)", gap: 12, padding: "13px 0", borderTop: "1px solid var(--line-soft)" };
+const historyStreetStyle: CSSProperties = { color: PALETTE.coral, fontSize: 12, fontWeight: 900, textTransform: "uppercase", letterSpacing: 1 };
+const secondaryLinkStyle: CSSProperties = { padding: "10px 14px", borderRadius: 999, border: "1px solid var(--line)", background: "var(--surface-fill-strong)", color: PALETTE.cream, textDecoration: "none", fontWeight: 800, fontSize: 14, whiteSpace: "nowrap" };
 const errorStyle: CSSProperties = { color: "var(--accent)", fontWeight: 700 };
-const panelLabelStyle: CSSProperties = { color: "rgba(240,235,224,0.45)", fontSize: 12, textTransform: "uppercase", letterSpacing: 1.2 };
-const panelTitleStyle: CSSProperties = { marginTop: 8, fontSize: 22, fontWeight: 800 };
-const listStyle: CSSProperties = { display: "grid", gap: 12, marginTop: 14 };
-const listRowStyle: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, paddingTop: 12, borderTop: "1px solid var(--line-soft)" };
-const rowTitleStyle: CSSProperties = { fontWeight: 800, fontSize: 15 };
-const rowMetaStyle: CSSProperties = { color: "rgba(240,235,224,0.45)", fontSize: 13, marginTop: 3 };
-const emptyStyle: CSSProperties = { color: "rgba(240,235,224,0.45)", fontSize: 14 };
-const tagStyle: CSSProperties = { padding: "6px 10px", borderRadius: 999, fontSize: 12, fontWeight: 800, textTransform: "uppercase" };
-const successTagStyle: CSSProperties = { background: "var(--success)", border: "1px solid var(--success)", color: "var(--bg)" };
-const dangerTagStyle: CSSProperties = { background: "var(--accent)", border: "1px solid var(--accent)", color: "var(--text)" };
-const neutralTagStyle: CSSProperties = { background: "rgba(240,235,224,0.07)", border: "1px solid rgba(240,235,224,0.12)", color: "var(--text)" };
-const secondaryLinkStyle: CSSProperties = { padding: "10px 16px", borderRadius: 999, border: "1px solid var(--line)", background: "transparent", color: "var(--text)", textDecoration: "none", fontWeight: 700, fontSize: 14 };
+const emptyStyle: CSSProperties = { color: PALETTE.soft, fontSize: 14, lineHeight: 1.6 };

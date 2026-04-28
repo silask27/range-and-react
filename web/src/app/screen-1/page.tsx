@@ -708,7 +708,6 @@ function Screen1PageContent() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         scenario_id: scenarioId,
-        seed: 1,
         train_timer_seconds: trainTimerSeconds,
       }),
     });

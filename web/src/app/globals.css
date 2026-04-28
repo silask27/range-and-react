@@ -253,3 +253,77 @@ img { max-width: 100%; display: block; }
   .content-grid.two-col, .content-grid.screen-three, .public-hero, .open-grid-two, .open-grid-three, .open-grid-four { grid-template-columns: 1fr; }
   .internal-top-nav { overflow-x: auto; justify-content: flex-start; }
 }
+
+
+/* Shared form polish: keep native selects visually consistent across pages. */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 46px !important;
+  background-image:
+    linear-gradient(45deg, transparent 50%, rgba(240,235,224,0.72) 50%),
+    linear-gradient(135deg, rgba(240,235,224,0.72) 50%, transparent 50%) !important;
+  background-position:
+    calc(100% - 23px) 50%,
+    calc(100% - 17px) 50% !important;
+  background-size:
+    6px 6px,
+    6px 6px !important;
+  background-repeat: no-repeat !important;
+}
+select::-ms-expand { display: none; }
+
+@media (max-width: 720px) {
+  .app-shell,
+  .public-wrap {
+    padding: 18px 18px 34px;
+  }
+
+  .page-stack {
+    gap: 24px;
+  }
+
+  .page-header {
+    gap: 18px;
+    align-items: start;
+  }
+
+  .metric-chip {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .public-hero {
+    min-height: auto;
+    padding-top: 22px;
+    gap: 24px;
+  }
+
+  .site-footer {
+    align-items: flex-start;
+  }
+
+  .btn,
+  .btn-ghost,
+  .btn-primary,
+  .btn-success {
+    width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  .open-grid-two,
+  .open-grid-three,
+  .open-grid-four {
+    gap: 18px;
+  }
+
+  .page-title {
+    font-size: clamp(32px, 12vw, 44px);
+  }
+
+  .page-subtitle {
+    font-size: 15px;
+  }
+}
