@@ -26,7 +26,6 @@ type DebriefPayload = {
   actual_final_bucket: {
     bucket_label: string;
     subgroup_label: string;
-    display_subgroup_label?: string;
     equity_vs_hero: number;
     hero_range_source: string;
   };
@@ -166,7 +165,7 @@ export default function HandDebriefPage() {
               <div style={eyebrowStyle}>Final truth</div>
               <h2 style={sectionTitleStyle}>What villain actually had</h2>
               <div style={truthHeadlineStyle}>
-                {payload.actual_final_bucket.bucket_label} · {payload.actual_final_bucket.display_subgroup_label ?? payload.actual_final_bucket.subgroup_label}
+                {payload.actual_final_bucket.bucket_label} · {payload.actual_final_bucket.subgroup_label}
               </div>
               <div style={truthMetaStyle}>Equity vs hero: {payload.actual_final_bucket.equity_vs_hero.toFixed(3)}</div>
             </div>
