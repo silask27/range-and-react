@@ -374,7 +374,7 @@ UI_SUBGROUPS: list[str] = [
     "Gutshot",
     "Strong Pair + Draw",
     "Weak Pair + Draw",
-    "Air",
+    "High Card",
     "Missed Draw",
 ]
 
@@ -423,6 +423,37 @@ def _paired_rank_from_hole_and_board(hole: tuple[str, str], board: list[str]) ->
     return None
 
 
+def _pocket_pair_rank_plays_in_best_hand(hole: tuple[str, str], board: list[str]) -> bool:
+    """
+    True only when villain's pocket-pair rank actually participates in the
+    best 5-card made-hand structure.
+
+    Example: 55 on 6-6-7-7 should not display as Underpair because the
+    best hand is board two-pair with a 5 kicker; the pocket pair itself does
+    not play. But 88 on K-T-7-6-4 should display as Low Pair because the pair
+    is part of the best one-pair hand.
+    """
+    if hole[0][0] != hole[1][0]:
+        return False
+
+    pair_rank = _card_rank(hole[0])
+    best_rank = bz.rank_7(list(hole) + board)
+    class_idx = int(best_rank[0])
+
+    if class_idx == 1:  # One Pair
+        return int(best_rank[1]) == pair_rank
+    if class_idx == 2:  # Two Pair
+        return pair_rank in {int(best_rank[1]), int(best_rank[2])}
+    if class_idx == 3:  # Trips / set
+        return int(best_rank[1]) == pair_rank
+    if class_idx == 6:  # Full House
+        return pair_rank in {int(best_rank[1]), int(best_rank[2])}
+    if class_idx == 7:  # Quads
+        return int(best_rank[1]) == pair_rank
+
+    return False
+
+
 def _ui_pair_class(
     hole: tuple[str, str],
     board: list[str],
@@ -444,6 +475,8 @@ def _ui_pair_class(
     r2 = _card_rank(hole[1])
 
     if r1 == r2:
+        if not _pocket_pair_rank_plays_in_best_hand(hole, board):
+            return None
         pair_rank = r1
         if pair_rank > top_rank:
             return "Overpair"
@@ -457,6 +490,8 @@ def _ui_pair_class(
         return "Overpair"
     if made_subgroup == "Top Pair":
         return _top_pair_ui_label(hole, board)
+    if made_subgroup not in {"Mid Pair", "Low Pair"}:
+        return None
 
     paired_rank = _paired_rank_from_hole_and_board(hole, board)
     if paired_rank is None:
@@ -607,7 +642,7 @@ def _display_subgroup_label(
     if subgroup_label == "High Card" and any(card[0] == "A" for card in hole):
         return "Ace High", None
 
-    return "Air", None
+    return "High Card", None
 
 
 def _pair_led_bucket_for_pair_draw(

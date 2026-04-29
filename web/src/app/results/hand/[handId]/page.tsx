@@ -26,6 +26,7 @@ type DebriefPayload = {
   actual_final_bucket: {
     bucket_label: string;
     subgroup_label: string;
+    display_subgroup_label?: string;
     equity_vs_hero: number;
     hero_range_source: string;
   };
@@ -34,18 +35,28 @@ type DebriefPayload = {
     villain_action: string | null;
     actual_bucket: string;
     actual_subgroup: string;
+    actual_display_subgroup?: string;
     start_live_combos: number;
     end_live_combos: number;
     combo_alive: boolean;
     bucket_alive: boolean;
     subgroup_alive: boolean;
-    efficiency_score: number;
+    efficiency_score: number | null;
     overall_score: number;
+    posterior_scoring?: {
+      observed_action_key?: string;
+      posterior_mass_kept?: number;
+      low_posterior_junk_removed?: number;
+      overall_score?: number;
+      prior_combo_count?: number;
+      kept_combo_count?: number;
+    } | null;
   }>;
   response_evaluations: Array<{
     street: string;
     actual_bucket: string;
     actual_subgroup: string;
+    actual_display_subgroup?: string;
     hero_action: string;
     column: string | null;
     predicted: string | null;
@@ -55,6 +66,16 @@ type DebriefPayload = {
     score: number | null;
     correct: boolean | null;
     reason: string | null;
+    score_method?: string;
+    bucket_level_scores?: Array<{
+      bucket: string;
+      predicted: string | null;
+      probabilities: Record<string, number>;
+      selected_probability: number;
+      best_probability: number;
+      score: number | null;
+      combo_count: number;
+    }>;
   }>;
   recommendations: string[];
   history: Array<{
@@ -145,7 +166,7 @@ export default function HandDebriefPage() {
               <div style={eyebrowStyle}>Final truth</div>
               <h2 style={sectionTitleStyle}>What villain actually had</h2>
               <div style={truthHeadlineStyle}>
-                {payload.actual_final_bucket.bucket_label} · {payload.actual_final_bucket.subgroup_label}
+                {payload.actual_final_bucket.bucket_label} · {payload.actual_final_bucket.display_subgroup_label ?? payload.actual_final_bucket.subgroup_label}
               </div>
               <div style={truthMetaStyle}>Equity vs hero: {payload.actual_final_bucket.equity_vs_hero.toFixed(3)}</div>
             </div>
@@ -159,7 +180,7 @@ export default function HandDebriefPage() {
           <section style={twoColumnStyle}>
             <MetricSection
               eyebrow="Ranging"
-              title="Did the true hand stay alive?"
+              title="How close was your remaining range?"
               score={payload.summary.ranging_score}
               accent={PALETTE.coral}
               headline={rangeTakeaway?.detail ?? "No prune evaluations were recorded for this hand."}
@@ -173,7 +194,7 @@ export default function HandDebriefPage() {
 
             <MetricSection
               eyebrow="Action response"
-              title="Were your reaction reads right?"
+              title="How close were your bucket reads?"
               score={payload.summary.response_score}
               accent={PALETTE.green}
               headline={responseTakeaway?.detail ?? "No response evaluations were recorded for this hand."}
@@ -275,16 +296,23 @@ function InfoChip({ label, value }: { label: string; value: string }) {
 }
 
 function PruneRow({ item }: { item: DebriefPayload["prune_evaluations"][number] }) {
-  const status = item.combo_alive ? "Kept alive" : "Removed";
+  const score = Number(item.overall_score ?? 0);
+  const status = score >= 85 ? "Strong" : score >= 65 ? "Close" : "Review";
+  const tone = score >= 85 ? successTagStyle : score >= 65 ? neutralTagStyle : dangerTagStyle;
+  const posterior = item.posterior_scoring;
+  const posteriorLine = posterior
+    ? `Posterior kept ${formatScore(posterior.posterior_mass_kept)} · Low-likelihood removed ${formatScore(posterior.low_posterior_junk_removed)}`
+    : `Live combos ${item.start_live_combos} → ${item.end_live_combos}`;
   return (
     <div style={compactRowStyle}>
       <div style={{ minWidth: 0 }}>
         <div style={rowTitleStyle}>{formatStreet(item.street)} · {item.villain_action ?? "Villain action"}</div>
-        <div style={rowMetaStyle}>{item.actual_bucket} · {item.actual_subgroup}</div>
-        <div style={rowMetaStyle}>Live combos {item.start_live_combos} → {item.end_live_combos}</div>
+        <div style={rowMetaStyle}>{item.actual_bucket} · {item.actual_display_subgroup ?? item.actual_subgroup}</div>
+        <div style={rowMetaStyle}>{posteriorLine}</div>
+        {!item.combo_alive ? <div style={rowMetaStyle}>Exact combo was removed, but score is based on model-likely range shape.</div> : null}
       </div>
       <div style={rowRightStyle}>
-        <span style={{ ...tagStyle, ...(item.combo_alive ? successTagStyle : dangerTagStyle) }}>{status}</span>
+        <span style={{ ...tagStyle, ...tone }}>{status}</span>
         <span style={scoreTextStyle}>Score {formatScore(item.overall_score)}</span>
       </div>
     </div>
@@ -292,14 +320,16 @@ function PruneRow({ item }: { item: DebriefPayload["prune_evaluations"][number] 
 }
 
 function ResponseRow({ item }: { item: DebriefPayload["response_evaluations"][number] }) {
-  const status = !item.supported ? "Unscored" : item.correct ? "Correct" : "Miss";
-  const tone = !item.supported ? neutralTagStyle : item.correct ? successTagStyle : dangerTagStyle;
+  const score = item.score == null ? null : Number(item.score);
+  const status = !item.supported ? "Unscored" : score != null && score >= 85 ? "Strong" : score != null && score >= 65 ? "Close" : "Review";
+  const tone = !item.supported ? neutralTagStyle : score != null && score >= 85 ? successTagStyle : score != null && score >= 65 ? neutralTagStyle : dangerTagStyle;
   return (
     <div style={compactRowStyle}>
       <div style={{ minWidth: 0 }}>
         <div style={rowTitleStyle}>{formatStreet(item.street)} · Hero {formatAction(item.hero_action)}</div>
-        <div style={rowMetaStyle}>{item.actual_bucket} · {item.actual_subgroup}</div>
-        <div style={rowMetaStyle}>Predicted {item.predicted ?? "—"} · Actual {item.actual ?? "—"}</div>
+        <div style={rowMetaStyle}>{item.actual_bucket} · {item.actual_display_subgroup ?? item.actual_subgroup}</div>
+        <div style={rowMetaStyle}>Selected {item.predicted ?? "—"} · Villain actually {item.actual ?? "—"}</div>
+        <div style={rowMetaStyle}>Scored by bucket-level model probability closeness.</div>
       </div>
       <div style={rowRightStyle}>
         <span style={{ ...tagStyle, ...tone }}>{status}</span>
@@ -315,26 +345,29 @@ function EmptyState({ copy }: { copy: string }) {
 
 function summarizePruning(items: DebriefPayload["prune_evaluations"]) {
   if (!items.length) return { headline: "No ranging score yet.", detail: "No prune evaluations were recorded for this hand." };
-  const kept = items.filter((item) => item.combo_alive).length;
-  const missed = items.length - kept;
+  const scored = items.filter((item) => item.overall_score != null);
+  const posteriorItems = items.filter((item) => item.posterior_scoring?.posterior_mass_kept != null);
+  const avgPosterior = posteriorItems.length
+    ? posteriorItems.reduce((sum, item) => sum + Number(item.posterior_scoring?.posterior_mass_kept ?? 0), 0) / posteriorItems.length
+    : null;
+  const removedExact = items.filter((item) => !item.combo_alive).length;
   return {
-    headline: `${kept}/${items.length} true-hand checks kept alive.`,
-    detail: missed
-      ? `${missed} prune step removed the exact hand. Review the highlighted miss before the next rep.`
-      : "You kept the true hand alive through every scored prune step.",
+    headline: `${scored.length} posterior range read${scored.length === 1 ? "" : "s"} scored.`,
+    detail: avgPosterior == null
+      ? "Ranging is scored by how well your remaining range matches the model-likely post-action range."
+      : removedExact
+        ? `You kept about ${Math.round(avgPosterior)}% of model-likely posterior range on average. Exact-combo survival is tracked, but it is no longer the whole score.`
+        : `You kept about ${Math.round(avgPosterior)}% of model-likely posterior range on average.`,
   };
 }
 
 function summarizeResponses(items: DebriefPayload["response_evaluations"]) {
-  const scored = items.filter((item) => item.supported);
+  const scored = items.filter((item) => item.supported && item.score != null);
   if (!scored.length) return { headline: "No action-response score yet.", detail: "No scored response nodes were recorded for this hand." };
-  const correct = scored.filter((item) => item.correct).length;
-  const misses = scored.length - correct;
+  const avgScore = scored.reduce((sum, item) => sum + Number(item.score ?? 0), 0) / scored.length;
   return {
-    headline: `${correct}/${scored.length} scored reaction reads correct.`,
-    detail: misses
-      ? `${misses} response read missed villain's actual reaction. Focus on those spots first.`
-      : "Your scored reaction reads matched villain's actual responses.",
+    headline: `${scored.length} bucket reaction read${scored.length === 1 ? "" : "s"} scored.`,
+    detail: `Average bucket-response closeness: ${Math.round(avgScore)}. Scores compare your selection to each bucket's highest-probability model response.`,
   };
 }
 

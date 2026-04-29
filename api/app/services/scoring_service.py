@@ -441,14 +441,51 @@ def build_hand_debrief(hand: HandState) -> dict[str, Any]:
     prune_evals = metadata.get('prune_evaluations', [])
     response_evals = metadata.get('response_evaluations', [])
     recommendations: list[str] = []
-    if any(not item.get('combo_alive') for item in prune_evals):
-        recommendations.append("You excluded villain's real combo on at least one prune step. Focus on keeping plausible hands alive before narrowing aggressively.")
-    if any(item.get('supported') and not item.get('correct') for item in response_evals):
-        recommendations.append('Your response-matrix misses suggest you should simplify down to the most likely bucket reaction before acting.')
-    if any(not item.get('supported') for item in response_evals):
-        recommendations.append('Some call-column nodes were logged but not scored yet. That is expected in this version.')
+    posterior_scores = [
+        float(item["posterior_scoring"]["posterior_mass_kept"])
+        for item in prune_evals
+        if isinstance(item.get("posterior_scoring"), dict)
+        and item["posterior_scoring"].get("posterior_mass_kept") is not None
+    ]
+    low_junk_scores = [
+        float(item["posterior_scoring"]["low_posterior_junk_removed"])
+        for item in prune_evals
+        if isinstance(item.get("posterior_scoring"), dict)
+        and item["posterior_scoring"].get("low_posterior_junk_removed") is not None
+    ]
+    response_scores = [
+        float(item["score"])
+        for item in response_evals
+        if item.get("supported") and item.get("score") is not None
+    ]
+
+    if posterior_scores:
+        avg_posterior_kept = sum(posterior_scores) / len(posterior_scores)
+        if avg_posterior_kept < 70:
+            recommendations.append(
+                "Your ranging score was driven by how much model-likely post-action range you kept. Review the prune steps where too much posterior range was removed."
+            )
+        elif any(not item.get("combo_alive") for item in prune_evals):
+            recommendations.append(
+                "You removed villain's exact combo in at least one prune step, but the ranging score now rewards how closely your remaining range matched the model's likely post-action range."
+            )
+    elif any(not item.get("combo_alive") for item in prune_evals):
+        recommendations.append(
+            "You excluded villain's real combo on at least one prune step. Focus on keeping plausible hands alive before narrowing aggressively."
+        )
+
+    if response_scores and (sum(response_scores) / len(response_scores)) < 70:
+        recommendations.append(
+            "Action Prediction is scored by bucket-level model probabilities. Review buckets where your selected reaction was far from the model's highest-probability response."
+        )
+    if any(not item.get("supported") for item in response_evals):
+        recommendations.append(
+            "Some response nodes were not scored because they do not map to an immediate villain reaction yet."
+        )
     if not recommendations:
-        recommendations.append('Nice work. You preserved the real hand and matched the likely response well on this hand.')
+        recommendations.append(
+            "Nice work. Your remaining range matched the model-likely post-action range and your bucket reactions were close to the model's highest-probability responses."
+        )
     actual = _actual_bucket_info(hand, iters=None)
     return {
         'hand_id': hand.hand_id,
