@@ -8,7 +8,8 @@ This runtime keeps the existing public contract (`choose_villain_action` and
 - build the richer v1-style predictor set
 - query v1/v2/v3/v4 expert action models
 - blend them with the trained v5 blend config
-- sample the final action from the blended distribution
+- select the deterministic top action from the blended distribution
+- preserve close/mixed probability metadata for scoring and debriefs
 - use size-model-v2 for bet / raise sizing
 """
 
@@ -125,6 +126,13 @@ class VillainDecisionResult:
     raise_size_key: str | None = None
     raise_size_mult: float | None = None
     sampled_menu_key: str | None = None
+    selection_mode: str | None = None
+    pred_top_action: str | None = None
+    pred_top_action_probability: float | None = None
+    pred_second_action: str | None = None
+    pred_second_action_probability: float | None = None
+    pred_top_action_margin: float | None = None
+    selection_confidence_band: str | None = None
 
 
 @lru_cache(maxsize=1)
@@ -212,6 +220,73 @@ def _sample_action_from_probs(probs: dict[str, float], rng: random.Random) -> st
         if roll <= cumulative:
             return label
     return positive[-1][0]
+
+
+def _action_tie_break_index(label: str) -> int:
+    # Stable deterministic ordering for exact ties. Aggressive/continue options are
+    # preferred over folds so reps advance through the most instructive line.
+    tie_break_order = ["b", "r", "c", "x", "f"]
+    try:
+        return tie_break_order.index(label)
+    except ValueError:
+        return len(tie_break_order)
+
+
+def _select_top_action_from_probs(probs: dict[str, float]) -> str:
+    normalized = _normalize_probs(probs)
+    if not normalized:
+        raise ValueError("cannot select action from empty probability map")
+
+    return max(
+        normalized,
+        key=lambda label: (
+            float(normalized.get(label, 0.0)),
+            -_action_tie_break_index(label),
+        ),
+    )
+
+
+def _action_selection_metadata(probs: dict[str, float]) -> dict[str, object]:
+    normalized = _normalize_probs(probs)
+    ranked = sorted(
+        normalized.items(),
+        key=lambda item: (-float(item[1]), _action_tie_break_index(item[0]), item[0]),
+    )
+
+    top_action = ranked[0][0] if ranked else None
+    top_prob = float(ranked[0][1]) if ranked else 0.0
+    second_action = ranked[1][0] if len(ranked) > 1 else None
+    second_prob = float(ranked[1][1]) if len(ranked) > 1 else 0.0
+    margin = top_prob - second_prob
+
+    if top_prob >= 0.70 or margin >= 0.25:
+        band = "clear"
+    elif margin >= 0.10:
+        band = "lean"
+    else:
+        band = "mixed"
+
+    return {
+        "selection_mode": "top_action",
+        "pred_top_action": top_action,
+        "pred_top_action_probability": top_prob,
+        "pred_second_action": second_action,
+        "pred_second_action_probability": second_prob,
+        "pred_top_action_margin": margin,
+        "selection_confidence_band": band,
+    }
+
+
+def _selection_result_kwargs(selection_meta: dict[str, object]) -> dict[str, object]:
+    return {
+        "selection_mode": str(selection_meta["selection_mode"]),
+        "pred_top_action": selection_meta["pred_top_action"],
+        "pred_top_action_probability": float(selection_meta["pred_top_action_probability"]),
+        "pred_second_action": selection_meta["pred_second_action"],
+        "pred_second_action_probability": float(selection_meta["pred_second_action_probability"]),
+        "pred_top_action_margin": float(selection_meta["pred_top_action_margin"]),
+        "selection_confidence_band": str(selection_meta["selection_confidence_band"]),
+    }
 
 
 def _clip_prob(value: float) -> float:
@@ -1181,15 +1256,31 @@ def validate_model_runtime() -> None:
 
 
 def _fallback_villain_decision(*, node: str, can_raise: bool, facing_size_raw: float, pot: float, rng: random.Random) -> VillainDecisionResult:
+    del rng
     pot = max(float(pot), 1.0)
     frac = max(0.0, float(facing_size_raw) / pot)
     if node == 'open_action':
         probs = {'x': 0.38, 'b': 0.62}
-        sampled = _sample_action_from_probs(probs, rng)
-        action = ActionType.BET if sampled == 'b' else ActionType.CHECK
+        selected = _select_top_action_from_probs(probs)
+        selection_meta = _action_selection_metadata(probs)
+        action = ActionType.BET if selected == 'b' else ActionType.CHECK
         bet_size_frac = 0.5 if action == ActionType.BET else None
         bet_size_key = _bet_size_key_from_fraction(bet_size_frac) if bet_size_frac is not None else None
-        return VillainDecisionResult(action=action, node=node, note=f"fallback={node} [{_format_probs_for_note(probs)}]", probabilities=probs, bet_size_key=bet_size_key, bet_size_frac=bet_size_frac, sampled_menu_key=sampled)
+        note = (
+            f"fallback={node} selection=top_action "
+            f"confidence={selection_meta['selection_confidence_band']} "
+            f"[{_format_probs_for_note(probs)}]"
+        )
+        return VillainDecisionResult(
+            action=action,
+            node=node,
+            note=note,
+            probabilities=probs,
+            bet_size_key=bet_size_key,
+            bet_size_frac=bet_size_frac,
+            sampled_menu_key=selected,
+            **_selection_result_kwargs(selection_meta),
+        )
     if can_raise:
         if frac <= 0.45:
             probs = {'f': 0.18, 'c': 0.58, 'r': 0.24}
@@ -1199,11 +1290,26 @@ def _fallback_villain_decision(*, node: str, can_raise: bool, facing_size_raw: f
             probs = {'f': 0.42, 'c': 0.48, 'r': 0.10}
     else:
         probs = {'f': 0.34 if frac > 0.9 else 0.24, 'c': 0.66 if frac > 0.9 else 0.76, 'r': 0.0}
-    sampled = _sample_action_from_probs(probs, rng)
-    action = ActionType.FOLD if sampled == 'f' else (ActionType.RAISE if sampled == 'r' else ActionType.CALL)
+    selected = _select_top_action_from_probs(probs)
+    selection_meta = _action_selection_metadata(probs)
+    action = ActionType.FOLD if selected == 'f' else (ActionType.RAISE if selected == 'r' else ActionType.CALL)
     raise_size_mult = 3.0 if action == ActionType.RAISE else None
     raise_size_key = _raise_size_key_from_multiple(raise_size_mult) if raise_size_mult is not None else None
-    return VillainDecisionResult(action=action, node=node, note=f"fallback={node} [{_format_probs_for_note(probs)}]", probabilities=probs, raise_size_key=raise_size_key, raise_size_mult=raise_size_mult, sampled_menu_key=sampled)
+    note = (
+        f"fallback={node} selection=top_action "
+        f"confidence={selection_meta['selection_confidence_band']} "
+        f"[{_format_probs_for_note(probs)}]"
+    )
+    return VillainDecisionResult(
+        action=action,
+        node=node,
+        note=note,
+        probabilities=probs,
+        raise_size_key=raise_size_key,
+        raise_size_mult=raise_size_mult,
+        sampled_menu_key=selected,
+        **_selection_result_kwargs(selection_meta),
+    )
 
 
 def choose_villain_action(
@@ -1260,15 +1366,16 @@ def choose_villain_action(
     if not can_raise and 'r' in final_probs:
         final_probs['r'] = 0.0
     final_probs = _normalize_probs(final_probs)
-    sampled = _sample_action_from_probs(final_probs, rng)
-    if sampled == 'f':
+    selected = _select_top_action_from_probs(final_probs)
+    selection_meta = _action_selection_metadata(final_probs)
+    if selected == 'f':
         action = ActionType.FOLD
-    elif sampled == 'r':
+    elif selected == 'r':
         action = ActionType.RAISE
-    elif sampled == 'b':
+    elif selected == 'b':
         action = ActionType.BET
     else:
-        action = ActionType.CHECK if sampled == 'x' else ActionType.CALL
+        action = ActionType.CHECK if selected == 'x' else ActionType.CALL
 
     bet_size_frac = None
     bet_size_key = None
@@ -1287,7 +1394,12 @@ def choose_villain_action(
         raise_size_mult = float(size_result['pred_reraise_multiple_vs_facing_v2'] or 3.0)
         raise_size_key = _raise_size_key_from_multiple(raise_size_mult)
 
-    note = f"model=v5 scope={v5.get('blend_scope')} [{_format_probs_for_note(final_probs)}]"
+    note = (
+        f"model=v5 selection=top_action "
+        f"confidence={selection_meta['selection_confidence_band']} "
+        f"scope={v5.get('blend_scope')} "
+        f"[{_format_probs_for_note(final_probs)}]"
+    )
     return VillainDecisionResult(
         action=action,
         node=node,
@@ -1297,5 +1409,6 @@ def choose_villain_action(
         bet_size_frac=bet_size_frac,
         raise_size_key=raise_size_key,
         raise_size_mult=raise_size_mult,
-        sampled_menu_key=sampled,
+        sampled_menu_key=selected,
+        **_selection_result_kwargs(selection_meta),
     )
