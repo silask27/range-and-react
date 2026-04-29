@@ -6,8 +6,9 @@ from typing import Any
 from api.app.data.catalog import SCENARIOS
 from api.app.data.villain_profiles import VILLAIN_PROFILES
 from api.app.engine.bucket_engine import build_bucket_matrix_view
+from api.app.engine.villain_decision import choose_villain_action
 from api.app.engine.villain_hand_bucket import bucket_villain_hand
-from api.app.models.enums import ActionType, ResponseColumnType
+from api.app.models.enums import ActionType, Player, ResponseColumnType
 from api.app.models.state import HandState
 from api.app.storage.memory_store import store
 
@@ -61,6 +62,7 @@ def _actual_bucket_info(hand: HandState, *, iters: int | None) -> dict[str, Any]
     return {
         'bucket_label': result.bucket_label,
         'subgroup_label': result.subgroup_label,
+        'display_subgroup_label': result.display_subgroup_label,
         'equity_vs_hero': result.equity_vs_hero,
         'hero_range_source': result.hero_range_source,
     }
@@ -102,6 +104,195 @@ def _row_flags(bucket_view: dict[str, Any], *, actual_bucket: str, actual_subgro
     return bucket_alive, subgroup_alive
 
 
+
+def _latest_villain_event(hand: HandState):
+    return next(
+        (
+            event
+            for event in reversed(hand.history.events)
+            if event.actor == Player.VILLAIN or getattr(event.actor, "value", None) == "villain"
+        ),
+        None,
+    )
+
+
+def _previous_hero_event_before_latest_villain(hand: HandState):
+    latest = _latest_villain_event(hand)
+    if latest is None:
+        return None
+    seen_latest = False
+    for event in reversed(hand.history.events):
+        if event is latest:
+            seen_latest = True
+            continue
+        if not seen_latest:
+            continue
+        if event.actor == Player.HERO or getattr(event.actor, "value", None) == "hero":
+            return event
+    return None
+
+
+def _action_model_key(action: ActionType | None) -> str | None:
+    if action == ActionType.CHECK:
+        return "x"
+    if action == ActionType.BET:
+        return "b"
+    if action == ActionType.FOLD:
+        return "f"
+    if action == ActionType.CALL:
+        return "c"
+    if action == ActionType.RAISE:
+        return "r"
+    return None
+
+
+def _response_probs_from_model_probs(column: str, model_probs: dict[str, float]) -> dict[str, float]:
+    if column == ResponseColumnType.CHECK.value:
+        return {"X": float(model_probs.get("x", 0.0)), "B": float(model_probs.get("b", 0.0))}
+    if column in {ResponseColumnType.BET_SMALL.value, ResponseColumnType.BET_BIG.value, ResponseColumnType.RAISE.value}:
+        return {"F": float(model_probs.get("f", 0.0)), "C": float(model_probs.get("c", 0.0)), "R": float(model_probs.get("r", 0.0))}
+    return {}
+
+
+def _stable_combo_seed(hand: HandState, combo: list[str] | tuple[str, str], offset: int = 0) -> int:
+    combo_text = "".join(sorted(str(card) for card in combo))
+    return int(hand.bucket_seed) + offset + sum(ord(ch) for ch in combo_text)
+
+
+def _decision_context_for_response_score(hand: HandState, *, hero_action_type: ActionType, hero_amount: float | None, pot_before_action: float | None) -> dict[str, Any]:
+    amount = float(hero_amount or 0.0)
+    base_pot = float(pot_before_action if pot_before_action is not None else hand.pot)
+    if hero_action_type in {ActionType.BET, ActionType.RAISE}:
+        return {"pot": max(1.0, base_pot + amount), "to_call": max(0.0, amount), "node_hint": "facing_raise" if hero_action_type == ActionType.RAISE else "facing_bet"}
+    return {"pot": max(1.0, base_pot), "to_call": 0.0, "node_hint": "open_action"}
+
+
+def _decision_context_for_observed_villain_event(hand: HandState) -> tuple[dict[str, Any], ActionType | None]:
+    latest = _latest_villain_event(hand)
+    if latest is None:
+        return {"pot": max(1.0, float(hand.pot)), "to_call": 0.0, "node_hint": "open_action"}, None
+    action = latest.action
+    amount = float(latest.amount or 0.0)
+    prev_hero = _previous_hero_event_before_latest_villain(hand)
+    if action in {ActionType.CHECK, ActionType.BET}:
+        return {"pot": max(1.0, float(hand.pot) - (amount if action == ActionType.BET else 0.0)), "to_call": 0.0, "node_hint": "open_action"}, action
+    node_hint = "facing_raise" if prev_hero is not None and prev_hero.action == ActionType.RAISE else "facing_bet"
+    to_call = amount if action == ActionType.CALL else float(getattr(prev_hero, "amount", 0.0) or amount or 0.0)
+    return {"pot": max(1.0, float(hand.pot) - amount), "to_call": max(0.0, to_call), "node_hint": node_hint}, action
+
+
+def _model_probabilities_for_combo(hand: HandState, *, combo: list[str] | tuple[str, str], context: dict[str, Any], iters: int | None, seed_offset: int) -> dict[str, float] | None:
+    scenario = SCENARIOS.get(hand.scenario_id)
+    try:
+        decision = choose_villain_action(
+            villain_hand=tuple(combo),
+            board=hand.board,
+            villain_profile_id=hand.villain_profile_id,
+            street=hand.street,
+            to_call=float(context.get("to_call") or 0.0),
+            pot=float(context.get("pot") or hand.pot or 1.0),
+            can_raise=True,
+            scenario_hero_range_tokens=hand.hero_tokens_saved,
+            iters=iters,
+            seed=_stable_combo_seed(hand, combo, offset=seed_offset),
+            node_hint=str(context.get("node_hint") or "open_action"),
+            scenario_id=hand.scenario_id,
+            villain_is_ip=(not bool(getattr(scenario, "hero_is_ip", False))) if scenario else False,
+            history_events=hand.history.events,
+            effective_stack_size=float(hand.villain_stack or 0.0),
+        )
+    except Exception:
+        return None
+    return dict(decision.probabilities or {})
+
+
+def _bucket_level_response_scores(hand: HandState, *, column: str, selections: dict[str, dict[str, str]], hero_action_type: ActionType, hero_amount: float | None, pot_before_action: float | None, iters: int | None) -> tuple[float | None, list[dict[str, Any]]]:
+    context = _decision_context_for_response_score(hand, hero_action_type=hero_action_type, hero_amount=hero_amount, pot_before_action=pot_before_action)
+    bucket_view = _bucket_view(hand, iters=iters)
+    bucket_rows: list[dict[str, Any]] = []
+    weighted_total = 0.0
+    total_weight = 0.0
+    for row in bucket_view.get("rows", []):
+        bucket_name = str(row.get("bucket_name"))
+        combo_count = int(row.get("combo_count", 0) or 0)
+        if combo_count <= 0:
+            continue
+        accum: dict[str, float] = defaultdict(float)
+        seen = 0
+        for hand_entry in row.get("hands", []):
+            for combo in hand_entry.get("combo_cards", []):
+                probs = _model_probabilities_for_combo(hand, combo=combo, context=context, iters=iters, seed_offset=3100)
+                if probs is None:
+                    continue
+                response_probs = _response_probs_from_model_probs(column, probs)
+                if not response_probs:
+                    continue
+                for key, value in response_probs.items():
+                    accum[key] += float(value)
+                seen += 1
+        if seen <= 0:
+            continue
+        averaged = {key: value / seen for key, value in accum.items()}
+        max_prob = max(averaged.values()) if averaged else 0.0
+        predicted = (selections.get(bucket_name) or {}).get(column)
+        selected_prob = float(averaged.get(predicted, 0.0)) if predicted else 0.0
+        bucket_score = (selected_prob / max_prob * 100.0) if max_prob > 0 else None
+        if bucket_score is not None:
+            weighted_total += bucket_score * combo_count
+            total_weight += combo_count
+        bucket_rows.append({
+            "bucket": bucket_name,
+            "predicted": predicted,
+            "probabilities": {k: round(v, 4) for k, v in averaged.items()},
+            "selected_probability": round(selected_prob, 4),
+            "best_probability": round(max_prob, 4),
+            "score": round(bucket_score, 2) if bucket_score is not None else None,
+            "combo_count": combo_count,
+        })
+    if total_weight <= 0:
+        return None, bucket_rows
+    return round(weighted_total / total_weight, 2), bucket_rows
+
+
+def _posterior_prune_score(hand: HandState, *, iters: int | None) -> dict[str, Any] | None:
+    context, observed_action = _decision_context_for_observed_villain_event(hand)
+    action_key = _action_model_key(observed_action)
+    if action_key is None:
+        return None
+    prior_combos: list[tuple[str, tuple[str, str]]] = []
+    for label, combos in (hand.prune_range_snapshot or {}).items():
+        for combo in combos:
+            prior_combos.append((label, tuple(sorted(combo))))
+    if not prior_combos:
+        return None
+    kept = {tuple(sorted(combo)) for combos in (hand.villain_range_combos_live or {}).values() for combo in combos}
+    raw_weights: list[tuple[str, tuple[str, str], float]] = []
+    for label, combo in prior_combos:
+        probs = _model_probabilities_for_combo(hand, combo=combo, context=context, iters=iters, seed_offset=9100)
+        probability = float((probs or {}).get(action_key, 0.0))
+        raw_weights.append((label, combo, max(0.0, probability)))
+    total_raw = sum(weight for _, _, weight in raw_weights)
+    if total_raw <= 0:
+        return None
+    posterior = [(label, combo, weight / total_raw) for label, combo, weight in raw_weights]
+    posterior_mass_kept = sum(weight for _, combo, weight in posterior if combo in kept)
+    uniform = 1.0 / len(posterior)
+    low_posterior = [(label, combo, weight) for label, combo, weight in posterior if weight < uniform]
+    if low_posterior:
+        removed_low = sum(1 for _, combo, _ in low_posterior if combo not in kept)
+        junk_removed = removed_low / len(low_posterior)
+    else:
+        junk_removed = 1.0
+    overall = (0.75 * posterior_mass_kept + 0.25 * junk_removed) * 100.0
+    return {
+        "observed_action_key": action_key,
+        "posterior_mass_kept": round(posterior_mass_kept * 100.0, 2),
+        "low_posterior_junk_removed": round(junk_removed * 100.0, 2),
+        "overall_score": round(overall, 2),
+        "prior_combo_count": len(prior_combos),
+        "kept_combo_count": len(kept),
+    }
+
 def record_prune_evaluation(hand: HandState, *, iters: int | None) -> None:
     if not hand.prune_range_snapshot:
         return
@@ -109,36 +300,48 @@ def record_prune_evaluation(hand: HandState, *, iters: int | None) -> None:
     end_total = sum(len(combos) for combos in (hand.villain_range_combos_live or {}).values())
     actual = _actual_bucket_info(hand, iters=iters)
     combo_alive, live_labels = _combo_alive(hand)
-    bucket_alive, subgroup_alive = _row_flags(_bucket_view(hand, iters=iters), actual_bucket=actual['bucket_label'], actual_subgroup=actual['subgroup_label'])
-    efficiency = 0.0
-    if combo_alive and start_total > 1:
-        efficiency = max(0.0, min(1.0, (start_total - end_total) / (start_total - 1)))
-    if combo_alive:
-        overall = 70.0 + (30.0 * efficiency)
-    elif subgroup_alive:
-        overall = 35.0
-    elif bucket_alive:
-        overall = 20.0
+    bucket_alive, subgroup_alive = _row_flags(
+        _bucket_view(hand, iters=iters),
+        actual_bucket=actual['bucket_label'],
+        actual_subgroup=actual.get('display_subgroup_label') or actual['subgroup_label'],
+    )
+
+    posterior_result = _posterior_prune_score(hand, iters=iters)
+    if posterior_result is not None:
+        overall = float(posterior_result['overall_score'])
+        efficiency = None
     else:
-        overall = 0.0
-    latest_villain_event = next((e for e in reversed(hand.history.events) if e.street == hand.street and e.actor.value == 'villain'), None)
+        efficiency = 0.0
+        if combo_alive and start_total > 1:
+            efficiency = max(0.0, min(1.0, (start_total - end_total) / (start_total - 1)))
+        if combo_alive:
+            overall = 70.0 + (30.0 * efficiency)
+        elif subgroup_alive:
+            overall = 35.0
+        elif bucket_alive:
+            overall = 20.0
+        else:
+            overall = 0.0
+
+    latest_villain_event = _latest_villain_event(hand)
     metadata = _metadata_for_hand(hand.hand_id)
     metadata['prune_evaluations'].append({
         'street': hand.street.value,
         'villain_action': latest_villain_event.action.value if latest_villain_event else None,
         'actual_bucket': actual['bucket_label'],
         'actual_subgroup': actual['subgroup_label'],
+        'actual_display_subgroup': actual.get('display_subgroup_label'),
         'start_live_combos': start_total,
         'end_live_combos': end_total,
         'combo_alive': combo_alive,
         'bucket_alive': bucket_alive,
         'subgroup_alive': subgroup_alive,
         'remaining_labels_for_true_combo': live_labels,
-        'efficiency_score': round(efficiency * 100.0, 2),
+        'posterior_scoring': posterior_result,
+        'efficiency_score': round(efficiency * 100.0, 2) if efficiency is not None else None,
         'overall_score': round(overall, 2),
     })
     _persist_metadata(hand.hand_id, metadata)
-
 
 def _hero_column_for_action(*, action_type: ActionType, amount: float | None, pot_before_action: float | None) -> str | None:
     if action_type == ActionType.CHECK:
@@ -178,12 +381,12 @@ def record_response_matrix_evaluation(
         return
     actual = _actual_bucket_info(hand, iters=iters)
     column = _hero_column_for_action(action_type=hero_action_type, amount=hero_amount, pot_before_action=pot_before_action)
-    predicted = (selections.get(actual['bucket_label']) or {}).get(column) if column else None
     supported = True
     reason = None
     actual_code = None
     score = None
     correct = None
+    bucket_scores: list[dict[str, Any]] = []
     if column == ResponseColumnType.CALL.value:
         supported = False
         reason = 'Call-column nodes are not directly scored yet because they predict later posture rather than an immediate villain action.'
@@ -196,26 +399,41 @@ def record_response_matrix_evaluation(
             supported = False
             reason = 'The villain action did not map cleanly to this response column.'
         else:
-            correct = predicted == actual_code
-            score = 100.0 if correct else 0.0
+            score, bucket_scores = _bucket_level_response_scores(
+                hand,
+                column=column,
+                selections=selections,
+                hero_action_type=hero_action_type,
+                hero_amount=hero_amount,
+                pot_before_action=pot_before_action,
+                iters=iters,
+            )
+            if score is None:
+                supported = False
+                reason = 'Could not compute bucket-level model probabilities for this node.'
+            else:
+                predicted_actual_bucket = (selections.get(actual['bucket_label']) or {}).get(column)
+                correct = predicted_actual_bucket == actual_code
     metadata = _metadata_for_hand(hand.hand_id)
     metadata['response_evaluations'].append({
         'street': hand.street.value,
         'actual_bucket': actual['bucket_label'],
         'actual_subgroup': actual['subgroup_label'],
+        'actual_display_subgroup': actual.get('display_subgroup_label'),
         'hero_action': hero_action_type.value,
         'hero_amount': hero_amount,
         'column': column,
-        'predicted': predicted,
+        'predicted': (selections.get(actual['bucket_label']) or {}).get(column) if column else None,
         'actual': actual_code,
         'villain_action': villain_action_type.value if villain_action_type else None,
         'supported': supported,
         'score': score,
         'correct': correct,
+        'bucket_level_scores': bucket_scores,
+        'score_method': 'bucket_probability_decision_quality',
         'reason': reason,
     })
     _persist_metadata(hand.hand_id, metadata)
-
 
 def build_hand_debrief(hand: HandState) -> dict[str, Any]:
     metadata = _metadata_for_hand(hand.hand_id)
