@@ -6,8 +6,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from api.app.engine.bucketizer import BUCKETS
-from api.app.engine.villain_hand_bucket import UI_SUBGROUPS
+from api.app.engine.bucketizer import BUCKETS, SUBGROUPS
 from api.app.engine.dealing import available_combos_for_label
 from api.app.engine.villain_hand_bucket import bucket_villain_hand
 
@@ -21,9 +20,9 @@ def _bucket_sort_key(bucket_name: str) -> int:
 
 def _subgroup_sort_key(subgroup_name: str) -> int:
     try:
-        return UI_SUBGROUPS.index(subgroup_name)
+        return SUBGROUPS.index(subgroup_name)
     except ValueError:
-        return len(UI_SUBGROUPS)
+        return len(SUBGROUPS)
 
 
 def _sorted_combo_lists(combos: list[list[str]]) -> list[list[str]]:
@@ -131,7 +130,7 @@ def build_bucket_matrix_view(
                 hero_range_source = result.hero_range_source
 
             bucket_name = result.bucket_label
-            subgroup_name = result.display_subgroup_label
+            subgroup_name = result.subgroup_label
 
             bucket_to_subgroup_to_label_to_combos[bucket_name][subgroup_name][label].append(
                 list(combo_cards)

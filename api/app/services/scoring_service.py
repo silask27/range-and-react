@@ -62,7 +62,6 @@ def _actual_bucket_info(hand: HandState, *, iters: int | None) -> dict[str, Any]
     return {
         'bucket_label': result.bucket_label,
         'subgroup_label': result.subgroup_label,
-        'display_subgroup_label': result.display_subgroup_label,
         'equity_vs_hero': result.equity_vs_hero,
         'hero_range_source': result.hero_range_source,
     }
@@ -303,7 +302,7 @@ def record_prune_evaluation(hand: HandState, *, iters: int | None) -> None:
     bucket_alive, subgroup_alive = _row_flags(
         _bucket_view(hand, iters=iters),
         actual_bucket=actual['bucket_label'],
-        actual_subgroup=actual.get('display_subgroup_label') or actual['subgroup_label'],
+        actual_subgroup=actual['subgroup_label'],
     )
 
     posterior_result = _posterior_prune_score(hand, iters=iters)
@@ -330,7 +329,6 @@ def record_prune_evaluation(hand: HandState, *, iters: int | None) -> None:
         'villain_action': latest_villain_event.action.value if latest_villain_event else None,
         'actual_bucket': actual['bucket_label'],
         'actual_subgroup': actual['subgroup_label'],
-        'actual_display_subgroup': actual.get('display_subgroup_label'),
         'start_live_combos': start_total,
         'end_live_combos': end_total,
         'combo_alive': combo_alive,
@@ -419,7 +417,6 @@ def record_response_matrix_evaluation(
         'street': hand.street.value,
         'actual_bucket': actual['bucket_label'],
         'actual_subgroup': actual['subgroup_label'],
-        'actual_display_subgroup': actual.get('display_subgroup_label'),
         'hero_action': hero_action_type.value,
         'hero_amount': hero_amount,
         'column': column,
