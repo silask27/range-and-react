@@ -352,6 +352,21 @@ COMMON_SUBGROUP_OVERRIDES = {
         continue_delta=0.06,
         pair_plus_draw_discount=True,
     ),
+    "Weak Pair + Draw": SubgroupOverride(
+        raise_delta=-0.08,
+        continue_delta=0.06,
+        pair_plus_draw_discount=True,
+    ),
+    "SDV + Draw": SubgroupOverride(
+        raise_delta=-0.08,
+        continue_delta=0.06,
+        pair_plus_draw_discount=True,
+    ),
+    "Value + Draw": SubgroupOverride(
+        raise_delta=-0.08,
+        continue_delta=0.06,
+        pair_plus_draw_discount=True,
+    ),
     "Combo Draw": SubgroupOverride(
         raise_delta=0.06,
         continue_delta=0.04,

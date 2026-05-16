@@ -2,7 +2,7 @@
   "model_name": "v5",
   "model_family": "dual_target_villain_street_blend",
   "config_version": "v5_dual_target_villain_street_blend_v1",
-  "config_source": "equal-weight OOF+benchmark tuning using cycle_3_final__manual_compare__20260420T014842Z_long.csv",
+  "config_source": "equal-weight OOF+benchmark tuning using cycle_5_v7_bucketizer__manual_compare__20260515T161023Z_long.csv",
   "target_priority": "equal-weight OOF distribution rows + benchmark rows; avg_prob_abs_error first, soft_brier second",
   "size_model_stack": "size_model_v2",
   "expert_model_order": [
@@ -12,9 +12,9 @@
     "v4"
   ],
   "training_context": {
-    "benchmark_long_csv": "data/benchmark_runs/cycle_3_final__manual_compare__20260420T014842Z_long.csv",
-    "oof_rows": 628,
-    "benchmark_rows": 100,
+    "benchmark_long_csv": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/benchmark_runs/cycle_5_v7_bucketizer__manual_compare__20260515T161023Z_long.csv",
+    "oof_rows": 1012,
+    "benchmark_rows": 130,
     "group_weighting": {
       "oof_total": 0.5,
       "benchmark_total": 0.5
@@ -27,132 +27,132 @@
   },
   "node_global_blend_weights": {
     "facing_bet": {
-      "v1": 0.85,
-      "v2": 0.15,
-      "v3": 0.0,
-      "v4": 0.0
-    },
-    "facing_raise": {
-      "v1": 0.0,
-      "v2": 0.65,
-      "v3": 0.0,
-      "v4": 0.35
-    },
-    "open_action": {
-      "v1": 0.75,
+      "v1": 0.3,
       "v2": 0.1,
       "v3": 0.0,
-      "v4": 0.15
+      "v4": 0.6
+    },
+    "facing_raise": {
+      "v1": 0.3,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 0.7
+    },
+    "open_action": {
+      "v1": 0.5,
+      "v2": 0.1,
+      "v3": 0.0,
+      "v4": 0.4
     }
   },
   "villain_node_blend_weights": {
     "Alex__facing_bet": {
-      "v1": 0.5,
-      "v2": 0.4,
-      "v3": 0.1,
+      "v1": 0.55,
+      "v2": 0.45,
+      "v3": 0.0,
       "v4": 0.0
     },
     "Alex__facing_raise": {
-      "v1": 0.0,
-      "v2": 0.3,
-      "v3": 0.35,
-      "v4": 0.35
+      "v1": 0.25,
+      "v2": 0.0,
+      "v3": 0.3,
+      "v4": 0.45
     },
     "Alex__open_action": {
       "v1": 0.0,
-      "v2": 0.3,
+      "v2": 0.0,
       "v3": 0.0,
-      "v4": 0.7
+      "v4": 1.0
     },
     "Blake__facing_bet": {
-      "v1": 0.85,
-      "v2": 0.15,
+      "v1": 0.0,
+      "v2": 0.75,
       "v3": 0.0,
-      "v4": 0.0
+      "v4": 0.25
     },
     "Blake__facing_raise": {
-      "v1": 0.05,
-      "v2": 0.95,
+      "v1": 0.0,
+      "v2": 0.55,
       "v3": 0.0,
-      "v4": 0.0
+      "v4": 0.45
     },
     "Blake__open_action": {
-      "v1": 0.95,
-      "v2": 0.0,
+      "v1": 0.1,
+      "v2": 0.85,
       "v3": 0.0,
       "v4": 0.05
     },
     "Dave__facing_bet": {
-      "v1": 0.9,
+      "v1": 0.85,
       "v2": 0.0,
-      "v3": 0.0,
-      "v4": 0.1
-    },
-    "Dave__facing_raise": {
-      "v1": 0.15,
-      "v2": 0.7,
       "v3": 0.0,
       "v4": 0.15
     },
+    "Dave__facing_raise": {
+      "v1": 0.1,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 0.9
+    },
     "Dave__open_action": {
-      "v1": 0.4,
-      "v2": 0.6,
+      "v1": 0.15,
+      "v2": 0.85,
       "v3": 0.0,
       "v4": 0.0
     },
     "Erik__facing_bet": {
-      "v1": 0.0,
+      "v1": 0.25,
       "v2": 0.0,
-      "v3": 0.35,
-      "v4": 0.65
+      "v3": 0.6,
+      "v4": 0.15
     },
     "Erik__facing_raise": {
       "v1": 0.0,
-      "v2": 1.0,
+      "v2": 0.85,
       "v3": 0.0,
-      "v4": 0.0
+      "v4": 0.15
     },
     "Erik__open_action": {
-      "v1": 1.0,
+      "v1": 0.45,
       "v2": 0.0,
-      "v3": 0.0,
-      "v4": 0.0
-    },
-    "Mike__facing_bet": {
-      "v1": 1.0,
-      "v2": 0.0,
-      "v3": 0.0,
-      "v4": 0.0
-    },
-    "Mike__facing_raise": {
-      "v1": 0.0,
-      "v2": 0.45,
       "v3": 0.0,
       "v4": 0.55
     },
-    "Mike__open_action": {
-      "v1": 0.65,
+    "Mike__facing_bet": {
+      "v1": 0.15,
       "v2": 0.0,
       "v3": 0.0,
-      "v4": 0.35
+      "v4": 0.85
     },
-    "Steve__facing_bet": {
-      "v1": 0.8,
-      "v2": 0.2,
+    "Mike__facing_raise": {
+      "v1": 1.0,
+      "v2": 0.0,
       "v3": 0.0,
       "v4": 0.0
     },
-    "Steve__facing_raise": {
+    "Mike__open_action": {
+      "v1": 0.5,
+      "v2": 0.4,
+      "v3": 0.0,
+      "v4": 0.1
+    },
+    "Steve__facing_bet": {
       "v1": 0.0,
-      "v2": 0.5,
-      "v3": 0.3,
+      "v2": 0.1,
+      "v3": 0.7,
       "v4": 0.2
     },
+    "Steve__facing_raise": {
+      "v1": 0.45,
+      "v2": 0.55,
+      "v3": 0.0,
+      "v4": 0.0
+    },
     "Steve__open_action": {
-      "v1": 0.9,
+      "v1": 0.55,
       "v2": 0.0,
-      "v3": 0.05,
-      "v4": 0.05
+      "v3": 0.1,
+      "v4": 0.35
     },
     "Tom__facing_bet": {
       "v1": 0.0,
@@ -174,41 +174,35 @@
     }
   },
   "villain_node_street_blend_weights": {
-    "Alex__facing_bet__river": {
-      "v1": 0.0,
-      "v2": 1.0,
-      "v3": 0.0,
-      "v4": 0.0
-    },
     "Alex__facing_bet__turn": {
-      "v1": 0.0,
-      "v2": 0.0,
-      "v3": 0.7,
-      "v4": 0.3
-    },
-    "Alex__open_action__flop": {
-      "v1": 0.0,
-      "v2": 0.0,
-      "v3": 1.0,
-      "v4": 0.0
-    },
-    "Alex__open_action__river": {
       "v1": 0.0,
       "v2": 0.0,
       "v3": 0.0,
       "v4": 1.0
     },
-    "Alex__open_action__turn": {
+    "Alex__facing_raise__river": {
+      "v1": 0.0,
+      "v2": 1.0,
+      "v3": 0.0,
+      "v4": 0.0
+    },
+    "Alex__facing_raise__turn": {
+      "v1": 0.0,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 1.0
+    },
+    "Blake__facing_raise__river": {
       "v1": 0.0,
       "v2": 1.0,
       "v3": 0.0,
       "v4": 0.0
     },
     "Blake__facing_raise__turn": {
-      "v1": 0.55,
-      "v2": 0.35,
-      "v3": 0.1,
-      "v4": 0.0
+      "v1": 0.25,
+      "v2": 0.05,
+      "v3": 0.0,
+      "v4": 0.7
     },
     "Blake__open_action__flop": {
       "v1": 0.0,
@@ -216,153 +210,153 @@
       "v3": 0.0,
       "v4": 1.0
     },
-    "Blake__open_action__river": {
+    "Dave__facing_raise__turn": {
       "v1": 0.0,
       "v2": 1.0,
-      "v3": 0.0,
-      "v4": 0.0
-    },
-    "Dave__facing_raise__flop": {
-      "v1": 1.0,
-      "v2": 0.0,
       "v3": 0.0,
       "v4": 0.0
     },
     "Dave__open_action__turn": {
-      "v1": 0.0,
-      "v2": 1.0,
+      "v1": 0.4,
+      "v2": 0.0,
       "v3": 0.0,
-      "v4": 0.0
+      "v4": 0.6
     },
     "Erik__facing_bet__turn": {
-      "v1": 0.45,
-      "v2": 0.55,
+      "v1": 0.0,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 1.0
+    },
+    "Erik__facing_raise__turn": {
+      "v1": 1.0,
+      "v2": 0.0,
       "v3": 0.0,
       "v4": 0.0
     },
     "Erik__open_action__flop": {
       "v1": 0.0,
       "v2": 0.0,
-      "v3": 1.0,
-      "v4": 0.0
+      "v3": 0.0,
+      "v4": 1.0
     },
-    "Mike__facing_bet__flop": {
+    "Mike__facing_raise__turn": {
       "v1": 0.0,
       "v2": 0.0,
-      "v3": 0.55,
-      "v4": 0.45
+      "v3": 0.0,
+      "v4": 1.0
     },
     "Mike__open_action__flop": {
       "v1": 0.0,
-      "v2": 0.15,
+      "v2": 0.6,
       "v3": 0.0,
-      "v4": 0.85
+      "v4": 0.4
     },
-    "Steve__facing_bet__river": {
-      "v1": 1.0,
+    "Mike__open_action__river": {
+      "v1": 0.0,
       "v2": 0.0,
-      "v3": 0.0,
+      "v3": 1.0,
+      "v4": 0.0
+    },
+    "Steve__facing_bet__flop": {
+      "v1": 0.0,
+      "v2": 0.5,
+      "v3": 0.2,
+      "v4": 0.3
+    },
+    "Steve__open_action__flop": {
+      "v1": 0.55,
+      "v2": 0.0,
+      "v3": 0.45,
       "v4": 0.0
     },
     "Steve__open_action__river": {
-      "v1": 0.0,
-      "v2": 0.0,
-      "v3": 0.25,
-      "v4": 0.75
-    },
-    "Tom__facing_bet__flop": {
-      "v1": 0.0,
-      "v2": 0.1,
-      "v3": 0.65,
-      "v4": 0.25
-    },
-    "Tom__facing_bet__river": {
-      "v1": 0.0,
-      "v2": 1.0,
-      "v3": 0.0,
-      "v4": 0.0
-    },
-    "Tom__facing_raise__flop": {
       "v1": 1.0,
       "v2": 0.0,
       "v3": 0.0,
       "v4": 0.0
     },
-    "Tom__facing_raise__river": {
-      "v1": 0.25,
-      "v2": 0.25,
-      "v3": 0.5,
+    "Steve__open_action__turn": {
+      "v1": 0.0,
+      "v2": 0.0,
+      "v3": 0.0,
+      "v4": 1.0
+    },
+    "Tom__facing_bet__river": {
+      "v1": 0.0,
+      "v2": 0.9,
+      "v3": 0.1,
       "v4": 0.0
     }
   },
   "design_reference": {
     "best_single_experts_overall": {
       "v1": {
-        "mae": 0.15663262598297176,
-        "brier": 0.05401928236948582,
-        "top_action_acc": 0.8189808917197454,
-        "score": 0.17013744657534322
+        "mae": 0.15070532046933696,
+        "brier": 0.05368155237142137,
+        "top_action_acc": 0.8153314077227122,
+        "score": 0.1641257085621923
       },
       "v2": {
-        "mae": 0.16003895589690217,
-        "brier": 0.056027668447219875,
-        "top_action_acc": 0.7928343949044587,
-        "score": 0.17404587300870714
+        "mae": 0.15231772165182553,
+        "brier": 0.054957714575771345,
+        "top_action_acc": 0.7959942231681362,
+        "score": 0.16605715029576837
       },
       "v3": {
-        "mae": 0.17057478410961882,
-        "brier": 0.05144596729955157,
-        "top_action_acc": 0.791019108280255,
-        "score": 0.1834362759345067
+        "mae": 0.1598002111406132,
+        "brier": 0.047950086347259537,
+        "top_action_acc": 0.8199908786865309,
+        "score": 0.1717877327274281
       },
       "v4": {
-        "mae": 0.16797890392140502,
-        "brier": 0.05441813196930442,
-        "top_action_acc": 0.8007961783439492,
-        "score": 0.18158343691373113
+        "mae": 0.14682913242529197,
+        "brier": 0.0457280168570094,
+        "top_action_acc": 0.8348814229249012,
+        "score": 0.15826113663954433
       }
     },
     "node_global_blend_metrics": {
       "facing_bet": {
-        "score": 0.15275566685748598,
-        "mae": 0.1417732410610497,
-        "brier": 0.04392970318574522,
-        "top_action_acc": 0.8370646766169155
+        "score": 0.14716625953141974,
+        "mae": 0.1360642015483187,
+        "brier": 0.0444082319324042,
+        "top_action_acc": 0.8440053360013342
       },
       "facing_raise": {
-        "score": 0.14438139231868835,
-        "mae": 0.13327043812000472,
-        "brier": 0.044443816794734504,
-        "top_action_acc": 0.8531584169330836
+        "score": 0.1295887234241037,
+        "mae": 0.11998360181421514,
+        "brier": 0.03842048643955426,
+        "top_action_acc": 0.853852776582006
       },
       "open_action": {
-        "score": 0.18778835892434773,
-        "mae": 0.17469891861547848,
-        "brier": 0.052357761235476974,
-        "top_action_acc": 0.8256293676854425
+        "score": 0.17701886578300288,
+        "mae": 0.1648869960281906,
+        "brier": 0.048527479019249184,
+        "top_action_acc": 0.804657876594278
       }
     },
     "final_hierarchy_metrics": {
       "overall": {
-        "mae": 0.13209543676059554,
-        "brier": 0.0371438517073466,
-        "top_action_acc": 0.8717197452229302,
-        "score": 0.14138139968743219
+        "mae": 0.12687421630357412,
+        "brier": 0.03956223350830112,
+        "top_action_acc": 0.8547126786257221,
+        "score": 0.1367647746806494
       },
       "by_dataset": {
         "benchmark": {
-          "mae": 0.09600609662151373,
-          "brier": 0.021114641689059327,
-          "top_action_acc": 0.96,
-          "rows": 100,
-          "score": 0.10128475704377857
+          "mae": 0.09086733268826214,
+          "brier": 0.024004999983042955,
+          "top_action_acc": 0.9307692307692308,
+          "rows": 130,
+          "score": 0.09686858268402287
         },
         "oof": {
-          "mae": 0.16818477689967729,
-          "brier": 0.05317306172563386,
-          "top_action_acc": 0.7834394904458599,
-          "rows": 628,
-          "score": 0.18147804233108575
+          "mae": 0.16288109991888605,
+          "brier": 0.055119467033559265,
+          "top_action_acc": 0.7786561264822134,
+          "rows": 1012,
+          "score": 0.17666096667727588
         }
       }
     }

@@ -1,95 +1,95 @@
 {
-  "trained_at": "2026-04-20T01:25:38.406800+00:00",
+  "trained_at": "2026-05-15T15:39:20.878557+00:00",
   "db_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/calibration.db",
-  "total_labeled_rows": 1807,
+  "total_labeled_rows": 2191,
   "feature_version_counts": {
-    "v4": 1807
+    "v7": 2191
   },
   "node_counts": {
-    "facing_bet": 582,
-    "open_action": 757,
-    "facing_raise": 468
+    "facing_bet": 770,
+    "open_action": 864,
+    "facing_raise": 557
   },
   "action_counts": {
-    "c": 492,
-    "x": 483,
-    "r": 148,
-    "f": 410,
-    "b": 274
+    "c": 651,
+    "x": 551,
+    "r": 188,
+    "f": 488,
+    "b": 313
   },
   "action_model_results": [
     {
       "model_name": "open_action_model",
       "trained": true,
-      "rows": 757,
+      "rows": 864,
       "class_counts": {
-        "x": 483,
-        "b": 274
+        "x": 551,
+        "b": 313
       },
       "cv_folds": 5,
-      "cv_log_loss": 0.5058525301809775,
-      "cv_balanced_accuracy": 0.7339218646950605,
-      "cv_brier": 0.1667666558989449,
+      "cv_log_loss": 0.5053523985816962,
+      "cv_balanced_accuracy": 0.7238255893094603,
+      "cv_brier": 0.1695775431950497,
       "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models/open_action_model.pkl",
       "note": null
     },
     {
       "model_name": "facing_bet_fold_continue_model",
       "trained": true,
-      "rows": 582,
+      "rows": 770,
       "class_counts": {
-        "continue": 405,
-        "f": 177
+        "continue": 550,
+        "f": 220
       },
       "cv_folds": 5,
-      "cv_log_loss": 0.3832109851206546,
-      "cv_balanced_accuracy": 0.8307407407407407,
-      "cv_brier": 0.11705954131812417,
+      "cv_log_loss": 0.32046155377842733,
+      "cv_balanced_accuracy": 0.8440909090909091,
+      "cv_brier": 0.10008451665657274,
       "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models/facing_bet_fold_continue_model.pkl",
       "note": null
     },
     {
       "model_name": "facing_bet_call_raise_model",
       "trained": true,
-      "rows": 405,
+      "rows": 550,
       "class_counts": {
-        "c": 298,
-        "r": 107
+        "c": 405,
+        "r": 145
       },
       "cv_folds": 5,
-      "cv_log_loss": 0.5150350176776702,
-      "cv_balanced_accuracy": 0.7013427250715386,
-      "cv_brier": 0.15829750667883716,
+      "cv_log_loss": 0.47953167378092526,
+      "cv_balanced_accuracy": 0.7466155810983397,
+      "cv_brier": 0.14975091575704186,
       "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models/facing_bet_call_raise_model.pkl",
       "note": null
     },
     {
       "model_name": "facing_raise_fold_continue_model",
       "trained": true,
-      "rows": 468,
+      "rows": 557,
       "class_counts": {
-        "continue": 235,
-        "f": 233
+        "continue": 289,
+        "f": 268
       },
       "cv_folds": 5,
-      "cv_log_loss": 0.4895769769532011,
-      "cv_balanced_accuracy": 0.7800185013876041,
-      "cv_brier": 0.1561604401265932,
+      "cv_log_loss": 0.40897042954227436,
+      "cv_balanced_accuracy": 0.8171481620990232,
+      "cv_brier": 0.12835680556684262,
       "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models/facing_raise_fold_continue_model.pkl",
       "note": null
     },
     {
       "model_name": "facing_raise_call_reraise_model",
       "trained": true,
-      "rows": 235,
+      "rows": 289,
       "class_counts": {
-        "c": 194,
-        "r": 41
+        "c": 246,
+        "r": 43
       },
       "cv_folds": 5,
-      "cv_log_loss": 0.3635219512637827,
-      "cv_balanced_accuracy": 0.7269624381466486,
-      "cv_brier": 0.10839097781365692,
+      "cv_log_loss": 0.38023297816546997,
+      "cv_balanced_accuracy": 0.7112585034013605,
+      "cv_brier": 0.10554219670729192,
       "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models/facing_raise_call_reraise_model.pkl",
       "note": null
     }
@@ -98,10 +98,10 @@
     {
       "model_name": "open_bet_size_model",
       "trained": true,
-      "rows": 274,
+      "rows": 343,
       "cv_folds": 5,
-      "cv_mae": 0.15080989596792382,
-      "cv_median_ae": 0.11192973368515972,
+      "cv_mae": 0.14378123631365206,
+      "cv_median_ae": 0.09197115721828888,
       "target": "size_pct_pot",
       "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models/open_bet_size_model.pkl",
       "note": "Shared size model trained on all labeled rows with villain-prioritized interactions."
@@ -109,10 +109,10 @@
     {
       "model_name": "raise_vs_bet_size_model",
       "trained": true,
-      "rows": 107,
+      "rows": 206,
       "cv_folds": 5,
-      "cv_mae": 0.8048956005034803,
-      "cv_median_ae": 0.4907344658610164,
+      "cv_mae": 0.7791746120673471,
+      "cv_median_ae": 0.6088174767794581,
       "target": "raise_multiple_vs_facing",
       "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models/raise_vs_bet_size_model.pkl",
       "note": "Shared size model trained on all labeled rows with villain-prioritized interactions."
@@ -120,10 +120,10 @@
     {
       "model_name": "reraise_vs_raise_size_model",
       "trained": true,
-      "rows": 41,
+      "rows": 56,
       "cv_folds": 5,
-      "cv_mae": 0.7461881714422475,
-      "cv_median_ae": 0.6833588147570618,
+      "cv_mae": 0.6034421987562645,
+      "cv_median_ae": 0.5589850429745514,
       "target": "reraise_multiple_vs_facing",
       "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models/reraise_vs_raise_size_model.pkl",
       "note": "Shared size model trained on all labeled rows with villain-prioritized interactions."

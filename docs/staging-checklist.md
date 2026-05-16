@@ -5,9 +5,9 @@
 - Set legal company name and effective date
 - Set correct frontend/backend URLs
 - Enable demo mode only if you want demo credentials or seeded demo accounts
-- Seed demo data with `python -m api.scripts.seed_demo_data --reset`
-- Run smoke checks with `python -m api.scripts.smoke_test`
-- Run regression coverage with `python -m api.scripts.regression_test`
+- Seed demo data with `make demo-seed`
+- Run smoke checks with `make smoke-test`
+- Run regression coverage with `make test-api`
 
 ## Verify manually
 - `/status` shows the correct environment and readiness state

@@ -1,14 +1,14 @@
 {
-  "trained_at": "2026-04-20T01:29:05.900192+00:00",
+  "trained_at": "2026-05-15T15:56:06.150198+00:00",
   "size_model_results": [
     {
       "model_name": "open_bet_size_model_v2",
       "trained": true,
-      "rows": 274,
+      "rows": 343,
       "cv_folds": 5,
-      "cv_mae": 0.14313896809890383,
-      "cv_median_ae": 0.09927531219162464,
-      "cv_rmse": 0.20847545100634957,
+      "cv_mae": 0.13679276741854124,
+      "cv_median_ae": 0.08796606736216843,
+      "cv_rmse": 0.21331045313005284,
       "target": "size_pct_pot",
       "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models_size_v2/open_bet_size_model_v2.pkl",
       "selected_candidate": "compact_mae",
@@ -19,46 +19,105 @@
           "feature_space": "compact_v1",
           "transform": "none",
           "loss_function": "MAE",
-          "rows": 274,
+          "rows": 343,
           "cv_folds": 5,
-          "cv_mae": 0.14313896809890383,
-          "cv_median_ae": 0.09927531219162464,
-          "cv_rmse": 0.20847545100634957
+          "cv_mae": 0.13679276741854124,
+          "cv_median_ae": 0.08796606736216843,
+          "cv_rmse": 0.21331045313005284
         },
         {
           "candidate_name": "context_mae",
           "feature_space": "context_v2",
           "transform": "none",
           "loss_function": "MAE",
-          "rows": 274,
+          "rows": 343,
           "cv_folds": 5,
-          "cv_mae": 0.14615072768659987,
-          "cv_median_ae": 0.11074773427933467,
-          "cv_rmse": 0.20833944451825284
+          "cv_mae": 0.1379703861408032,
+          "cv_median_ae": 0.08790074623245654,
+          "cv_rmse": 0.21212931812941355
         },
         {
           "candidate_name": "context_huber",
           "feature_space": "context_v2",
           "transform": "none",
           "loss_function": "Huber:delta=0.15",
-          "rows": 274,
+          "rows": 343,
           "cv_folds": 5,
-          "cv_mae": 0.14348465578871789,
-          "cv_median_ae": 0.10465537530188129,
-          "cv_rmse": 0.2110391731115923
+          "cv_mae": 0.13944581724576752,
+          "cv_median_ae": 0.09619738541567535,
+          "cv_rmse": 0.21362533183317253
         }
       ]
     },
     {
       "model_name": "raise_vs_bet_size_model_v2",
       "trained": true,
-      "rows": 107,
+      "rows": 206,
       "cv_folds": 5,
-      "cv_mae": 0.7230764522120368,
-      "cv_median_ae": 0.4522335618192642,
-      "cv_rmse": 1.0672782792705227,
+      "cv_mae": 0.6996163927661764,
+      "cv_median_ae": 0.5483988676245142,
+      "cv_rmse": 1.0347336404234238,
       "target": "raise_multiple_vs_facing",
       "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models_size_v2/raise_vs_bet_size_model_v2.pkl",
+      "selected_candidate": "context_log_huber",
+      "note": "V2 size model selected from fixed CatBoost candidate set using OOF MAE.",
+      "candidate_results": [
+        {
+          "candidate_name": "compact_mae",
+          "feature_space": "compact_v1",
+          "transform": "none",
+          "loss_function": "MAE",
+          "rows": 206,
+          "cv_folds": 5,
+          "cv_mae": 0.722365723926326,
+          "cv_median_ae": 0.5731091232966878,
+          "cv_rmse": 1.043946443614508
+        },
+        {
+          "candidate_name": "context_mae",
+          "feature_space": "context_v2",
+          "transform": "none",
+          "loss_function": "MAE",
+          "rows": 206,
+          "cv_folds": 5,
+          "cv_mae": 0.702326382670522,
+          "cv_median_ae": 0.535119041277638,
+          "cv_rmse": 1.0202121631186907
+        },
+        {
+          "candidate_name": "context_log_mae",
+          "feature_space": "context_v2",
+          "transform": "log",
+          "loss_function": "MAE",
+          "rows": 206,
+          "cv_folds": 5,
+          "cv_mae": 0.7084067688717995,
+          "cv_median_ae": 0.5336359751308852,
+          "cv_rmse": 1.050158240459649
+        },
+        {
+          "candidate_name": "context_log_huber",
+          "feature_space": "context_v2",
+          "transform": "log",
+          "loss_function": "Huber:delta=0.18",
+          "rows": 206,
+          "cv_folds": 5,
+          "cv_mae": 0.6996163927661764,
+          "cv_median_ae": 0.5483988676245142,
+          "cv_rmse": 1.0347336404234238
+        }
+      ]
+    },
+    {
+      "model_name": "reraise_vs_raise_size_model_v2",
+      "trained": true,
+      "rows": 56,
+      "cv_folds": 5,
+      "cv_mae": 0.5590410907641281,
+      "cv_median_ae": 0.4959055684824035,
+      "cv_rmse": 0.7271453593768484,
+      "target": "reraise_multiple_vs_facing",
+      "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models_size_v2/reraise_vs_raise_size_model_v2.pkl",
       "selected_candidate": "context_mae",
       "note": "V2 size model selected from fixed CatBoost candidate set using OOF MAE.",
       "candidate_results": [
@@ -67,103 +126,44 @@
           "feature_space": "compact_v1",
           "transform": "none",
           "loss_function": "MAE",
-          "rows": 107,
+          "rows": 56,
           "cv_folds": 5,
-          "cv_mae": 0.7498047954583174,
-          "cv_median_ae": 0.4983417777764531,
-          "cv_rmse": 1.094837879928349
+          "cv_mae": 0.6153088494362203,
+          "cv_median_ae": 0.5463589594455323,
+          "cv_rmse": 0.7542813558989939
         },
         {
           "candidate_name": "context_mae",
           "feature_space": "context_v2",
           "transform": "none",
           "loss_function": "MAE",
-          "rows": 107,
+          "rows": 56,
           "cv_folds": 5,
-          "cv_mae": 0.7230764522120368,
-          "cv_median_ae": 0.4522335618192642,
-          "cv_rmse": 1.0672782792705227
+          "cv_mae": 0.5590410907641281,
+          "cv_median_ae": 0.4959055684824035,
+          "cv_rmse": 0.7271453593768484
         },
         {
           "candidate_name": "context_log_mae",
           "feature_space": "context_v2",
           "transform": "log",
           "loss_function": "MAE",
-          "rows": 107,
+          "rows": 56,
           "cv_folds": 5,
-          "cv_mae": 0.7359049266932862,
-          "cv_median_ae": 0.4443477094908692,
-          "cv_rmse": 1.1183646860279093
+          "cv_mae": 0.6072234404871723,
+          "cv_median_ae": 0.4968612092502103,
+          "cv_rmse": 0.7819212525601701
         },
         {
           "candidate_name": "context_log_huber",
           "feature_space": "context_v2",
           "transform": "log",
           "loss_function": "Huber:delta=0.18",
-          "rows": 107,
+          "rows": 56,
           "cv_folds": 5,
-          "cv_mae": 0.7615364163260926,
-          "cv_median_ae": 0.5222789766316172,
-          "cv_rmse": 1.095446116779242
-        }
-      ]
-    },
-    {
-      "model_name": "reraise_vs_raise_size_model_v2",
-      "trained": true,
-      "rows": 41,
-      "cv_folds": 5,
-      "cv_mae": 0.6715830209617154,
-      "cv_median_ae": 0.5344573460089365,
-      "cv_rmse": 0.8108771759994063,
-      "target": "reraise_multiple_vs_facing",
-      "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models_size_v2/reraise_vs_raise_size_model_v2.pkl",
-      "selected_candidate": "context_log_mae",
-      "note": "V2 size model selected from fixed CatBoost candidate set using OOF MAE.",
-      "candidate_results": [
-        {
-          "candidate_name": "compact_mae",
-          "feature_space": "compact_v1",
-          "transform": "none",
-          "loss_function": "MAE",
-          "rows": 41,
-          "cv_folds": 5,
-          "cv_mae": 0.6868667410154498,
-          "cv_median_ae": 0.5029577820309612,
-          "cv_rmse": 0.8328233077630557
-        },
-        {
-          "candidate_name": "context_mae",
-          "feature_space": "context_v2",
-          "transform": "none",
-          "loss_function": "MAE",
-          "rows": 41,
-          "cv_folds": 5,
-          "cv_mae": 0.7256048208667769,
-          "cv_median_ae": 0.5827305914831035,
-          "cv_rmse": 0.8570977815132916
-        },
-        {
-          "candidate_name": "context_log_mae",
-          "feature_space": "context_v2",
-          "transform": "log",
-          "loss_function": "MAE",
-          "rows": 41,
-          "cv_folds": 5,
-          "cv_mae": 0.6715830209617154,
-          "cv_median_ae": 0.5344573460089365,
-          "cv_rmse": 0.8108771759994063
-        },
-        {
-          "candidate_name": "context_log_huber",
-          "feature_space": "context_v2",
-          "transform": "log",
-          "loss_function": "Huber:delta=0.18",
-          "rows": 41,
-          "cv_folds": 5,
-          "cv_mae": 0.75152838089642,
-          "cv_median_ae": 0.59452091283303,
-          "cv_rmse": 0.9122156733328417
+          "cv_mae": 0.6085697990719849,
+          "cv_median_ae": 0.5709220133789668,
+          "cv_rmse": 0.7739934336341933
         }
       ]
     }
