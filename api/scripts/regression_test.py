@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 import os
 import unittest
 from pathlib import Path
@@ -13,7 +14,12 @@ os.environ.setdefault("VRT_PUBLIC_STATUS_SHOW_DEMO_DETAILS", "false")
 from fastapi.testclient import TestClient
 
 from api.app.main import app
+from api.app.models.betting import BettingRoundState
+from api.app.models.enums import Player, Street, UIGate
+from api.app.models.state import HandState, SessionState
+from api.app.services.action_service import apply_hero_action
 from api.app.storage.db import get_connection, init_db
+from api.app.storage.memory_store import store
 
 
 class RegressionTestCase(unittest.TestCase):
@@ -215,6 +221,73 @@ class RegressionTestCase(unittest.TestCase):
         payload = response.json()
         self.assertIn("checks", payload)
         self.assertGreaterEqual(len(payload["checks"]), 1)
+
+    def test_timeout_saved_response_matrix_allows_hero_action(self) -> None:
+        session = SessionState(
+            session_id="timeout-matrix-session",
+            user_id=self.owner_user_id,
+            villain_profile_id="tag",
+            train_timer_seconds=30,
+            scenario_id="srp_ip_btn_vs_bb",
+            pot=20.0,
+            hero_stack=100.0,
+            villain_stack=100.0,
+            hero_range_matrix_saved={},
+            hero_tokens_saved=["AA", "KK", "QQ", "AKs", "AKo"],
+            villain_range_matrix_saved={},
+            villain_tokens_saved=["QQ"],
+            hero_range_confirmed=True,
+            villain_range_confirmed=True,
+        )
+        store.create_session(session.session_id, asdict(session))
+
+        hand = HandState(
+            hand_id="timeout-matrix-hand",
+            session_id=session.session_id,
+            user_id=self.owner_user_id,
+            scenario_id="srp_ip_btn_vs_bb",
+            villain_profile_id="tag",
+            pot=20.0,
+            hero_stack=100.0,
+            villain_stack=100.0,
+            hero_hand=("Ah", "Kd"),
+            villain_hand=("Qs", "Qd"),
+            board=["2h", "4d", "Qh"],
+            street=Street.FLOP,
+            betting_round=BettingRoundState(
+                current_bet=10.0,
+                hero_contrib=0.0,
+                villain_contrib=10.0,
+                last_raise_size=10.0,
+            ),
+            hero_tokens_saved=["AA", "KK", "QQ", "AKs", "AKo"],
+            villain_range_combos_live={"QQ": [["Qs", "Qd"]]},
+            current_actor=Player.HERO,
+            ui_gate=UIGate.MUST_FILL_RESPONSE_MATRIX,
+            response_matrix_columns=["call", "raise"],
+            response_matrix_saved={
+                "street": "flop",
+                "columns": ["call", "raise"],
+                "row_order": ["SDV", "Value"],
+                "selections": {
+                    "SDV": {"call": "", "raise": ""},
+                    "Value": {"call": "P", "raise": ""},
+                },
+                "complete": False,
+                "allow_partial": True,
+                "save_reason": "timer_expired",
+            },
+        )
+        store.create_hand(hand.hand_id, asdict(hand))
+
+        updated = apply_hero_action(
+            hand_id=hand.hand_id,
+            action="fold",
+            iters=10,
+        )
+
+        self.assertTrue(updated.hand_over)
+        self.assertEqual(updated.ui_gate, UIGate.HAND_OVER)
 
 
 if __name__ == "__main__":

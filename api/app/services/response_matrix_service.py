@@ -268,6 +268,7 @@ def save_response_matrix(
     iters: int | None = None,
     seed: int = 42,
     allow_partial: bool = False,
+    save_reason: str | None = None,
 ) -> HandState:
     """
     Validate and save the Screen 3 response matrix.
@@ -282,6 +283,8 @@ def save_response_matrix(
       defaults rather than forcing a fixed Monte Carlo iteration count.
     - allow_partial=True is intended for timer-expiry saves only and permits
       blank / omitted selections to be persisted as empty strings.
+    - save_reason marks whether the save came from a manual complete save or
+      a timer-expiry auto-save, so later gate checks can distinguish the two.
 
     On success:
     - response_matrix_saved is updated with the normalized saved payload
@@ -315,6 +318,9 @@ def save_response_matrix(
         "columns": columns,
         "row_order": row_order,
         "selections": normalized_selections,
+        "complete": not allow_partial,
+        "allow_partial": allow_partial,
+        "save_reason": save_reason or ("timer_expired" if allow_partial else "manual"),
     }
     hand.ui_gate = UIGate.HERO_TO_ACT
 

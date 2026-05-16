@@ -184,6 +184,31 @@ def _clear_response_matrix_node_state(hand: HandState) -> None:
     hand.response_matrix_saved = {}
 
 
+def _has_timeout_saved_response_matrix_for_current_street(hand: HandState) -> bool:
+    """
+    Return True when the response matrix was auto-saved by the training timer.
+
+    Manual saves still require a complete matrix. Timer-expiry saves are allowed
+    to persist blanks and should satisfy the matrix gate so the player is not
+    trapped if time expires mid-matrix.
+    """
+    saved = hand.response_matrix_saved or {}
+    if not isinstance(saved, dict):
+        return False
+
+    if saved.get("street") != hand.street.value:
+        return False
+
+    if saved.get("save_reason") != "timer_expired":
+        return False
+
+    if saved.get("allow_partial") is not True:
+        return False
+
+    selections = saved.get("selections")
+    return isinstance(selections, dict)
+
+
 def _clear_prune_state(hand: HandState) -> None:
     hand.prune_row_order = []
     hand.prune_row_index = 0
@@ -638,6 +663,12 @@ def apply_hero_action(
     """
     hand = _hand_from_store(hand_id)
     pot_before_action = hand.pot
+
+    if (
+        hand.ui_gate == UIGate.MUST_FILL_RESPONSE_MATRIX
+        and _has_timeout_saved_response_matrix_for_current_street(hand)
+    ):
+        hand.ui_gate = UIGate.HERO_TO_ACT
 
     if hand.ui_gate != UIGate.HERO_TO_ACT:
         raise ValueError(

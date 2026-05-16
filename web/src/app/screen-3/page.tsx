@@ -659,12 +659,29 @@ function Screen3PageContent() {
         iters: SCREEN3_ITERS,
         selections,
         allow_partial: allowPartial,
+        save_reason: allowPartial ? "timer_expired" : "manual",
       }),
     });
 
     if (!res.ok) {
       const detail = await safeReadError(res);
       throw new Error(detail || `Failed to save matrix (${res.status})`);
+    }
+
+    return (await res.json()) as HandState;
+  }
+
+  async function refreshCurrentHand(handId: string): Promise<HandState> {
+    const res = await apiFetch(
+      `${API_BASE}/hands/${encodeURIComponent(handId)}?iters=${SCREEN3_ITERS}`,
+      {
+        cache: "no-store",
+      },
+    );
+
+    if (!res.ok) {
+      const detail = await safeReadError(res);
+      throw new Error(detail || `Failed to refresh hand (${res.status})`);
     }
 
     return (await res.json()) as HandState;
@@ -872,7 +889,22 @@ function Screen3PageContent() {
         setRaiseInput("");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to apply action.");
+      const message = err instanceof Error ? err.message : "Failed to apply action.";
+      if (
+        hand &&
+        (message.includes("not in hero_to_act gate") ||
+          message.includes("current gate="))
+      ) {
+        try {
+          const latest = await refreshCurrentHand(hand.hand_id);
+          setHand(await normalizePostActionHand(latest));
+          setError(null);
+        } catch {
+          setError(message);
+        }
+      } else {
+        setError(message);
+      }
     } finally {
       setIsSubmittingAction(false);
     }

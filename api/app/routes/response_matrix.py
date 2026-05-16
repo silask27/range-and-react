@@ -90,6 +90,7 @@ def save_response_matrix_route(
     selections = payload.get("selections")
     raw_iters = payload.get("iters")
     allow_partial = bool(payload.get("allow_partial", False))
+    save_reason = payload.get("save_reason")
 
     if not hand_id:
         raise HTTPException(status_code=400, detail="hand_id is required")
@@ -106,6 +107,7 @@ def save_response_matrix_route(
             selections=selections,
             iters=iters,
             allow_partial=allow_partial,
+            save_reason=str(save_reason) if save_reason is not None else None,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
