@@ -69,7 +69,7 @@ To create a pitch-ready local environment:
 ```bash
 cp api/.env.example api/.env
 cp web/.env.local.example web/.env.local
-python -m api.scripts.seed_demo_data --reset
+make demo-seed
 ```
 
 Then log in with the seeded demo accounts shown on `/login` when demo mode is enabled.
@@ -117,7 +117,7 @@ The admin analytics and member dashboard now use short-lived cached snapshots ba
 If you already have local data in SQLite, bootstrap PostgreSQL first and then run:
 
 ```bash
-python -m api.scripts.migrate_sqlite_to_postgres \
+PYTHONPATH=. .venv/bin/python -m api.scripts.migrate_sqlite_to_postgres \
   --source-path ./data/villain_range_trainer.db \
   --target-url postgresql://range_and_react:range_and_react@127.0.0.1:5432/range_and_react \
   --reset-target

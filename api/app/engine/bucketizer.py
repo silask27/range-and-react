@@ -1,15 +1,20 @@
 # File: api/app/engine/bucketizer.py
 # Summary: Self-contained villain range bucketing logic that classifies concrete combos into
-# broad buckets + subgroups using hand strength, draw status, and equity versus a fixed
-# hero comparison range. Supports standalone manual input of flop/turn/river progression.
+# broad buckets + subgroups using hand strength, draw status, and equity versus a
+# villain-specific hybrid of scenario hero ranges from catalog.py and a fixed fallback range.
+# Supports standalone manual input of flop/turn/river progression.
 
 from __future__ import annotations
 
+import argparse
+import ast
+import hashlib
 import random
 import re
 from collections import Counter, defaultdict
 from functools import lru_cache
 from itertools import combinations
+from pathlib import Path
 from typing import Iterable
 
 RANKS = "23456789TJQKA"
@@ -30,6 +35,7 @@ RANK_TO_VALUE: dict[str, int] = {
     "K": 13,
     "A": 14,
 }
+VALUE_TO_RANK: dict[int, str] = {value: rank for rank, value in RANK_TO_VALUE.items()}
 
 INTERNAL_CLASSES: list[str] = [
     "High Card",
@@ -69,10 +75,20 @@ SUBGROUPS: list[str] = [
     "Straight Draw",
     "Flush Draw",
     "Combo Draw",
-    "Pair + Draw",
+    "Weak Pair + Draw",
+    "SDV + Draw",
+    "Value + Draw",
 ]
 
-# Fixed hero comparison range used for all equity calculations.
+PAIR_DRAW_BASE_SUBGROUPS = {"Overpair", "Top Pair", "Mid Pair", "Low Pair"}
+PAIR_DRAW_TYPES = {"Straight Draw", "Flush Draw", "Combo Draw"}
+PAIR_DRAW_SUBGROUPS = {
+    f"{base_pair} + {draw_type}"
+    for base_pair in PAIR_DRAW_BASE_SUBGROUPS
+    for draw_type in PAIR_DRAW_TYPES
+}
+
+# Fixed fallback hero comparison range used as the non-scenario component in v7.
 HERO_RANGE_TOKENS: list[str] = [
     "AA", "AKs", "AQs", "AJs", "ATs", "A9s", "A8s", "A7s", "A6s", "A5s", "A4s", "A3s", "A2s",
     "AKo", "KK", "KQs", "KJs", "KTs", "K9s", "K8s", "K7s",
@@ -89,6 +105,45 @@ HERO_RANGE_TOKENS: list[str] = [
     "22",
 ]
 
+DEFAULT_CATALOG_PATH = str(Path(__file__).resolve().parents[1] / "data" / "catalog.py")
+
+VILLAIN_SCENARIO_WEIGHTS: dict[str, float] = {
+    "erik": 0.95,
+    "alex": 0.85,
+    "blake": 0.80,
+    "dave": 0.70,
+    "mike": 0.70,
+    "steve": 0.65,
+    "tom": 0.65,
+}
+
+VILLAIN_PROFILE_ALIASES: dict[str, str] = {
+    "erik": "erik",
+    "tag": "erik",
+    "blake": "blake",
+    "loose_reg": "blake",
+    "alex": "alex",
+    "abc_fit_fold": "alex",
+    "dave": "dave",
+    "chaser": "dave",
+    "steve": "steve",
+    "maniac": "steve",
+    "mike": "mike",
+    "weak_tight": "mike",
+    "tom": "tom",
+    "calling_station": "tom",
+}
+
+VILLAIN_DISPLAY_NAMES: dict[str, str] = {
+    "erik": "Erik",
+    "blake": "Blake",
+    "alex": "Alex",
+    "dave": "Dave",
+    "steve": "Steve",
+    "mike": "Mike",
+    "tom": "Tom",
+}
+
 NUTTED_SUBGROUPS = {
     "Two Pair",
     "Trips",
@@ -101,8 +156,8 @@ NUTTED_SUBGROUPS = {
 }
 
 AUTO_ITERS_BY_BOARD_LEN: dict[int, int] = {
-    3: 180,  # flop
-    4: 110,  # turn
+    3: 500,  # flop
+    4: 400,  # turn
     5: 0,    # river exact
 }
 
@@ -116,31 +171,61 @@ BUCKET_STRENGTH_PRIORITY: dict[str, int] = {
 
 STREET_EQUITY_THRESHOLDS: dict[str, dict[str, float]] = {
     "flop": {
-        "draw_air": 0.10,
-        "pair_draw_air": 0.10,
-        "air": 0.30,
-        "value": 0.65,
-        "nutted_value": 0.79,
-        "pair_draw_mid_low_sdv": 0.51,
+        "air": 0.25,
+        "value": 0.74,
+        "nutted_value": 0.90,
     },
     "turn": {
-        "draw_air": 0.18,
-        "pair_draw_air": 0.15,
-        "air": 0.30,
-        "value": 0.65,
-        "nutted_value": 0.82,
-        "pair_draw_mid_low_sdv": 0.50,
+        "air": 0.25,
+        "value": 0.75,
+        "nutted_value": 0.90,
     },
     "river": {
-        "draw_air": 0.15,
-        "pair_draw_air": 0.15,
-        "air": 0.32,
-        "value": 0.75,
-        "nutted_value": 0.87,
-        "pair_draw_mid_low_sdv": 0.48,
+        "air": 0.20,
+        "value": 0.74,
+        "nutted_value": 0.90,
     },
 }
 
+RANGE_COMPRESSION_THRESHOLD_ADJUSTMENTS: dict[str, dict[str, float]] = {
+    "flop": {
+        "air": 0.015,
+        "value": 0.03,
+        "nutted_value": 0.02,
+    },
+    "turn": {
+        "air": 0.02,
+        "value": 0.05,
+        "nutted_value": 0.02,
+    },
+    "river": {
+        "air": 0.015,
+        "value": 0.03,
+        "nutted_value": 0.02,
+    },
+}
+
+
+RANGE_COMPRESSION_THRESHOLD_FLOORS: dict[str, dict[str, float]] = {
+    "flop": {
+        "air": 0.22,
+        "value": 0.66,
+        "nutted_value": 0.875,
+    },
+    "turn": {
+        "air": 0.195,
+        "value": 0.68,
+        "nutted_value": 0.89,
+    },
+    "river": {
+        "air": 0.17,
+        "value": 0.69,
+        "nutted_value": 0.875,
+    },
+}
+
+TURN_HIGH_CARD_CURRENT_SCORE_WEIGHT = 1.00
+TURN_HIGH_CARD_EQUITY_WEIGHT = 0.00
 
 # =============================================================================
 # Standalone exact-label / combo helpers
@@ -341,6 +426,37 @@ def rank_7(cards7: list[str]) -> tuple:
     return _rank_7_cached(tuple(sorted(cards7)))
 
 
+@lru_cache(maxsize=50000)
+def _best_possible_rank_for_board_cached(board_tuple: tuple[str, ...]) -> tuple:
+    """Return the theoretical nut hand rank for the current board.
+
+    This enumerates every possible two-card holding that does not conflict with
+    the board and finds the highest 7-card rank available. Hands that tie this
+    rank are treated as the best possible hand on that board.
+    """
+    board = list(board_tuple)
+    board_set = set(board)
+    deck = [f"{rank}{suit}" for rank in RANKS for suit in SUITS]
+    available_cards = [card for card in deck if card not in board_set]
+
+    best_rank = None
+    for hole in combinations(available_cards, 2):
+        hand_rank = rank_7(list(hole) + board)
+        if best_rank is None or hand_rank > best_rank:
+            best_rank = hand_rank
+
+    return best_rank if best_rank is not None else (0,)
+
+
+def best_possible_rank_for_board(board: list[str]) -> tuple:
+    return _best_possible_rank_for_board_cached(tuple(sorted(board)))
+
+
+def is_best_possible_hand(hole: tuple[str, str], board: list[str]) -> bool:
+    """True when this concrete combo ties the theoretical nut rank."""
+    return rank_7(list(hole) + board) == best_possible_rank_for_board(board)
+
+
 @lru_cache(maxsize=200000)
 def _best_five_combos_cached(cards7: tuple[str, ...]) -> tuple[tuple[str, ...], ...]:
     best_rank = _rank_7_cached(cards7)
@@ -400,78 +516,116 @@ def _ranks_with_ace_low(cards: Iterable[str]) -> set[int]:
     return ranks
 
 
-def board_has_pair(board: list[str]) -> bool:
-    board_ranks = [RANK_TO_VALUE[c[0]] for c in board]
-    return len(set(board_ranks)) != len(board_ranks)
+def paired_board_ranks(board: list[str]) -> set[int]:
+    board_rank_counts = Counter(RANK_TO_VALUE[c[0]] for c in board)
+    return {rank for rank, count in board_rank_counts.items() if count >= 2}
 
 
-def is_pocket_pair(hole: tuple[str, str]) -> bool:
-    return hole[0][0] == hole[1][0]
-
-
-def pair_uses_single_hole_card_on_unpaired_board(
-    hole: tuple[str, str],
+def qualifies_as_user_two_pair(
     board: list[str],
+    pair_ranks: set[int],
+    hole_ranks_in_best: list[int],
 ) -> bool:
-    if board_has_pair(board):
+    """Return True when the hand should be displayed as user-made Two Pair."""
+    if len(hole_ranks_in_best) != 2:
         return False
-
-    r1 = RANK_TO_VALUE[hole[0][0]]
-    r2 = RANK_TO_VALUE[hole[1][0]]
-    if r1 == r2:
+    if hole_ranks_in_best[0] == hole_ranks_in_best[1]:
+        return False
+    if set(hole_ranks_in_best) != pair_ranks:
         return False
 
     board_ranks = {RANK_TO_VALUE[c[0]] for c in board}
-    match_count = int(r1 in board_ranks) + int(r2 in board_ranks)
-    return match_count == 1
+    if not pair_ranks.issubset(board_ranks):
+        return False
+
+    board_pair_ranks = paired_board_ranks(board)
+    if not board_pair_ranks:
+        return True
+
+    top_board_rank = max(board_ranks)
+    if top_board_rank not in pair_ranks:
+        return False
+
+    non_top_pair_ranks = pair_ranks - {top_board_rank}
+    if not non_top_pair_ranks:
+        return False
+
+    highest_board_pair_rank = max(board_pair_ranks)
+    return max(non_top_pair_ranks) > highest_board_pair_rank
+
+
+def _empty_straight_draw_info() -> dict[str, bool | int | list[int]]:
+    return {
+        "straight_draw": False,
+        "gutshot": False,
+        "oesd": False,
+        "double_gutshot": False,
+        "out_ranks": [],
+        "out_count": 0,
+    }
 
 
 def straight_draw_info(hole: tuple[str, str], board: list[str]) -> dict[str, bool | int | list[int]]:
     """
-    Granular straight draw detection.
+    Granular, hole-card-aware straight draw detection.
 
-    - Gutshot: exactly 1 completing rank (4 outs)
-    - Straight Draw: 2+ completing ranks (8+ outs), whether OESD or double gutshot
+    Important distinction:
+    - We count a straight draw only when the hole cards create or improve the draw.
+    - We do NOT count board-only runout draws that every hand shares.
+
+    Example:
+    - Board J T 9 8: a river Q or 7 can complete a board straight for everyone.
+      AA/66/44/33 should not be Pair + Draw just because of that board-only runout.
+    - Kx on J T 9 8 does have a Q gutshot because Q makes K-Q-J-T-9, a better
+      straight than the board-only Q-J-T-9-8 straight.
     """
     if len(board) >= 5:
-        return {
-            "straight_draw": False,
-            "gutshot": False,
-            "oesd": False,
-            "double_gutshot": False,
-            "out_ranks": [],
-            "out_count": 0,
-        }
+        return _empty_straight_draw_info()
 
-    ranks = _ranks_with_ace_low(list(hole) + list(board))
-    if _straight_high(ranks) is not None:
-        return {
-            "straight_draw": False,
-            "gutshot": False,
-            "oesd": False,
-            "double_gutshot": False,
-            "out_ranks": [],
-            "out_count": 0,
-        }
+    board_ranks = _ranks_with_ace_low(board)
+    combined_ranks = _ranks_with_ace_low(list(hole) + list(board))
+
+    # Already-made straights are made hands, not draws.
+    if _straight_high(combined_ranks) is not None:
+        return _empty_straight_draw_info()
 
     out_ranks: set[int] = set()
     for add_rank in range(2, 15):
-        trial = set(ranks)
-        trial.add(add_rank)
+        trial_combined = set(combined_ranks)
+        trial_combined.add(add_rank)
         if add_rank == 14:
-            trial.add(1)
-        if _straight_high(trial) is not None:
-            out_ranks.add(add_rank)
+            trial_combined.add(1)
 
-    has_four_consecutive = False
-    for start in range(1, 11):
-        if set(range(start, start + 4)).issubset(ranks):
-            has_four_consecutive = True
-            break
+        combined_high = _straight_high(trial_combined)
+        if combined_high is None:
+            continue
+
+        trial_board = set(board_ranks)
+        trial_board.add(add_rank)
+        if add_rank == 14:
+            trial_board.add(1)
+
+        board_only_high = _straight_high(trial_board)
+
+        # Count the out only if the villain's hole cards matter. If the same river
+        # rank merely creates an equal-or-better board straight, it is a board-only
+        # runout and should not turn every pair into Pair + Draw.
+        if board_only_high is None or combined_high > board_only_high:
+            out_ranks.add(add_rank)
 
     out_count = len(out_ranks) * 4
     gutshot = len(out_ranks) == 1
     straight_draw = len(out_ranks) >= 2
+
+    # OESD/double-gutshot labels remain approximate, but now based only on
+    # hole-card-relevant outs. The bucketizer primarily uses gutshot vs 2+ outs.
+    has_four_consecutive = False
+    for start in range(1, 11):
+        seq4 = set(range(start, start + 4))
+        if seq4.issubset(combined_ranks) and not seq4.issubset(board_ranks):
+            has_four_consecutive = True
+            break
+
     oesd = straight_draw and has_four_consecutive
     double_gutshot = straight_draw and not has_four_consecutive
 
@@ -486,14 +640,31 @@ def straight_draw_info(hole: tuple[str, str], board: list[str]) -> dict[str, boo
 
 
 def flush_draw_info(hole: tuple[str, str], board: list[str]) -> dict[str, bool]:
+    """
+    Hole-card-aware flush draw detection.
+
+    We do not count board-only four-flush runouts as a villain flush draw.
+    A flush draw requires at least one hole card of the draw suit.
+    """
     if len(board) >= 5:
         return {"flush_draw": False, "made_flush": False}
 
-    suits = [c[1] for c in (list(hole) + list(board))]
-    suit_counts = Counter(suits)
+    all_cards = list(hole) + list(board)
+    suit_counts = Counter(c[1] for c in all_cards)
     made_flush = any(v >= 5 for v in suit_counts.values())
-    flush_draw = (not made_flush) and any(v == 4 for v in suit_counts.values())
-    return {"flush_draw": flush_draw, "made_flush": made_flush}
+    if made_flush:
+        return {"flush_draw": False, "made_flush": True}
+
+    flush_draw = False
+    for suit, total_count in suit_counts.items():
+        if total_count != 4:
+            continue
+        hole_count = sum(1 for card in hole if card[1] == suit)
+        if hole_count > 0:
+            flush_draw = True
+            break
+
+    return {"flush_draw": flush_draw, "made_flush": False}
 
 
 def is_top_pair_from_hole(hole: tuple[str, str], board: list[str]) -> bool:
@@ -566,6 +737,191 @@ def draw_profile(hole: tuple[str, str], board: list[str]) -> dict[str, bool | in
     }
 
 
+def _rank_has_available_card(rank_value: int, dead_cards: Iterable[str]) -> bool:
+    rank = VALUE_TO_RANK[rank_value]
+    dead = set(dead_cards)
+    return any(f"{rank}{suit}" not in dead for suit in SUITS)
+
+
+def _available_card_for_rank(rank_value: int, dead_cards: Iterable[str]) -> str:
+    rank = VALUE_TO_RANK[rank_value]
+    dead = set(dead_cards)
+    return next(f"{rank}{suit}" for suit in SUITS if f"{rank}{suit}" not in dead)
+
+
+def has_backdoor_eight_out_straight_draw_from_hole(
+    hole: tuple[str, str],
+    board: list[str],
+) -> bool:
+    """True when one turn rank can create a hole-card-relevant 8-out straight draw."""
+    if len(board) != 3:
+        return False
+
+    dead_cards = set(hole) | set(board)
+    for turn_rank in range(2, 15):
+        if not _rank_has_available_card(turn_rank, dead_cards):
+            continue
+
+        trial_board = list(board)
+        trial_board.append(_available_card_for_rank(turn_rank, dead_cards))
+
+        info = straight_draw_info(hole, trial_board)
+        if int(info["out_count"]) >= 8 and bool(info["oesd"] or info["double_gutshot"]):
+            return True
+
+    return False
+
+
+def has_qualified_backdoor_flush_draw_from_hole(
+    hole: tuple[str, str],
+    board: list[str],
+) -> bool:
+    """Backdoor flush SDV requires a meaningful high-card suit contributor."""
+    if len(board) != 3:
+        return False
+
+    highest_hole_rank = max(RANK_TO_VALUE[card[0]] for card in hole)
+    for suit in SUITS:
+        board_suit_count = sum(1 for card in board if card[1] == suit)
+        hole_cards_of_suit = [card for card in hole if card[1] == suit]
+        if not hole_cards_of_suit:
+            continue
+        if board_suit_count + len(hole_cards_of_suit) != 3:
+            continue
+        if any(highest_hole_rank - RANK_TO_VALUE[card[0]] <= 2 for card in hole_cards_of_suit):
+            return True
+
+    return False
+
+
+def has_high_card_sdv_backdoor_from_hole(hole: tuple[str, str], board: list[str]) -> bool:
+    return (
+        has_backdoor_eight_out_straight_draw_from_hole(hole, board)
+        or has_qualified_backdoor_flush_draw_from_hole(hole, board)
+    )
+
+
+def pair_draw_type_from_profile(draws: dict[str, bool | int | list[int]]) -> str:
+    """Return the displayed draw component for one-pair + draw hands.
+
+    Gutshots and open-ended straight draws are both consolidated into
+    "Straight Draw" for pair+draw display purposes. If the hand has both a
+    straight draw and a flush draw, use "Combo Draw".
+    """
+    has_straight_component = bool(draws["straight_draw"] or draws["gutshot"])
+    has_flush_component = bool(draws["flush_draw"])
+
+    if has_flush_component and has_straight_component:
+        return "Combo Draw"
+    if has_flush_component:
+        return "Flush Draw"
+    if has_straight_component:
+        return "Straight Draw"
+    return "Straight Draw"
+
+
+def pair_draw_subgroup_from_parts(
+    made_subgroup: str,
+    draws: dict[str, bool | int | list[int]],
+) -> str:
+    return f"{made_subgroup} + {pair_draw_type_from_profile(draws)}"
+
+
+def is_pair_draw_subgroup(subgroup: str) -> bool:
+    return subgroup in PAIR_DRAW_SUBGROUPS
+
+
+def base_pair_subgroup_from_pair_draw(subgroup: str) -> str | None:
+    if not is_pair_draw_subgroup(subgroup):
+        return None
+    return subgroup.split(" + ", 1)[0]
+
+
+def board_has_three_or_more_same_suit(board: list[str]) -> bool:
+    return any(count >= 3 for count in Counter(card[1] for card in board).values())
+
+
+def made_hand_has_non_river_sdv_floor(subgroup: str, board: list[str]) -> bool:
+    """Flop/turn floors keep intuitive made hands out of Air."""
+    if len(board) >= 5:
+        return False
+    if subgroup in {"Overpair", "Top Pair"} or subgroup in NUTTED_SUBGROUPS:
+        return True
+    if subgroup == "Mid Pair" and not board_has_three_or_more_same_suit(board):
+        return True
+    return False
+
+
+def pair_draw_has_non_river_sdv_floor(subgroup: str, board: list[str]) -> bool:
+    """Flop/turn floors keep meaningful pair+draw hands out of Weak Pair + Draw."""
+    if len(board) >= 5:
+        return False
+    base_pair = base_pair_subgroup_from_pair_draw(subgroup)
+    if base_pair in {"Overpair", "Top Pair"}:
+        return True
+    if base_pair == "Mid Pair" and not board_has_three_or_more_same_suit(board):
+        return True
+    return False
+
+
+def value_blocked_by_non_river_pair_rule(subgroup: str, board: list[str]) -> bool:
+    """Flop/turn Value requires Top Pair+; Mid/Low Pair cannot be Value."""
+    if len(board) >= 5:
+        return False
+    base_pair = base_pair_subgroup_from_pair_draw(subgroup)
+    return subgroup in {"Mid Pair", "Low Pair"} or base_pair in {"Mid Pair", "Low Pair"}
+
+
+def display_subgroup_for_bucket(subgroup: str, broad_bucket: str) -> str:
+    """Collapse granular pair+draw internals into simple UI-facing labels."""
+    if is_pair_draw_subgroup(subgroup):
+        if broad_bucket == "Value":
+            return "Value + Draw"
+        if broad_bucket == "SDV":
+            return "SDV + Draw"
+        if broad_bucket == "Draw":
+            return "Weak Pair + Draw"
+        return subgroup
+    return subgroup
+
+
+def rank_equivalent_pair_component_holes(
+    villain_hole: tuple[str, str],
+    board: list[str],
+) -> list[tuple[str, str]]:
+    """Return same-rank hole combos that share the same current pair component."""
+    subgroup = subgroup_of(villain_hole, board)
+    base_pair_subgroup = base_pair_subgroup_from_pair_draw(subgroup)
+    if base_pair_subgroup is None:
+        made_subgroup = best_made_subgroup_contributed_by_hole(villain_hole, board)
+        if made_subgroup not in PAIR_DRAW_BASE_SUBGROUPS:
+            return [villain_hole]
+        base_pair_subgroup = made_subgroup
+
+    r1, r2 = villain_hole[0][0], villain_hole[1][0]
+    board_set = set(board)
+    candidates: list[tuple[str, str]] = []
+
+    if r1 == r2:
+        raw_candidates = [(f"{r1}{s1}", f"{r1}{s2}") for s1, s2 in combinations(SUITS, 2)]
+    else:
+        raw_candidates = [
+            (f"{r1}{s1}", f"{r2}{s2}")
+            for s1 in SUITS
+            for s2 in SUITS
+        ]
+
+    for candidate in raw_candidates:
+        if candidate[0] == candidate[1]:
+            continue
+        if candidate[0] in board_set or candidate[1] in board_set:
+            continue
+        if best_made_subgroup_contributed_by_hole(candidate, board) == base_pair_subgroup:
+            candidates.append(candidate)
+
+    return candidates or [villain_hole]
+
+
 # =============================================================================
 # Best-hand contribution-aware subgroup logic
 # =============================================================================
@@ -629,15 +985,9 @@ def _made_subgroup_from_best_five(
 
     if class_idx == 2:
         pair_ranks = {best_rank[1], best_rank[2]}
-        board_ranks = {RANK_TO_VALUE[c[0]] for c in board}
         hole_ranks_in_best = [RANK_TO_VALUE[c[0]] for c in hole_in_best]
 
-        if (
-            len(hole_in_best) == 2
-            and hole_ranks_in_best[0] != hole_ranks_in_best[1]
-            and set(hole_ranks_in_best) == pair_ranks
-            and pair_ranks.issubset(board_ranks)
-        ):
+        if qualifies_as_user_two_pair(board, pair_ranks, hole_ranks_in_best):
             return "Two Pair"
 
         if any(rank in pair_ranks for rank in hole_ranks_in_best):
@@ -686,6 +1036,58 @@ def best_made_subgroup_contributed_by_hole(
     return sorted(candidates, key=lambda s: priority.get(s, 999))[0]
 
 
+def best_hand_subgroup_for_board_made_strong_hand(
+    hole: tuple[str, str],
+    board: list[str],
+) -> str | None:
+    """
+    Return the actual best-5-card made-hand subgroup for strong board-made hands.
+
+    This is intentionally narrow. It only overrides the contribution-aware subgroup
+    when the actual best hand is Straight or better. That fixes board-made straights,
+    flushes, full houses, quads, and straight flushes without changing the existing
+    contribution-aware logic for pairs, two pair, trips, sets, overpairs, top pair,
+    mid pair, or low pair.
+    """
+    raw_class = INTERNAL_CLASSES[int(rank_7(list(hole) + board)[0])]
+    if raw_class in {"Straight", "Flush", "Full House", "Quads", "Straight Flush"}:
+        return raw_class
+    return None
+
+
+def flush_board_suit(board: list[str]) -> str | None:
+    """Return the suit when the board has four or more cards of one suit."""
+    counts = Counter(card[1] for card in board)
+    for suit, count in counts.items():
+        if count >= 4:
+            return suit
+    return None
+
+
+def nut_flush_rank_on_flush_board(board: list[str]) -> int | None:
+    """
+    On a four-or-five-flush board, return the highest rank of the flush suit that
+    is not already on the board. Example: As Ts 9s 8s 3h -> Ks.
+    """
+    suit = flush_board_suit(board)
+    if suit is None:
+        return None
+
+    board_flush_ranks = {RANK_TO_VALUE[card[0]] for card in board if card[1] == suit}
+    for rank_value in range(14, 1, -1):
+        if rank_value not in board_flush_ranks:
+            return rank_value
+    return None
+
+
+def has_nut_flush_card_on_flush_board(hole: tuple[str, str], board: list[str]) -> bool:
+    suit = flush_board_suit(board)
+    nut_rank = nut_flush_rank_on_flush_board(board)
+    if suit is None or nut_rank is None:
+        return False
+    return any(card[1] == suit and RANK_TO_VALUE[card[0]] == nut_rank for card in hole)
+
+
 # =============================================================================
 # Equity helpers
 # =============================================================================
@@ -697,8 +1099,296 @@ def expand_range_to_combos(labels: Iterable[str]) -> list[tuple[str, str]]:
     return list(dict.fromkeys(out))
 
 
-def _hero_comparison_labels() -> list[str]:
-    return list(HERO_RANGE_TOKENS)
+def normalize_villain_profile_id(villain_profile_id: str | None) -> str:
+    raw = (villain_profile_id or "steve").strip().lower()
+    return VILLAIN_PROFILE_ALIASES.get(raw, raw)
+
+
+def scenario_weight_for_villain(villain_profile_id: str | None) -> float:
+    normalized = normalize_villain_profile_id(villain_profile_id)
+    return VILLAIN_SCENARIO_WEIGHTS.get(normalized, VILLAIN_SCENARIO_WEIGHTS["steve"])
+
+
+@lru_cache(maxsize=4)
+def load_scenario_catalog_from_file(catalog_path: str = DEFAULT_CATALOG_PATH) -> dict[str, dict]:
+    """Parse scenario names plus hero/villain ranges from catalog.py without importing the app."""
+    try:
+        with open(catalog_path, "r", encoding="utf-8") as handle:
+            source = handle.read()
+    except OSError:
+        return {}
+
+    tree = ast.parse(source, filename=catalog_path)
+    scenarios: dict[str, dict] = {}
+
+    for node in tree.body:
+        value_node: ast.AST | None = None
+        if isinstance(node, ast.Assign):
+            if any(isinstance(target, ast.Name) and target.id == "SCENARIOS" for target in node.targets):
+                value_node = node.value
+        elif isinstance(node, ast.AnnAssign):
+            if isinstance(node.target, ast.Name) and node.target.id == "SCENARIOS":
+                value_node = node.value
+
+        if not isinstance(value_node, ast.Dict):
+            continue
+
+        for key_node, scenario_node in zip(value_node.keys, value_node.values):
+            if key_node is None:
+                continue
+            try:
+                scenario_id = ast.literal_eval(key_node)
+            except (ValueError, SyntaxError):
+                continue
+            if not isinstance(scenario_id, str) or not isinstance(scenario_node, ast.Call):
+                continue
+
+            keyword_nodes = {kw.arg: kw.value for kw in scenario_node.keywords if kw.arg}
+            display_name = scenario_id
+            hero_range_tokens: tuple[str, ...] = ()
+            villain_range_tokens: tuple[str, ...] = ()
+
+            if "display_name" in keyword_nodes:
+                try:
+                    display_value = ast.literal_eval(keyword_nodes["display_name"])
+                    if isinstance(display_value, str):
+                        display_name = display_value
+                except (ValueError, SyntaxError):
+                    pass
+
+            if "hero_range_tokens" in keyword_nodes:
+                try:
+                    tokens_value = ast.literal_eval(keyword_nodes["hero_range_tokens"])
+                    hero_range_tokens = tuple(str(token) for token in tokens_value)
+                except (ValueError, SyntaxError, TypeError):
+                    hero_range_tokens = ()
+
+            if "villain_range_tokens" in keyword_nodes:
+                try:
+                    tokens_value = ast.literal_eval(keyword_nodes["villain_range_tokens"])
+                    villain_range_tokens = tuple(str(token) for token in tokens_value)
+                except (ValueError, SyntaxError, TypeError):
+                    villain_range_tokens = ()
+
+            if hero_range_tokens and villain_range_tokens:
+                scenarios[scenario_id] = {
+                    "id": scenario_id,
+                    "display_name": display_name,
+                    "hero_range_tokens": hero_range_tokens,
+                    "villain_range_tokens": villain_range_tokens,
+                }
+
+    return scenarios
+
+
+def selected_hero_range_mix(
+    villain_profile_id: str | None,
+    scenario_hero_range_tokens: Iterable[str] | None,
+) -> dict:
+    fixed_labels = parse_range_string(HERO_RANGE_TOKENS)
+    scenario_labels = (
+        parse_range_string(scenario_hero_range_tokens)
+        if scenario_hero_range_tokens
+        else []
+    )
+
+    scenario_weight = scenario_weight_for_villain(villain_profile_id) if scenario_labels else 0.0
+    fixed_weight = 1.0 - scenario_weight
+    if not scenario_labels:
+        fixed_weight = 1.0
+
+    return {
+        "villain_profile_id": normalize_villain_profile_id(villain_profile_id),
+        "scenario_weight": scenario_weight,
+        "fixed_weight": fixed_weight,
+        "scenario_labels": scenario_labels,
+        "fixed_labels": fixed_labels,
+        "scenario_combos": expand_range_to_combos(scenario_labels) if scenario_labels else [],
+        "fixed_combos": expand_range_to_combos(fixed_labels),
+        "source": "hybrid_scenario_fixed" if scenario_labels else "fixed",
+    }
+
+
+def weighted_hybrid_equity(
+    scenario_equity: float | None,
+    fixed_equity: float,
+    scenario_weight: float,
+    fixed_weight: float,
+) -> float:
+    if scenario_equity is None or scenario_weight <= 0:
+        return fixed_equity
+    return scenario_weight * scenario_equity + fixed_weight * fixed_equity
+
+
+def equity_vs_hybrid_hero_range_mc(
+    villain_hole: tuple[str, str],
+    board: list[str],
+    hero_mix: dict,
+    iters: int,
+    equity_base_seed: int,
+    purpose: str,
+) -> float:
+    fixed_rng = random.Random(stable_combo_rng_seed(equity_base_seed, board, villain_hole, f"{purpose}:fixed"))
+    fixed_equity = equity_vs_hero_range_mc(
+        villain_hole,
+        board,
+        list(hero_mix["fixed_combos"]),
+        iters,
+        fixed_rng,
+    )
+
+    scenario_equity = None
+    if hero_mix["scenario_combos"] and float(hero_mix["scenario_weight"]) > 0:
+        scenario_rng = random.Random(
+            stable_combo_rng_seed(equity_base_seed, board, villain_hole, f"{purpose}:scenario")
+        )
+        scenario_equity = equity_vs_hero_range_mc(
+            villain_hole,
+            board,
+            list(hero_mix["scenario_combos"]),
+            iters,
+            scenario_rng,
+        )
+
+    return weighted_hybrid_equity(
+        scenario_equity=scenario_equity,
+        fixed_equity=fixed_equity,
+        scenario_weight=float(hero_mix["scenario_weight"]),
+        fixed_weight=float(hero_mix["fixed_weight"]),
+    )
+
+
+def equity_vs_hybrid_hero_range_river_exact(
+    villain_hole: tuple[str, str],
+    board: list[str],
+    hero_mix: dict,
+) -> float:
+    fixed_equity = equity_vs_hero_range_river_exact(
+        villain_hole,
+        board,
+        list(hero_mix["fixed_combos"]),
+    )
+    scenario_equity = None
+    if hero_mix["scenario_combos"] and float(hero_mix["scenario_weight"]) > 0:
+        scenario_equity = equity_vs_hero_range_river_exact(
+            villain_hole,
+            board,
+            list(hero_mix["scenario_combos"]),
+        )
+
+    return weighted_hybrid_equity(
+        scenario_equity=scenario_equity,
+        fixed_equity=fixed_equity,
+        scenario_weight=float(hero_mix["scenario_weight"]),
+        fixed_weight=float(hero_mix["fixed_weight"]),
+    )
+
+
+def current_score_vs_hero_range_exact(
+    villain_hole: tuple[str, str],
+    board: list[str],
+    hero_combos: list[tuple[str, str]],
+) -> float:
+    """Current-street made score: % of board-live hero combos beaten now.
+
+    This intentionally ignores villain-card blockers before the river. Current
+    score is meant to describe the intuitive strength of villain's made hand
+    against the shape of hero's range on this board. If we remove hero combos
+    blocked by villain's exact cards, a weaker hand can appear stronger simply
+    because it blocks more of the hands that beat it, e.g. AQo scoring above
+    AA/KK on Q-6-3 by blocking QQ. River stays blocker-aware because river
+    current score is final hand equity.
+    """
+    if len(board) == 5:
+        return equity_vs_hero_range_river_exact(villain_hole, board, hero_combos)
+
+    board_set = set(board)
+    valid_hero = [hc for hc in hero_combos if not (set(hc) & board_set)]
+    if not valid_hero:
+        return 0.0
+
+    villain_rank = rank_7(list(villain_hole) + board)
+    wins = ties = total = 0
+
+    for hero in valid_hero:
+        hero_rank = rank_7(list(hero) + board)
+        total += 1
+        if villain_rank > hero_rank:
+            wins += 1
+        elif villain_rank == hero_rank:
+            ties += 1
+
+    return (wins + 0.5 * ties) / total if total else 0.0
+
+
+def current_score_vs_hybrid_hero_range_exact(
+    villain_hole: tuple[str, str],
+    board: list[str],
+    hero_mix: dict,
+) -> float:
+    fixed_score = current_score_vs_hero_range_exact(
+        villain_hole,
+        board,
+        list(hero_mix["fixed_combos"]),
+    )
+    scenario_score = None
+    if hero_mix["scenario_combos"] and float(hero_mix["scenario_weight"]) > 0:
+        scenario_score = current_score_vs_hero_range_exact(
+            villain_hole,
+            board,
+            list(hero_mix["scenario_combos"]),
+        )
+
+    return weighted_hybrid_equity(
+        scenario_equity=scenario_score,
+        fixed_equity=fixed_score,
+        scenario_weight=float(hero_mix["scenario_weight"]),
+        fixed_weight=float(hero_mix["fixed_weight"]),
+    )
+
+
+def pair_component_current_score_vs_hero_range_rank_exact(
+    villain_hole: tuple[str, str],
+    board: list[str],
+    hero_combos: list[tuple[str, str]],
+) -> float:
+    """Rank-level current score for the made-pair part of a pair+draw hand."""
+    candidates = rank_equivalent_pair_component_holes(villain_hole, board)
+    if not candidates:
+        return current_score_vs_hero_range_exact(villain_hole, board, hero_combos)
+
+    scores = [
+        current_score_vs_hero_range_exact(candidate, board, hero_combos)
+        for candidate in candidates
+    ]
+    return sum(scores) / len(scores)
+
+
+def pair_component_current_score_vs_hybrid_hero_range_rank_exact(
+    villain_hole: tuple[str, str],
+    board: list[str],
+    hero_mix: dict,
+) -> float:
+    fixed_score = pair_component_current_score_vs_hero_range_rank_exact(
+        villain_hole=villain_hole,
+        board=board,
+        hero_combos=list(hero_mix["fixed_combos"]),
+    )
+
+    scenario_score = None
+    if hero_mix["scenario_combos"] and float(hero_mix["scenario_weight"]) > 0:
+        scenario_score = pair_component_current_score_vs_hero_range_rank_exact(
+            villain_hole=villain_hole,
+            board=board,
+            hero_combos=list(hero_mix["scenario_combos"]),
+        )
+
+    return weighted_hybrid_equity(
+        scenario_equity=scenario_score,
+        fixed_equity=fixed_score,
+        scenario_weight=float(hero_mix["scenario_weight"]),
+        fixed_weight=float(hero_mix["fixed_weight"]),
+    )
 
 
 def resolve_iters(board: list[str], iters: int | None) -> int:
@@ -717,8 +1407,121 @@ def street_name_from_board(board: list[str]) -> str:
     raise ValueError("board must contain 3, 4, or 5 cards")
 
 
-def equity_thresholds_for_board(board: list[str]) -> dict[str, float]:
-    return STREET_EQUITY_THRESHOLDS[street_name_from_board(board)]
+def hero_range_compression_factor(hero_mix: dict | None) -> float:
+    """Return how much condensed scenario ranges should lower thresholds.
+
+    Fixed cutoffs work well in wide ranges, but become too strict in condensed
+    ranges. Example: AK on K-6-7-8 can be clear Value in a 4-bet pot even if it
+    does not beat 79.5% of a very strong hero range. This factor combines range
+    narrowness with villain scenario-awareness so broad SRP spots remain mostly
+    unchanged while tight 4-bet/3-bet configurations compress more.
+    """
+    if not hero_mix:
+        return 0.0
+
+    scenario_weight = float(hero_mix.get("scenario_weight", 0.0))
+    if scenario_weight <= 0:
+        return 0.0
+
+    scenario_count = len(hero_mix.get("scenario_combos", ()))
+    fixed_count = len(hero_mix.get("fixed_combos", ()))
+    if scenario_count <= 0 or fixed_count <= 0:
+        return 0.0
+
+    range_narrowness = 1.0 - min(1.0, scenario_count / fixed_count)
+    return max(0.0, min(1.0, scenario_weight * range_narrowness))
+
+
+def equity_thresholds_for_board(
+    board: list[str],
+    hero_mix: dict | None = None,
+) -> dict[str, float]:
+    street = street_name_from_board(board)
+    base = dict(STREET_EQUITY_THRESHOLDS[street])
+    compression = hero_range_compression_factor(hero_mix)
+    if compression <= 0:
+        return base
+
+    adjustments = RANGE_COMPRESSION_THRESHOLD_ADJUSTMENTS[street]
+    floors = RANGE_COMPRESSION_THRESHOLD_FLOORS[street]
+    return {
+        key: max(min(floors[key], base[key]), base[key] - adjustments[key] * compression)
+        for key in base
+    }
+
+
+def high_card_has_sdv_profile(
+    hole: tuple[str, str],
+    board: list[str],
+    made_score: float,
+    thresholds: dict[str, float],
+    equity_score: float | None = None,
+) -> bool:
+    """Return whether High Card has enough SDV profile for this street.
+
+    Flop High Card uses current strength plus the highest-available/backdoor
+    gates. Turn High Card uses current strength and no backdoor gate.
+    River High Card uses final current strength, which is equivalent to equity.
+    """
+    high_card_score = (
+        TURN_HIGH_CARD_CURRENT_SCORE_WEIGHT * made_score
+        + TURN_HIGH_CARD_EQUITY_WEIGHT * (
+            made_score if equity_score is None else equity_score
+        )
+        if len(board) == 4
+        else made_score
+    )
+
+    if high_card_score < thresholds["air"]:
+        return False
+
+    if len(board) >= 4:
+        return True
+
+    hole_ranks = sorted((RANK_TO_VALUE[card[0]] for card in hole), reverse=True)
+    high_rank = hole_ranks[0]
+
+    board_ranks = {RANK_TO_VALUE[card[0]] for card in board}
+    highest_available_rank = next(
+        rank for rank in range(RANK_TO_VALUE["A"], RANK_TO_VALUE["2"] - 1, -1)
+        if rank not in board_ranks
+    )
+
+    if high_rank == highest_available_rank:
+        return True
+
+    return has_high_card_sdv_backdoor_from_hole(hole, board)
+
+
+def is_board_made_strong_hand(
+    hole: tuple[str, str],
+    board: list[str],
+    subgroup: str,
+) -> bool:
+    """True when the best Straight+ hand can be made entirely from the board."""
+    if subgroup not in NUTTED_SUBGROUPS:
+        return False
+
+    hole_cards = set(hole)
+    return any(hole_cards.isdisjoint(best_five) for best_five in best_five_combos(hole, board))
+
+
+def stable_combo_rng_seed(
+    base_seed: int,
+    board: list[str],
+    hole: tuple[str, str],
+    purpose: str,
+) -> int:
+    seed_text = "|".join(
+        [
+            str(base_seed),
+            purpose,
+            ",".join(board),
+            ",".join(hole),
+        ]
+    )
+    digest = hashlib.blake2b(seed_text.encode("utf-8"), digest_size=8).digest()
+    return int.from_bytes(digest, "big")
 
 
 def equity_vs_hero_range_mc(
@@ -798,15 +1601,24 @@ def subgroup_of(hole: tuple[str, str], board: list[str]) -> str:
     draws = draw_profile(hole, board)
     has_draw = bool(draws["straight_draw"] or draws["gutshot"] or draws["flush_draw"])
     made_subgroup = best_made_subgroup_contributed_by_hole(hole, board)
+    actual_strong_subgroup = best_hand_subgroup_for_board_made_strong_hand(hole, board)
+
+    # Board-made / actual best-hand override for Straight+ only.
+    # This fixes boards where the best 5-card hand is a board-made straight,
+    # flush, full house, quads, or straight flush while deliberately preserving
+    # the existing contribution-aware pair / two-pair / trips / set logic.
+    if actual_strong_subgroup is not None:
+        return actual_strong_subgroup
 
     # Blanket override:
-    # any contributed 1-pair or 2-pair hand with a draw becomes Pair + Draw.
+    # any contributed one-pair hand with a draw becomes an internal granular pair+draw subgroup.
+    # True Two Pair stays Two Pair, even if it also has a draw.
     if (
         len(board) < 5
         and has_draw
-        and made_subgroup in {"Overpair", "Top Pair", "Mid Pair", "Low Pair", "Two Pair"}
+        and made_subgroup in PAIR_DRAW_BASE_SUBGROUPS
     ):
-        return "Pair + Draw"
+        return pair_draw_subgroup_from_parts(made_subgroup, draws)
 
     if made_subgroup is not None:
         return made_subgroup
@@ -833,102 +1645,244 @@ def broad_bucket_for_subgroup(
     board: list[str],
     subgroup: str,
     eq_vs_hero: float,
+    pair_component_equity_vs_hero: float | None = None,
+    current_score_vs_hero: float | None = None,
+    pair_component_current_score_vs_hero: float | None = None,
+    thresholds: dict[str, float] | None = None,
 ) -> str:
-    thresholds = equity_thresholds_for_board(board)
+    thresholds = thresholds or equity_thresholds_for_board(board)
+    made_score = current_score_vs_hero if current_score_vs_hero is not None else eq_vs_hero
 
     if subgroup in {"Gutshot", "Straight Draw", "Flush Draw", "Combo Draw"}:
-        return "Air" if eq_vs_hero < thresholds["draw_air"] else "Draw"
-
-    if subgroup == "Pair + Draw":
-        if eq_vs_hero < thresholds["pair_draw_air"]:
-            return "Air"
-
-        base_pair = best_made_subgroup_contributed_by_hole(hole, board)
-
-        if base_pair in {"Two Pair", "Overpair", "Top Pair"}:
-            return "Value" if eq_vs_hero >= thresholds["value"] else "SDV"
-
-        if base_pair in {"Mid Pair", "Low Pair"}:
-            return "SDV" if eq_vs_hero >= thresholds["pair_draw_mid_low_sdv"] else "Draw"
-
         return "Draw"
 
-    if eq_vs_hero < thresholds["air"]:
-        return "Air"
+    if is_pair_draw_subgroup(subgroup):
+        # Pair + Draw placement uses future equity only to stay draw-aware.
+        # Value/SDV/weak status comes from the current made-pair component.
+        pair_score = (
+            pair_component_current_score_vs_hero
+            if pair_component_current_score_vs_hero is not None
+            else (
+                current_score_vs_hero
+                if current_score_vs_hero is not None
+                else (
+                    pair_component_equity_vs_hero
+                    if pair_component_equity_vs_hero is not None
+                    else eq_vs_hero
+                )
+            )
+        )
+
+        if pair_draw_has_non_river_sdv_floor(subgroup, board):
+            if not value_blocked_by_non_river_pair_rule(subgroup, board) and pair_score >= thresholds["value"]:
+                return "Value"
+            return "SDV"
+
+        if eq_vs_hero < thresholds["air"]:
+            return "Draw"
+
+        if value_blocked_by_non_river_pair_rule(subgroup, board):
+            return "SDV" if pair_score >= thresholds["air"] else "Draw"
+        if pair_score >= thresholds["value"]:
+            return "Value"
+        if pair_score >= thresholds["air"]:
+            return "SDV"
+        return "Draw"
 
     if subgroup == "High Card":
+        return (
+            "SDV"
+            if high_card_has_sdv_profile(
+                hole,
+                board,
+                made_score,
+                thresholds,
+                equity_score=eq_vs_hero,
+            )
+            else "Air"
+        )
+
+    # Hard nut rule: if this combo ties the theoretical best possible hand on
+    # this board, it must be Nutted Value even if its equity is pulled down by
+    # chopping against other nut hands in the comparison range. Example:
+    # Ax on K-Q-J-T-x is still the nuts despite tying other Ax holdings.
+    if is_best_possible_hand(hole, board):
+        return "Nutted Value"
+
+    if made_score < thresholds["air"] and is_board_made_strong_hand(hole, board, subgroup):
         return "SDV"
 
-    if subgroup == "Overpair":
-        return "Value" if eq_vs_hero >= thresholds["value"] else "SDV"
+    # Current-street score below the air cutoff is not strong enough to carry
+    # made-hand showdown value. Pure draws remain in Draw above.
+    if made_score < thresholds["air"]:
+        if made_hand_has_non_river_sdv_floor(subgroup, board):
+            return "SDV"
+        return "Air"
 
-    if subgroup == "Top Pair":
-        return "Value" if eq_vs_hero >= thresholds["value"] else "SDV"
+    if subgroup in {"Overpair", "Top Pair", "Mid Pair", "Low Pair"}:
+        if value_blocked_by_non_river_pair_rule(subgroup, board):
+            return "SDV"
+        return "Value" if made_score >= thresholds["value"] else "SDV"
 
-    if subgroup == "Mid Pair":
-        return "SDV"
-
-    if subgroup == "Low Pair":
-        return "SDV"
+    # On four-or-five-flush boards, non-nut flushes should not become Nutted Value
+    # just because their equity clears the normal nutted threshold. Treat only
+    # straight flushes and nut-flush-card holdings as eligible for Nutted Value.
+    if flush_board_suit(board) is not None:
+        if subgroup == "Straight Flush":
+            return "Nutted Value"
+        if subgroup == "Flush":
+            if has_nut_flush_card_on_flush_board(hole, board):
+                if made_score >= thresholds["nutted_value"]:
+                    return "Nutted Value"
+                if made_score >= thresholds["value"]:
+                    return "Value"
+                return "SDV"
+            return "Value" if made_score >= thresholds["value"] else "SDV"
 
     if subgroup in NUTTED_SUBGROUPS:
-        if eq_vs_hero >= thresholds["nutted_value"]:
+        if made_score >= thresholds["nutted_value"]:
             return "Nutted Value"
-        if eq_vs_hero >= thresholds["value"]:
+        if made_score >= thresholds["value"]:
             return "Value"
         return "SDV"
 
     return "SDV"
 
 
+
 def bucket_combo(
     hole: tuple[str, str],
     board: list[str],
     eq_vs_hero: float,
+    pair_component_equity_vs_hero: float | None = None,
+    current_score_vs_hero: float | None = None,
+    pair_component_current_score_vs_hero: float | None = None,
+    thresholds: dict[str, float] | None = None,
 ) -> tuple[str, str]:
     subgroup = subgroup_of(hole, board)
-    broad_bucket = broad_bucket_for_subgroup(hole, board, subgroup, eq_vs_hero)
+    broad_bucket = broad_bucket_for_subgroup(
+        hole,
+        board,
+        subgroup,
+        eq_vs_hero,
+        pair_component_equity_vs_hero=pair_component_equity_vs_hero,
+        current_score_vs_hero=current_score_vs_hero,
+        pair_component_current_score_vs_hero=pair_component_current_score_vs_hero,
+        thresholds=thresholds,
+    )
     return broad_bucket, subgroup
 
 
-def _resolve_bucket_for_label_subgroup(records: list[dict]) -> str:
+def _resolve_bucket_for_label_subgroup(
+    records: list[dict],
+    board: list[str],
+    thresholds: dict[str, float] | None = None,
+) -> str:
     """
     Keep all combos of the same exact label in the same subgroup under one broad bucket.
 
-    Resolution:
-    1. Majority broad bucket by combo count.
-    2. If tied, use higher average equity among the tied buckets.
-    3. If still tied, prefer the stronger bucket deterministically.
+    Resolution uses the same averaged metric displayed in the report:
+    - normal made hands use average current-street score
+    - pair+draw hands use average current pair-component score for Value/SDV placement
+    - pure draws remain in Draw
+
+    This avoids a label with an average score above the threshold landing in the
+    lower bucket because individual combos straddle the cutoff.
     """
     if not records:
         raise ValueError("cannot resolve bucket for empty record group")
 
-    bucket_counts = Counter(record["initial_broad_bucket"] for record in records)
-    max_count = max(bucket_counts.values())
-    contenders = [bucket for bucket, count in bucket_counts.items() if count == max_count]
+    subgroup = str(records[0].get("subgroup", ""))
+    thresholds = thresholds or equity_thresholds_for_board(board)
+    avg_eq = sum(float(record["equity_vs_hero"]) for record in records) / len(records)
+    avg_current_score = (
+        sum(float(record.get("current_score_vs_hero", record["equity_vs_hero"])) for record in records)
+        / len(records)
+    )
 
-    if len(contenders) == 1:
-        return contenders[0]
+    if subgroup in {"Gutshot", "Straight Draw", "Flush Draw", "Combo Draw"}:
+        return "Draw"
 
-    avg_eq_by_bucket: dict[str, float] = {}
-    for bucket in contenders:
-        equities = [
-            float(record["equity_vs_hero"])
+    if is_pair_draw_subgroup(subgroup):
+        pair_equities = [
+            float(
+                record.get("pair_component_current_score_vs_hero")
+                if record.get("pair_component_current_score_vs_hero") is not None
+                else record.get("current_score_vs_hero", record["equity_vs_hero"])
+            )
             for record in records
-            if record["initial_broad_bucket"] == bucket
         ]
-        avg_eq_by_bucket[bucket] = sum(equities) / len(equities)
+        avg_pair_score = sum(pair_equities) / len(pair_equities)
 
-    best_avg_eq = max(avg_eq_by_bucket.values())
-    contenders = [
-        bucket for bucket in contenders
-        if abs(avg_eq_by_bucket[bucket] - best_avg_eq) < 1e-12
-    ]
+        if pair_draw_has_non_river_sdv_floor(subgroup, board):
+            if not value_blocked_by_non_river_pair_rule(subgroup, board) and avg_pair_score >= thresholds["value"]:
+                return "Value"
+            return "SDV"
 
-    if len(contenders) == 1:
-        return contenders[0]
+        if avg_eq < thresholds["air"]:
+            return "Draw"
 
-    return max(contenders, key=lambda bucket: BUCKET_STRENGTH_PRIORITY.get(bucket, -1))
+        if value_blocked_by_non_river_pair_rule(subgroup, board):
+            return "SDV" if avg_pair_score >= thresholds["air"] else "Draw"
+        if avg_pair_score >= thresholds["value"]:
+            return "Value"
+        if avg_pair_score >= thresholds["air"]:
+            return "SDV"
+        return "Draw"
+
+    if subgroup == "High Card":
+        representative_hole = tuple(records[0]["combo"])
+        return (
+            "SDV"
+            if high_card_has_sdv_profile(
+                representative_hole,
+                board,
+                avg_current_score,
+                thresholds,
+                equity_score=avg_eq,
+            )
+            else "Air"
+        )
+
+    if all(is_best_possible_hand(tuple(record["combo"]), board) for record in records):
+        return "Nutted Value"
+
+    if avg_current_score < thresholds["air"] and any(
+        is_board_made_strong_hand(tuple(record["combo"]), board, subgroup)
+        for record in records
+    ):
+        return "SDV"
+
+    if avg_current_score < thresholds["air"]:
+        if made_hand_has_non_river_sdv_floor(subgroup, board):
+            return "SDV"
+        return "Air"
+
+    if subgroup in {"Overpair", "Top Pair", "Mid Pair", "Low Pair"}:
+        if value_blocked_by_non_river_pair_rule(subgroup, board):
+            return "SDV"
+        return "Value" if avg_current_score >= thresholds["value"] else "SDV"
+
+    if flush_board_suit(board) is not None:
+        if subgroup == "Straight Flush":
+            return "Nutted Value"
+        if subgroup == "Flush":
+            nut_flush_group = all(
+                has_nut_flush_card_on_flush_board(tuple(record["combo"]), board)
+                for record in records
+            )
+            if nut_flush_group and avg_current_score >= thresholds["nutted_value"]:
+                return "Nutted Value"
+            return "Value" if avg_current_score >= thresholds["value"] else "SDV"
+
+    if subgroup in NUTTED_SUBGROUPS:
+        if avg_current_score >= thresholds["nutted_value"]:
+            return "Nutted Value"
+        if avg_current_score >= thresholds["value"]:
+            return "Value"
+        return "SDV"
+
+    return "SDV"
 
 
 # =============================================================================
@@ -1005,17 +1959,22 @@ def analyze_range(
     Broad Bucket -> Subgroup -> Hand label + live combos / total combos
 
     Compatibility notes:
-    - villain_profile_id and scenario_hero_range_tokens are accepted but ignored.
-    - All equity comparisons use the fixed HERO_RANGE_TOKENS baseline.
+    - scenario_hero_range_tokens should come from catalog.py's selected scenario.
+    - villain_profile_id controls the scenario/fixed hybrid comparison weights.
     """
     input_villain_profile_id = villain_profile_id
-    del scenario_hero_range_tokens
 
     rng = rng or random.Random(42)
     run_iters = resolve_iters(board, iters)
+    equity_base_seed = rng.randrange(0, 2**64)
 
-    hero_labels = _hero_comparison_labels()
-    hero_combos = expand_range_to_combos(hero_labels)
+    hero_mix = selected_hero_range_mix(
+        villain_profile_id=villain_profile_id,
+        scenario_hero_range_tokens=scenario_hero_range_tokens,
+    )
+    active_thresholds = equity_thresholds_for_board(board, hero_mix)
+    base_thresholds = dict(STREET_EQUITY_THRESHOLDS[street_name_from_board(board)])
+    threshold_compression = hero_range_compression_factor(hero_mix)
     normalized_villain_labels = parse_range_string(villain_labels)
     available = available_combos_for_labels(normalized_villain_labels, excluded_cards=board)
 
@@ -1031,11 +1990,41 @@ def analyze_range(
 
     for label, hole in combo_records:
         if len(board) == 5:
-            eq = equity_vs_hero_range_river_exact(hole, board, hero_combos)
+            eq = equity_vs_hybrid_hero_range_river_exact(hole, board, hero_mix)
         else:
-            eq = equity_vs_hero_range_mc(hole, board, hero_combos, run_iters, rng)
+            eq = equity_vs_hybrid_hero_range_mc(
+                villain_hole=hole,
+                board=board,
+                hero_mix=hero_mix,
+                iters=run_iters,
+                equity_base_seed=equity_base_seed,
+                purpose="total_equity",
+            )
+        current_score = current_score_vs_hybrid_hero_range_exact(hole, board, hero_mix)
 
-        initial_broad_bucket, subgroup = bucket_combo(hole, board, eq)
+        subgroup = subgroup_of(hole, board)
+        pair_component_equity = None
+        pair_component_current_score = None
+        if len(board) < 5 and is_pair_draw_subgroup(subgroup):
+            pair_component_current_score = (
+                pair_component_current_score_vs_hybrid_hero_range_rank_exact(
+                    villain_hole=hole,
+                    board=board,
+                    hero_mix=hero_mix,
+                )
+            )
+            pair_component_equity = pair_component_current_score
+
+        initial_broad_bucket = broad_bucket_for_subgroup(
+            hole,
+            board,
+            subgroup,
+            eq,
+            pair_component_equity_vs_hero=pair_component_equity,
+            current_score_vs_hero=current_score,
+            pair_component_current_score_vs_hero=pair_component_current_score,
+            thresholds=active_thresholds,
+        )
         internal_name = internal_hand_class_of(hole, board)
         best_made_subgroup = best_made_subgroup_contributed_by_hole(hole, board)
 
@@ -1044,6 +2033,9 @@ def analyze_range(
                 "label": label,
                 "combo": hole,
                 "equity_vs_hero": eq,
+                "current_score_vs_hero": current_score,
+                "pair_component_equity_vs_hero": pair_component_equity,
+                "pair_component_current_score_vs_hero": pair_component_current_score,
                 "subgroup": subgroup,
                 "initial_broad_bucket": initial_broad_bucket,
                 "broad_bucket": initial_broad_bucket,
@@ -1056,10 +2048,16 @@ def analyze_range(
 
     records_by_label_and_subgroup: dict[tuple[str, str], list[dict]] = defaultdict(list)
     for record in evaluated_records:
+        if record["subgroup"] == "High Card":
+            continue
         records_by_label_and_subgroup[(record["label"], record["subgroup"])].append(record)
 
     for records in records_by_label_and_subgroup.values():
-        resolved_bucket = _resolve_bucket_for_label_subgroup(records)
+        resolved_bucket = _resolve_bucket_for_label_subgroup(
+            records,
+            board,
+            thresholds=active_thresholds,
+        )
         for record in records:
             record["broad_bucket"] = resolved_bucket
 
@@ -1068,7 +2066,9 @@ def analyze_range(
     bucket_subgroup_combo_counts: dict[str, Counter[str]] = defaultdict(Counter)
     bucket_internal_counts: dict[str, Counter[str]] = defaultdict(Counter)
     bucket_equities: dict[str, list[float]] = defaultdict(list)
+    bucket_current_scores: dict[str, list[float]] = defaultdict(list)
     subgroup_equities: dict[str, list[float]] = defaultdict(list)
+    subgroup_current_scores: dict[str, list[float]] = defaultdict(list)
     label_bucket_subgroup_counts: dict[tuple[str, str], Counter[str]] = defaultdict(Counter)
     bucket_combo_details: dict[str, list[dict]] = defaultdict(list)
 
@@ -1076,25 +2076,33 @@ def analyze_range(
         label = record["label"]
         hole = record["combo"]
         broad_bucket = record["broad_bucket"]
-        subgroup = record["subgroup"]
+        internal_subgroup = record["subgroup"]
+        display_subgroup = display_subgroup_for_bucket(internal_subgroup, broad_bucket)
         internal_name = record["internal_type"]
         eq = float(record["equity_vs_hero"])
+        current_score = float(record.get("current_score_vs_hero", eq))
 
         bucket_combo_counts[broad_bucket] += 1
-        subgroup_combo_counts[subgroup] += 1
-        bucket_subgroup_combo_counts[broad_bucket][subgroup] += 1
+        subgroup_combo_counts[display_subgroup] += 1
+        bucket_subgroup_combo_counts[broad_bucket][display_subgroup] += 1
         bucket_internal_counts[broad_bucket][internal_name] += 1
         bucket_equities[broad_bucket].append(eq)
-        subgroup_equities[subgroup].append(eq)
-        label_bucket_subgroup_counts[(broad_bucket, subgroup)][label] += 1
+        bucket_current_scores[broad_bucket].append(current_score)
+        subgroup_equities[display_subgroup].append(eq)
+        subgroup_current_scores[display_subgroup].append(current_score)
+        label_bucket_subgroup_counts[(broad_bucket, display_subgroup)][label] += 1
         bucket_combo_details[broad_bucket].append(
             {
                 "label": label,
                 "combo": list(hole),
                 "equity_vs_hero": eq,
+                "current_score_vs_hero": current_score,
+                "pair_component_equity_vs_hero": record.get("pair_component_equity_vs_hero"),
+                "pair_component_current_score_vs_hero": record.get("pair_component_current_score_vs_hero"),
                 "broad_bucket": broad_bucket,
                 "initial_broad_bucket": record["initial_broad_bucket"],
-                "subgroup": subgroup,
+                "subgroup": display_subgroup,
+                "internal_subgroup": internal_subgroup,
                 "internal_type": internal_name,
                 "draw_profile": record["draw_profile"],
                 "best_made_subgroup": record["best_made_subgroup"],
@@ -1135,12 +2143,45 @@ def analyze_range(
                 )
                 / combo_count
             )
+            avg_current_score = (
+                sum(
+                    detail["current_score_vs_hero"]
+                    for detail in bucket_combo_details[broad_bucket]
+                    if detail["subgroup"] == subgroup
+                )
+                / combo_count
+            )
+
+            subgroup_details = [
+                detail
+                for detail in bucket_combo_details[broad_bucket]
+                if detail["subgroup"] == subgroup
+            ]
+            pair_component_values = [
+                float(detail["pair_component_equity_vs_hero"])
+                for detail in subgroup_details
+                if detail.get("pair_component_equity_vs_hero") is not None
+            ]
+            pair_component_current_values = [
+                float(detail["pair_component_current_score_vs_hero"])
+                for detail in subgroup_details
+                if detail.get("pair_component_current_score_vs_hero") is not None
+            ]
 
             subgroup_map[subgroup] = {
                 "combo_count": combo_count,
                 "labels": labels,
                 "avg_equity_vs_hero": avg_equity,
+                "avg_current_score_vs_hero": avg_current_score,
             }
+            if pair_component_values:
+                subgroup_map[subgroup]["avg_pair_component_equity_vs_hero"] = (
+                    sum(pair_component_values) / len(pair_component_values)
+                )
+            if pair_component_current_values:
+                subgroup_map[subgroup]["avg_pair_component_current_score_vs_hero"] = (
+                    sum(pair_component_current_values) / len(pair_component_current_values)
+                )
 
         if subgroup_map:
             bucket_subgroups[broad_bucket] = subgroup_map
@@ -1149,8 +2190,24 @@ def analyze_range(
         "board": list(board),
         "iters": run_iters,
         "villain_profile_id": input_villain_profile_id,
-        "hero_range_source": "fixed",
-        "hero_comparison_labels": list(hero_labels),
+        "hero_range_source": hero_mix["source"],
+        "hero_range_mix": {
+            "villain_profile_id": hero_mix["villain_profile_id"],
+            "scenario_weight": hero_mix["scenario_weight"],
+            "fixed_weight": hero_mix["fixed_weight"],
+            "scenario_label_count": len(hero_mix["scenario_labels"]),
+            "fixed_label_count": len(hero_mix["fixed_labels"]),
+            "scenario_combo_count": len(hero_mix["scenario_combos"]),
+            "fixed_combo_count": len(hero_mix["fixed_combos"]),
+        },
+        "base_thresholds": base_thresholds,
+        "active_thresholds": dict(active_thresholds),
+        "threshold_compression_factor": threshold_compression,
+        "hero_comparison_labels": list(dict.fromkeys(
+            list(hero_mix["scenario_labels"]) + list(hero_mix["fixed_labels"])
+        )),
+        "scenario_hero_comparison_labels": list(hero_mix["scenario_labels"]),
+        "fixed_hero_comparison_labels": list(hero_mix["fixed_labels"]),
         "total_combos": total,
         "bucket_combo_counts": dict(bucket_combo_counts),
         "subgroup_combo_counts": dict(subgroup_combo_counts),
@@ -1159,7 +2216,9 @@ def analyze_range(
         },
         "bucket_internal_counts": {k: dict(v) for k, v in bucket_internal_counts.items()},
         "bucket_equities": {k: list(v) for k, v in bucket_equities.items()},
+        "bucket_current_scores": {k: list(v) for k, v in bucket_current_scores.items()},
         "subgroup_equities": {k: list(v) for k, v in subgroup_equities.items()},
+        "subgroup_current_scores": {k: list(v) for k, v in subgroup_current_scores.items()},
         "bucket_subgroups": bucket_subgroups,
         "bucket_combo_details": dict(bucket_combo_details),
         "label_combo_total": dict(label_combo_total),

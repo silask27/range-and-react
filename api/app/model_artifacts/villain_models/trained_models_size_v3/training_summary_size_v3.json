@@ -1,0 +1,451 @@
+{
+  "trained_at": "2026-05-15T19:08:10.509156+00:00",
+  "size_model_results": [
+    {
+      "model_name": "open_bet_size_model_v3",
+      "trained": true,
+      "rows": 343,
+      "cv_folds": 5,
+      "cv_mae": 0.1371214099301897,
+      "cv_median_ae": 0.08769179160702902,
+      "cv_rmse": 0.2121165444861711,
+      "target": "size_pct_pot",
+      "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models_size_v3/open_bet_size_model_v3.pkl",
+      "selected_candidate": "v3_villain_mae_depth4",
+      "note": "V3 size model selected by OOF MAE across v2 and villain-prioritized v3 feature spaces.",
+      "candidate_results": [
+        {
+          "candidate_name": "v2_context_mae",
+          "feature_space": "context_v2",
+          "transform": "none",
+          "loss_function": "MAE",
+          "rows": 343,
+          "cv_folds": 5,
+          "cv_mae": 0.13783819033687056,
+          "cv_median_ae": 0.08803341795164636,
+          "cv_rmse": 0.21163565567031534,
+          "params": {
+            "candidate_name": "v2_context_mae",
+            "feature_space": "context_v2",
+            "transform": "none",
+            "loss_function": "MAE",
+            "iterations": 420,
+            "depth": 5,
+            "learning_rate": 0.035,
+            "l2_leaf_reg": 8.0
+          }
+        },
+        {
+          "candidate_name": "v3_villain_mae_depth4",
+          "feature_space": "villain_context_v3",
+          "transform": "none",
+          "loss_function": "MAE",
+          "rows": 343,
+          "cv_folds": 5,
+          "cv_mae": 0.1371214099301897,
+          "cv_median_ae": 0.08769179160702902,
+          "cv_rmse": 0.2121165444861711,
+          "params": {
+            "candidate_name": "v3_villain_mae_depth4",
+            "feature_space": "villain_context_v3",
+            "transform": "none",
+            "loss_function": "MAE",
+            "iterations": 420,
+            "depth": 4,
+            "learning_rate": 0.035,
+            "l2_leaf_reg": 12.0
+          }
+        },
+        {
+          "candidate_name": "v3_villain_mae_depth5",
+          "feature_space": "villain_context_v3",
+          "transform": "none",
+          "loss_function": "MAE",
+          "rows": 343,
+          "cv_folds": 5,
+          "cv_mae": 0.1388206111094236,
+          "cv_median_ae": 0.09260817533363723,
+          "cv_rmse": 0.2138351576103307,
+          "params": {
+            "candidate_name": "v3_villain_mae_depth5",
+            "feature_space": "villain_context_v3",
+            "transform": "none",
+            "loss_function": "MAE",
+            "iterations": 480,
+            "depth": 5,
+            "learning_rate": 0.03,
+            "l2_leaf_reg": 16.0
+          }
+        },
+        {
+          "candidate_name": "v3_villain_huber_depth4",
+          "feature_space": "villain_context_v3",
+          "transform": "none",
+          "loss_function": "Huber:delta=0.18",
+          "rows": 343,
+          "cv_folds": 5,
+          "cv_mae": 0.13823615302346706,
+          "cv_median_ae": 0.09524592559891104,
+          "cv_rmse": 0.2146020048745906,
+          "params": {
+            "candidate_name": "v3_villain_huber_depth4",
+            "feature_space": "villain_context_v3",
+            "transform": "none",
+            "loss_function": "Huber:delta=0.18",
+            "iterations": 480,
+            "depth": 4,
+            "learning_rate": 0.03,
+            "l2_leaf_reg": 14.0
+          }
+        },
+        {
+          "candidate_name": "v3_villain_huber_tight",
+          "feature_space": "villain_context_v3",
+          "transform": "none",
+          "loss_function": "Huber:delta=0.12",
+          "rows": 343,
+          "cv_folds": 5,
+          "cv_mae": 0.13994666528982974,
+          "cv_median_ae": 0.0969931010223253,
+          "cv_rmse": 0.21523980605857354,
+          "params": {
+            "candidate_name": "v3_villain_huber_tight",
+            "feature_space": "villain_context_v3",
+            "transform": "none",
+            "loss_function": "Huber:delta=0.12",
+            "iterations": 420,
+            "depth": 4,
+            "learning_rate": 0.035,
+            "l2_leaf_reg": 18.0
+          }
+        }
+      ]
+    },
+    {
+      "model_name": "raise_vs_bet_size_model_v3",
+      "trained": true,
+      "rows": 206,
+      "cv_folds": 5,
+      "cv_mae": 0.6996163927661764,
+      "cv_median_ae": 0.5483988676245142,
+      "cv_rmse": 1.0347336404234238,
+      "target": "raise_multiple_vs_facing",
+      "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models_size_v3/raise_vs_bet_size_model_v3.pkl",
+      "selected_candidate": "v2_context_log_huber",
+      "note": "V3 size model selected by OOF MAE across v2 and villain-prioritized v3 feature spaces.",
+      "candidate_results": [
+        {
+          "candidate_name": "v2_context_mae",
+          "feature_space": "context_v2",
+          "transform": "none",
+          "loss_function": "MAE",
+          "rows": 206,
+          "cv_folds": 5,
+          "cv_mae": 0.7030197375162011,
+          "cv_median_ae": 0.5397506287881597,
+          "cv_rmse": 1.021892046849674,
+          "params": {
+            "candidate_name": "v2_context_mae",
+            "feature_space": "context_v2",
+            "transform": "none",
+            "loss_function": "MAE",
+            "iterations": 420,
+            "depth": 5,
+            "learning_rate": 0.035,
+            "l2_leaf_reg": 8.0
+          }
+        },
+        {
+          "candidate_name": "v3_villain_mae_depth4",
+          "feature_space": "villain_context_v3",
+          "transform": "none",
+          "loss_function": "MAE",
+          "rows": 206,
+          "cv_folds": 5,
+          "cv_mae": 0.721784589329042,
+          "cv_median_ae": 0.5948615068180773,
+          "cv_rmse": 1.0510762069438009,
+          "params": {
+            "candidate_name": "v3_villain_mae_depth4",
+            "feature_space": "villain_context_v3",
+            "transform": "none",
+            "loss_function": "MAE",
+            "iterations": 420,
+            "depth": 4,
+            "learning_rate": 0.035,
+            "l2_leaf_reg": 12.0
+          }
+        },
+        {
+          "candidate_name": "v3_villain_mae_depth5",
+          "feature_space": "villain_context_v3",
+          "transform": "none",
+          "loss_function": "MAE",
+          "rows": 206,
+          "cv_folds": 5,
+          "cv_mae": 0.7401086241383037,
+          "cv_median_ae": 0.6031011565280922,
+          "cv_rmse": 1.0611931648482034,
+          "params": {
+            "candidate_name": "v3_villain_mae_depth5",
+            "feature_space": "villain_context_v3",
+            "transform": "none",
+            "loss_function": "MAE",
+            "iterations": 480,
+            "depth": 5,
+            "learning_rate": 0.03,
+            "l2_leaf_reg": 16.0
+          }
+        },
+        {
+          "candidate_name": "v3_villain_huber_depth4",
+          "feature_space": "villain_context_v3",
+          "transform": "none",
+          "loss_function": "Huber:delta=0.18",
+          "rows": 206,
+          "cv_folds": 5,
+          "cv_mae": 0.7603363780861006,
+          "cv_median_ae": 0.5458910188096519,
+          "cv_rmse": 1.1306672289559971,
+          "params": {
+            "candidate_name": "v3_villain_huber_depth4",
+            "feature_space": "villain_context_v3",
+            "transform": "none",
+            "loss_function": "Huber:delta=0.18",
+            "iterations": 480,
+            "depth": 4,
+            "learning_rate": 0.03,
+            "l2_leaf_reg": 14.0
+          }
+        },
+        {
+          "candidate_name": "v2_context_log_huber",
+          "feature_space": "context_v2",
+          "transform": "log",
+          "loss_function": "Huber:delta=0.18",
+          "rows": 206,
+          "cv_folds": 5,
+          "cv_mae": 0.6996163927661764,
+          "cv_median_ae": 0.5483988676245142,
+          "cv_rmse": 1.0347336404234238,
+          "params": {
+            "candidate_name": "v2_context_log_huber",
+            "feature_space": "context_v2",
+            "transform": "log",
+            "loss_function": "Huber:delta=0.18",
+            "iterations": 450,
+            "depth": 5,
+            "learning_rate": 0.035,
+            "l2_leaf_reg": 8.0
+          }
+        },
+        {
+          "candidate_name": "v3_villain_log_mae",
+          "feature_space": "villain_context_v3",
+          "transform": "log",
+          "loss_function": "MAE",
+          "rows": 206,
+          "cv_folds": 5,
+          "cv_mae": 0.7167971522995751,
+          "cv_median_ae": 0.5434812829812474,
+          "cv_rmse": 1.0466750835580743,
+          "params": {
+            "candidate_name": "v3_villain_log_mae",
+            "feature_space": "villain_context_v3",
+            "transform": "log",
+            "loss_function": "MAE",
+            "iterations": 480,
+            "depth": 4,
+            "learning_rate": 0.03,
+            "l2_leaf_reg": 14.0
+          }
+        },
+        {
+          "candidate_name": "v3_villain_log_huber",
+          "feature_space": "villain_context_v3",
+          "transform": "log",
+          "loss_function": "Huber:delta=0.18",
+          "rows": 206,
+          "cv_folds": 5,
+          "cv_mae": 0.7239122265748004,
+          "cv_median_ae": 0.5369178984749828,
+          "cv_rmse": 1.0524123802363432,
+          "params": {
+            "candidate_name": "v3_villain_log_huber",
+            "feature_space": "villain_context_v3",
+            "transform": "log",
+            "loss_function": "Huber:delta=0.18",
+            "iterations": 520,
+            "depth": 4,
+            "learning_rate": 0.03,
+            "l2_leaf_reg": 18.0
+          }
+        }
+      ]
+    },
+    {
+      "model_name": "reraise_vs_raise_size_model_v3",
+      "trained": true,
+      "rows": 56,
+      "cv_folds": 5,
+      "cv_mae": 0.5587709278334174,
+      "cv_median_ae": 0.495720746833741,
+      "cv_rmse": 0.7276659275177241,
+      "target": "reraise_multiple_vs_facing",
+      "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models_size_v3/reraise_vs_raise_size_model_v3.pkl",
+      "selected_candidate": "v2_context_mae",
+      "note": "V3 size model selected by OOF MAE across v2 and villain-prioritized v3 feature spaces.",
+      "candidate_results": [
+        {
+          "candidate_name": "v2_context_mae",
+          "feature_space": "context_v2",
+          "transform": "none",
+          "loss_function": "MAE",
+          "rows": 56,
+          "cv_folds": 5,
+          "cv_mae": 0.5587709278334174,
+          "cv_median_ae": 0.495720746833741,
+          "cv_rmse": 0.7276659275177241,
+          "params": {
+            "candidate_name": "v2_context_mae",
+            "feature_space": "context_v2",
+            "transform": "none",
+            "loss_function": "MAE",
+            "iterations": 420,
+            "depth": 5,
+            "learning_rate": 0.035,
+            "l2_leaf_reg": 8.0
+          }
+        },
+        {
+          "candidate_name": "v3_villain_mae_depth4",
+          "feature_space": "villain_context_v3",
+          "transform": "none",
+          "loss_function": "MAE",
+          "rows": 56,
+          "cv_folds": 5,
+          "cv_mae": 0.5748731535720325,
+          "cv_median_ae": 0.49306579135347633,
+          "cv_rmse": 0.7411187262007335,
+          "params": {
+            "candidate_name": "v3_villain_mae_depth4",
+            "feature_space": "villain_context_v3",
+            "transform": "none",
+            "loss_function": "MAE",
+            "iterations": 420,
+            "depth": 4,
+            "learning_rate": 0.035,
+            "l2_leaf_reg": 12.0
+          }
+        },
+        {
+          "candidate_name": "v3_villain_mae_depth5",
+          "feature_space": "villain_context_v3",
+          "transform": "none",
+          "loss_function": "MAE",
+          "rows": 56,
+          "cv_folds": 5,
+          "cv_mae": 0.60165810629897,
+          "cv_median_ae": 0.5351296623699524,
+          "cv_rmse": 0.7664874252830788,
+          "params": {
+            "candidate_name": "v3_villain_mae_depth5",
+            "feature_space": "villain_context_v3",
+            "transform": "none",
+            "loss_function": "MAE",
+            "iterations": 480,
+            "depth": 5,
+            "learning_rate": 0.03,
+            "l2_leaf_reg": 16.0
+          }
+        },
+        {
+          "candidate_name": "v3_villain_huber_depth4",
+          "feature_space": "villain_context_v3",
+          "transform": "none",
+          "loss_function": "Huber:delta=0.18",
+          "rows": 56,
+          "cv_folds": 5,
+          "cv_mae": 0.7341735327219243,
+          "cv_median_ae": 0.501739761155709,
+          "cv_rmse": 0.9785765830640551,
+          "params": {
+            "candidate_name": "v3_villain_huber_depth4",
+            "feature_space": "villain_context_v3",
+            "transform": "none",
+            "loss_function": "Huber:delta=0.18",
+            "iterations": 480,
+            "depth": 4,
+            "learning_rate": 0.03,
+            "l2_leaf_reg": 14.0
+          }
+        },
+        {
+          "candidate_name": "v2_context_log_huber",
+          "feature_space": "context_v2",
+          "transform": "log",
+          "loss_function": "Huber:delta=0.18",
+          "rows": 56,
+          "cv_folds": 5,
+          "cv_mae": 0.6085697990719849,
+          "cv_median_ae": 0.5709220133789668,
+          "cv_rmse": 0.7739934336341933,
+          "params": {
+            "candidate_name": "v2_context_log_huber",
+            "feature_space": "context_v2",
+            "transform": "log",
+            "loss_function": "Huber:delta=0.18",
+            "iterations": 450,
+            "depth": 5,
+            "learning_rate": 0.035,
+            "l2_leaf_reg": 8.0
+          }
+        },
+        {
+          "candidate_name": "v3_villain_log_mae",
+          "feature_space": "villain_context_v3",
+          "transform": "log",
+          "loss_function": "MAE",
+          "rows": 56,
+          "cv_folds": 5,
+          "cv_mae": 0.5590098571127103,
+          "cv_median_ae": 0.5023213321064535,
+          "cv_rmse": 0.7318215493694675,
+          "params": {
+            "candidate_name": "v3_villain_log_mae",
+            "feature_space": "villain_context_v3",
+            "transform": "log",
+            "loss_function": "MAE",
+            "iterations": 480,
+            "depth": 4,
+            "learning_rate": 0.03,
+            "l2_leaf_reg": 14.0
+          }
+        },
+        {
+          "candidate_name": "v3_villain_log_huber",
+          "feature_space": "villain_context_v3",
+          "transform": "log",
+          "loss_function": "Huber:delta=0.18",
+          "rows": 56,
+          "cv_folds": 5,
+          "cv_mae": 0.6179303216817336,
+          "cv_median_ae": 0.491347960981361,
+          "cv_rmse": 0.7865636126643881,
+          "params": {
+            "candidate_name": "v3_villain_log_huber",
+            "feature_space": "villain_context_v3",
+            "transform": "log",
+            "loss_function": "Huber:delta=0.18",
+            "iterations": 520,
+            "depth": 4,
+            "learning_rate": 0.03,
+            "l2_leaf_reg": 18.0
+          }
+        }
+      ]
+    }
+  ],
+  "selection_rule": "Choose candidate with lowest mean OOF MAE; tie-break by median AE then RMSE.",
+  "notes": "V3 size models test v2 feature spaces against villain-prioritized v3 interaction feature spaces."
+}

@@ -6,11 +6,11 @@ from __future__ import annotations
 This runtime keeps the existing public contract (`choose_villain_action` and
 `VillainDecisionResult`) but swaps the internals to:
 - build the richer v1-style predictor set
-- query v1/v2/v3/v4 expert action models
-- blend them with the trained v5 blend config
+- query v1/v2/v3/v4/v5 expert action models
+- score them with the trained v6 villain-prioritized meta stacker
 - select the deterministic top action from the blended distribution
 - preserve close/mixed probability metadata for scoring and debriefs
-- use size-model-v2 for bet / raise sizing
+- use size-model-v3 for bet / raise sizing
 """
 
 from dataclasses import dataclass
@@ -25,6 +25,11 @@ from typing import Iterable, Sequence, Any
 from api.app.data.catalog import get_scenario
 from api.app.data.villain_profiles import get_villain_profile
 from api.app.engine import bucketizer as bz
+from api.app.engine.action_model_features_v6 import (
+    ACTIONS_BY_NODE_V6,
+    MODEL_ORDER_V6,
+    build_action_meta_features_v6,
+)
 from api.app.engine.board_texture import evaluate_board_texture
 from api.app.engine.cards import normalize_cards
 from api.app.models.betting import ActionEvent
@@ -36,7 +41,9 @@ TRAINED_MODELS_V2_DIR = MODEL_DIR / "trained_models_v2"
 TRAINED_MODELS_V3_DIR = MODEL_DIR / "trained_models_v3"
 TRAINED_MODELS_V4_DIR = MODEL_DIR / "trained_models_v4"
 TRAINED_MODELS_V5_DIR = MODEL_DIR / "trained_models_v5"
+TRAINED_MODELS_V6_DIR = MODEL_DIR / "trained_models_v6"
 TRAINED_MODELS_SIZE_V2_DIR = MODEL_DIR / "trained_models_size_v2"
+TRAINED_MODELS_SIZE_V3_DIR = MODEL_DIR / "trained_models_size_v3"
 
 OPEN_ACTION_MODEL_FILE = TRAINED_MODELS_DIR / "open_action_model.pkl"
 FACING_BET_FOLD_CONTINUE_MODEL_FILE = TRAINED_MODELS_DIR / "facing_bet_fold_continue_model.pkl"
@@ -64,9 +71,17 @@ FACING_RAISE_RERAISE_GIVEN_CONTINUE_PROB_MODEL_V4_FILE = TRAINED_MODELS_V4_DIR /
 
 V5_BLEND_CONFIG_FILE = TRAINED_MODELS_V5_DIR / "blend_config_v5.json"
 
+OPEN_ACTION_META_MODEL_V6_FILE = TRAINED_MODELS_V6_DIR / "open_action_meta_model_v6.pkl"
+FACING_BET_META_MODEL_V6_FILE = TRAINED_MODELS_V6_DIR / "facing_bet_meta_model_v6.pkl"
+FACING_RAISE_META_MODEL_V6_FILE = TRAINED_MODELS_V6_DIR / "facing_raise_meta_model_v6.pkl"
+
 OPEN_BET_SIZE_MODEL_V2_FILE = TRAINED_MODELS_SIZE_V2_DIR / "open_bet_size_model_v2.pkl"
 RAISE_VS_BET_SIZE_MODEL_V2_FILE = TRAINED_MODELS_SIZE_V2_DIR / "raise_vs_bet_size_model_v2.pkl"
 RERAISE_VS_RAISE_SIZE_MODEL_V2_FILE = TRAINED_MODELS_SIZE_V2_DIR / "reraise_vs_raise_size_model_v2.pkl"
+
+OPEN_BET_SIZE_MODEL_V3_FILE = TRAINED_MODELS_SIZE_V3_DIR / "open_bet_size_model_v3.pkl"
+RAISE_VS_BET_SIZE_MODEL_V3_FILE = TRAINED_MODELS_SIZE_V3_DIR / "raise_vs_bet_size_model_v3.pkl"
+RERAISE_VS_RAISE_SIZE_MODEL_V3_FILE = TRAINED_MODELS_SIZE_V3_DIR / "reraise_vs_raise_size_model_v3.pkl"
 
 ALLOWED_CALIBRATION_VILLAIN_NAMES = {"Dave", "Mike", "Blake", "Tom", "Steve", "Erik", "Alex"}
 MODEL_ORDER_V5 = ["v1", "v2", "v3", "v4"]
@@ -392,19 +407,41 @@ def _derive_board_high_card_bucket(board: Sequence[str]) -> str:
     return "high" if max_rank in high_ranks else "low"
 
 
-def _compute_hand_equity_and_subgroup(*, villain_type: str, scenario_id: str, street: str, villain_hand: Sequence[str], board: Sequence[str]) -> tuple[float, str]:
+def _scenario_hero_range_tokens(scenario_id: str) -> tuple[str, ...] | None:
+    try:
+        scenario = get_scenario(scenario_id)
+    except Exception:
+        return None
+    tokens = getattr(scenario, "hero_range_tokens", None)
+    if not tokens:
+        return None
+    return tuple(str(token) for token in tokens)
+
+
+def _compute_hand_strength_context(*, villain_type: str, scenario_id: str, street: str, villain_hand: Sequence[str], board: Sequence[str]) -> tuple[float, float, str]:
     normalized_board = normalize_cards(list(board))
     normalized_hole = normalize_cards(list(villain_hand))
     hole = tuple(sorted((normalized_hole[0], normalized_hole[1])))
-    subgroup = bz.subgroup_of(hole, normalized_board)
-    hero_combos = list(_fixed_hero_combos())
+    scenario_tokens = _scenario_hero_range_tokens(scenario_id)
+    hero_mix = bz.selected_hero_range_mix(
+        villain_profile_id=villain_type,
+        scenario_hero_range_tokens=scenario_tokens,
+    )
     if len(normalized_board) == 5:
-        equity = bz.equity_vs_hero_range_river_exact(hole, normalized_board, hero_combos)
+        equity = bz.equity_vs_hybrid_hero_range_river_exact(hole, normalized_board, hero_mix)
     else:
         iters = bz.resolve_iters(normalized_board, None)
-        rng = random.Random(_stable_seed(villain_type, scenario_id, street, ''.join(normalized_board), ''.join(normalized_hole)))
-        equity = bz.equity_vs_hero_range_mc(villain_hole=hole, board=normalized_board, hero_combos=hero_combos, iters=iters, rng=rng)
-    return float(equity), subgroup
+        equity = bz.equity_vs_hybrid_hero_range_mc(
+            villain_hole=hole,
+            board=normalized_board,
+            hero_mix=hero_mix,
+            iters=iters,
+            equity_base_seed=_stable_seed(villain_type, scenario_id, street, ''.join(normalized_board), ''.join(normalized_hole)),
+            purpose="runtime_predictor_equity",
+        )
+    current_strength = bz.current_score_vs_hybrid_hero_range_exact(hole, normalized_board, hero_mix)
+    subgroup = bz.subgroup_of(hole, normalized_board)
+    return float(equity), float(current_strength), subgroup
 
 
 def _previous_action_summary(street: str, history_events: Iterable[ActionEvent] | None) -> str:
@@ -647,7 +684,7 @@ def _derive_draw_missed(*, street: str, flags: BoardStateFlags) -> bool:
 
 def _vulnerability_bucket(vulnerability_score: float, hand_subgroup: str) -> str:
     subgroup = str(hand_subgroup or 'NA')
-    if subgroup in {'Air', 'Gutshot', 'Straight Draw', 'Flush Draw', 'Combo Draw', 'Pair + Draw'}:
+    if subgroup in {'Air', 'Gutshot', 'Straight Draw', 'Flush Draw', 'Combo Draw'} or 'Draw' in subgroup:
         return 'not_applicable'
     value = float(vulnerability_score)
     if value <= 0.05:
@@ -711,7 +748,7 @@ def _adapt_spot(*, villain_type: str, scenario_id: str, street: str, node: str, 
 
 
 def _derive_flat_predictors(*, villain_type: str, scenario_id: str, street: str, node: str, villain_is_ip: bool, pot: float, effective_stack_size: float, facing_size_raw: float, villain_hand: Sequence[str], board: Sequence[str], history_events: Iterable[ActionEvent] | None) -> dict[str, object]:
-    hand_equity, hand_subgroup = _compute_hand_equity_and_subgroup(villain_type=villain_type, scenario_id=scenario_id, street=street, villain_hand=villain_hand, board=board)
+    hand_equity, current_strength, hand_subgroup = _compute_hand_strength_context(villain_type=villain_type, scenario_id=scenario_id, street=street, villain_hand=villain_hand, board=board)
     board_state = _derive_board_state_flags(board)
     spr = float(effective_stack_size / pot) if pot > 0 else 0.0
     facing_size_pct_pot = float(facing_size_raw / pot) if pot > 0 else 0.0
@@ -741,6 +778,7 @@ def _derive_flat_predictors(*, villain_type: str, scenario_id: str, street: str,
         'facing_size_pct_pot': float(facing_size_pct_pot),
         'facing_size_pct_stack': float(facing_size_pct_stack),
         'hand_equity': float(hand_equity),
+        'current_strength': float(current_strength),
         'hand_subgroup': hand_subgroup,
         'previous_action_summary': _previous_action_summary(street, history_events),
         'current_aggressor': current_aggressor,
@@ -827,6 +865,7 @@ def _build_size_feature_dict_compact(flat: dict[str, object], model_kind: str) -
     scenario_id = str(flat.get('scenario_id') or 'NA')
     street = str(flat.get('street') or 'NA')
     hand_equity = float(flat.get('hand_equity') or 0.0)
+    current_strength = float(flat.get('current_strength') or 0.0)
     spr = float(flat.get('spr') or 0.0)
     vulnerability_score = float(flat.get('vulnerability_score') or 0.0)
     facing_size_raw = float(flat.get('facing_size_raw') or 0.0)
@@ -842,6 +881,7 @@ def _build_size_feature_dict_compact(flat: dict[str, object], model_kind: str) -
         connected=bool(flat.get('board_connected')),
     )
     hand_equity_bucket = _equity_bucket(hand_equity)
+    current_strength_bucket = _equity_bucket(current_strength)
     spr_bucket = _spr_bucket(spr)
     vulnerability_bucket = _vulnerability_bucket(vulnerability_score, hand_subgroup)
     facing_size_bucket = _facing_size_bucket(facing_size_pct_pot)
@@ -850,6 +890,8 @@ def _build_size_feature_dict_compact(flat: dict[str, object], model_kind: str) -
     out: dict[str, object] = {
         'villain_type': villain_type,
         'hand_equity': hand_equity,
+        'current_strength': current_strength,
+        'current_strength_bucket': current_strength_bucket,
         'hand_equity_bucket': hand_equity_bucket,
         'hand_subgroup': hand_subgroup,
         'scenario_id': scenario_id,
@@ -860,6 +902,7 @@ def _build_size_feature_dict_compact(flat: dict[str, object], model_kind: str) -
         'vulnerability_bucket': vulnerability_bucket,
         'villain_is_ip': int(bool(flat.get('villain_is_ip'))),
         'vx_hand_equity_bucket': f'{villain_type}__{hand_equity_bucket}',
+        'vx_current_strength_bucket': f'{villain_type}__{current_strength_bucket}',
         'vx_hand_subgroup': f'{villain_type}__{hand_subgroup}',
         'vx_scenario_id': f'{villain_type}__{scenario_id}',
         'vx_street': f'{villain_type}__{street}',
@@ -895,6 +938,7 @@ def _build_size_feature_dict_context(flat: dict[str, object], model_kind: str) -
     hero_prev_street_last_action_type = str(flat.get('hero_prev_street_last_action_type') or 'NA')
     board_high_card_bucket = str(flat.get('board_high_card_bucket') or 'NA')
     hand_equity = float(flat.get('hand_equity') or 0.0)
+    current_strength = float(flat.get('current_strength') or 0.0)
     spr = float(flat.get('spr') or 0.0)
     vulnerability_score = float(flat.get('vulnerability_score') or 0.0)
     facing_size_raw = float(flat.get('facing_size_raw') or 0.0)
@@ -913,6 +957,7 @@ def _build_size_feature_dict_context(flat: dict[str, object], model_kind: str) -
         connected=bool(flat.get('board_connected')),
     )
     hand_equity_bucket = _equity_bucket(hand_equity)
+    current_strength_bucket = _equity_bucket(current_strength)
     spr_bucket = _spr_bucket(spr)
     vulnerability_bucket = _vulnerability_bucket(vulnerability_score, hand_subgroup)
     facing_size_bucket = _facing_size_bucket(facing_size_pct_pot)
@@ -927,6 +972,7 @@ def _build_size_feature_dict_context(flat: dict[str, object], model_kind: str) -
         'effective_stack_size': effective_stack_size,
         'spr': spr,
         'hand_equity': hand_equity,
+        'current_strength': current_strength,
         'hand_subgroup': hand_subgroup,
         'previous_action_summary': previous_action_summary,
         'current_aggressor': current_aggressor,
@@ -947,6 +993,7 @@ def _build_size_feature_dict_context(flat: dict[str, object], model_kind: str) -
         'board_connected': int(flags.connected),
         'vulnerability_score': vulnerability_score,
         'hand_equity_bucket': hand_equity_bucket,
+        'current_strength_bucket': current_strength_bucket,
         'spr_bucket': spr_bucket,
         'vulnerability_bucket': vulnerability_bucket,
         'pot_size_bucket': pot_size_bucket,
@@ -956,6 +1003,7 @@ def _build_size_feature_dict_context(flat: dict[str, object], model_kind: str) -
         'vx_scenario_id': f'{villain_type}__{scenario_id}',
         'vx_street': f'{villain_type}__{street}',
         'vx_hand_equity_bucket': f'{villain_type}__{hand_equity_bucket}',
+        'vx_current_strength_bucket': f'{villain_type}__{current_strength_bucket}',
         'vx_spr_bucket': f'{villain_type}__{spr_bucket}',
         'vx_vulnerability_bucket': f'{villain_type}__{vulnerability_bucket}',
         'vx_board_type_compact': f'{villain_type}__{board_type_compact}',
@@ -973,6 +1021,62 @@ def _build_size_feature_dict_context(flat: dict[str, object], model_kind: str) -
             'vx_facing_size_bucket': f'{villain_type}__{facing_size_bucket}',
         })
     return out
+
+
+def _build_size_feature_dict_v3(flat: dict[str, object], model_kind: str) -> dict[str, object]:
+    out = _build_size_feature_dict_context(flat, model_kind)
+    villain_type = str(out.get('villain_type') or 'NA')
+    scenario_id = str(out.get('scenario_id') or 'NA')
+    street = str(out.get('street') or 'NA')
+    hand_subgroup = str(out.get('hand_subgroup') or 'NA')
+    current_aggressor = str(out.get('current_aggressor') or 'NA')
+    previous_summary = str(out.get('previous_action_summary') or 'NA')
+    equity_bucket = str(out.get('hand_equity_bucket') or 'NA')
+    current_strength_bucket = str(out.get('current_strength_bucket') or 'NA')
+    spr_bucket = str(out.get('spr_bucket') or 'NA')
+    board_type = str(out.get('board_type_compact') or 'NA')
+    facing_size_bucket = str(out.get('facing_size_bucket') or 'NA')
+    open_action_type = str(out.get('open_action_type') or 'NA')
+    previous_villain_action = str(out.get('previous_street_villain_last_action') or 'NA')
+    hero_prev_action = str(out.get('hero_prev_street_last_action_type') or 'NA')
+    board_high = str(out.get('board_high_card_bucket') or 'NA')
+
+    out.update({
+        'vx_current_aggressor': f'{villain_type}__{current_aggressor}',
+        'vx_previous_villain_action': f'{villain_type}__{previous_villain_action}',
+        'vx_hero_prev_action': f'{villain_type}__{hero_prev_action}',
+        'vx_board_high_card_bucket': f'{villain_type}__{board_high}',
+        'vx_pot_size_bucket': f"{villain_type}__{out.get('pot_size_bucket')}",
+        'vx_strength_spr': f'{villain_type}__{current_strength_bucket}__{spr_bucket}',
+        'vx_equity_spr': f'{villain_type}__{equity_bucket}__{spr_bucket}',
+        'vx_subgroup_board': f'{villain_type}__{hand_subgroup}__{board_type}',
+        'vx_street_subgroup': f'{villain_type}__{street}__{hand_subgroup}',
+        'vx_scenario_street': f'{villain_type}__{scenario_id}__{street}',
+        'vx_scenario_subgroup': f'{villain_type}__{scenario_id}__{hand_subgroup}',
+        'sx_subgroup': f'{scenario_id}__{hand_subgroup}',
+        'sx_board_type': f'{scenario_id}__{board_type}',
+        'sx_strength': f'{scenario_id}__{current_strength_bucket}',
+        'street_subgroup': f'{street}__{hand_subgroup}',
+        'street_board_type': f'{street}__{board_type}',
+        'aggressor_previous': f'{current_aggressor}__{previous_summary}',
+        'strength_board': f'{current_strength_bucket}__{board_type}',
+    })
+    if model_kind == 'open_bet':
+        out['vx_open_action_strength'] = f'{villain_type}__{open_action_type}__{current_strength_bucket}'
+    else:
+        out['vx_facing_size_strength'] = f'{villain_type}__{facing_size_bucket}__{current_strength_bucket}'
+        out['vx_facing_size_subgroup'] = f'{villain_type}__{facing_size_bucket}__{hand_subgroup}'
+    return out
+
+
+def _build_size_feature_dict_by_space(flat: dict[str, object], model_kind: str, feature_space: str) -> dict[str, object]:
+    if feature_space == 'compact_v1':
+        return _build_size_feature_dict_compact(flat, model_kind)
+    if feature_space == 'context_v2':
+        return _build_size_feature_dict_context(flat, model_kind)
+    if feature_space == 'villain_context_v3':
+        return _build_size_feature_dict_v3(flat, model_kind)
+    return _build_size_feature_dict_context(flat, model_kind)
 
 
 def _build_frame_catboost(feature_source: dict[str, object], artifact: dict):
@@ -1194,6 +1298,67 @@ def _predict_v5(spot: RuntimeSpot, flat: dict[str, object]) -> dict[str, object]
     }
 
 
+def _v6_artifact_file_for_node(node: str) -> Path:
+    if node == 'open_action':
+        return OPEN_ACTION_META_MODEL_V6_FILE
+    if node == 'facing_bet':
+        return FACING_BET_META_MODEL_V6_FILE
+    if node == 'facing_raise':
+        return FACING_RAISE_META_MODEL_V6_FILE
+    raise ValueError(f'unsupported v6 node: {node}')
+
+
+def _runtime_expert_probs_v6(spot: RuntimeSpot, flat: dict[str, object]) -> dict[str, dict[str, float]]:
+    v1 = _predict_v1(spot, flat)
+    v2 = _predict_v2(spot, flat)
+    v3 = _predict_v3(spot, flat)
+    v4 = _predict_v4(spot, flat)
+    v5 = _predict_v5(spot, flat)
+    return {
+        'v1': dict(v1.get('raw_action_probs') or {}),
+        'v2': dict(v2.get('raw_action_probs') or {}),
+        'v3': dict(v3.get('raw_action_probs') or {}),
+        'v4': dict(v4.get('raw_action_probs') or {}),
+        'v5': dict(v5.get('raw_action_probs') or {}),
+    }
+
+
+def _predict_v6(spot: RuntimeSpot, flat: dict[str, object]) -> dict[str, object]:
+    np, _ = _load_runtime_modules()
+    node = str(spot.node)
+    actions = ACTIONS_BY_NODE_V6[node]
+    artifact = _load_artifact(str(_v6_artifact_file_for_node(node)))
+    version_probs = _runtime_expert_probs_v6(spot, flat)
+    meta_features = build_action_meta_features_v6(
+        node=node,
+        raw_context=flat,
+        version_probs=version_probs,
+    )
+    frame = _build_frame_catboost(meta_features, artifact)
+    pred = np.asarray(artifact['model'].predict(frame), dtype=float).reshape(-1)
+    raw = _normalize_probs({action: float(value) for action, value in zip(actions, pred)})
+    result: dict[str, object] = {
+        'status': 'ok',
+        'unavailable_reason': None,
+        'raw_action_probs': dict(raw),
+        'expert_raw_action_probs': version_probs,
+        'model_version': 'v6',
+        'p_x': raw.get('x'),
+        'p_b': raw.get('b'),
+        'p_f': raw.get('f'),
+        'p_c': raw.get('c'),
+        'p_r': raw.get('r'),
+    }
+    if node != 'open_action':
+        p_continue = float(raw.get('c', 0.0)) + float(raw.get('r', 0.0))
+        result['p_continue'] = p_continue
+        if node == 'facing_bet':
+            result['p_raise_given_continue'] = 0.0 if p_continue <= 1e-9 else float(raw.get('r', 0.0)) / p_continue
+        else:
+            result['p_reraise_given_continue'] = 0.0 if p_continue <= 1e-9 else float(raw.get('r', 0.0)) / p_continue
+    return result
+
+
 def _predict_size_v2(flat: dict[str, object], *, node: str) -> dict[str, float | None]:
     result = {
         'pred_open_bet_size_pct_pot_v2': None,
@@ -1213,6 +1378,36 @@ def _predict_size_v2(flat: dict[str, object], *, node: str) -> dict[str, float |
     art = _load_artifact(str(RERAISE_VS_RAISE_SIZE_MODEL_V2_FILE))
     source = _build_size_feature_dict_context(flat, 'reraise_vs_raise') if art.get('feature_space') != 'compact_v1' else _build_size_feature_dict_compact(flat, 'reraise_vs_raise')
     result['pred_reraise_multiple_vs_facing_v2'] = _clip_reraise_multiple(_predict_regression_catboost(source, art))
+    return result
+
+
+def _predict_size_v3(flat: dict[str, object], *, spot: RuntimeSpot) -> dict[str, float | None]:
+    result = {
+        'pred_open_bet_size_pct_pot_v3': None,
+        'pred_open_bet_size_raw_v3': None,
+        'pred_raise_multiple_vs_facing_v3': None,
+        'pred_reraise_multiple_vs_facing_v3': None,
+        'pred_raise_to_raw_v3': None,
+    }
+    if spot.node == 'open_action':
+        art = _load_artifact(str(OPEN_BET_SIZE_MODEL_V3_FILE))
+        source = _build_size_feature_dict_by_space(flat, 'open_bet', str(art.get('feature_space') or 'villain_context_v3'))
+        pred_pct = _clip_open_bet_pct_pot(_predict_regression_catboost(source, art))
+        result['pred_open_bet_size_pct_pot_v3'] = pred_pct
+        result['pred_open_bet_size_raw_v3'] = pred_pct * float(spot.pot_size)
+        return result
+    if spot.node == 'facing_bet':
+        art = _load_artifact(str(RAISE_VS_BET_SIZE_MODEL_V3_FILE))
+        source = _build_size_feature_dict_by_space(flat, 'raise_vs_bet', str(art.get('feature_space') or 'villain_context_v3'))
+        pred_mult = _clip_raise_multiple(_predict_regression_catboost(source, art))
+        result['pred_raise_multiple_vs_facing_v3'] = pred_mult
+        result['pred_raise_to_raw_v3'] = pred_mult * float(spot.facing_action.amount or 0.0)
+        return result
+    art = _load_artifact(str(RERAISE_VS_RAISE_SIZE_MODEL_V3_FILE))
+    source = _build_size_feature_dict_by_space(flat, 'reraise_vs_raise', str(art.get('feature_space') or 'villain_context_v3'))
+    pred_mult = _clip_reraise_multiple(_predict_regression_catboost(source, art))
+    result['pred_reraise_multiple_vs_facing_v3'] = pred_mult
+    result['pred_raise_to_raw_v3'] = pred_mult * float(spot.facing_action.amount or 0.0)
     return result
 
 
@@ -1245,9 +1440,15 @@ def validate_model_runtime() -> None:
         FACING_RAISE_CONTINUE_PROB_MODEL_V4_FILE,
         FACING_RAISE_RERAISE_GIVEN_CONTINUE_PROB_MODEL_V4_FILE,
         V5_BLEND_CONFIG_FILE,
+        OPEN_ACTION_META_MODEL_V6_FILE,
+        FACING_BET_META_MODEL_V6_FILE,
+        FACING_RAISE_META_MODEL_V6_FILE,
         OPEN_BET_SIZE_MODEL_V2_FILE,
         RAISE_VS_BET_SIZE_MODEL_V2_FILE,
         RERAISE_VS_RAISE_SIZE_MODEL_V2_FILE,
+        OPEN_BET_SIZE_MODEL_V3_FILE,
+        RAISE_VS_BET_SIZE_MODEL_V3_FILE,
+        RERAISE_VS_RAISE_SIZE_MODEL_V3_FILE,
     ]
     missing = [str(p) for p in required if not p.exists()]
     if missing:
@@ -1361,8 +1562,8 @@ def choose_villain_action(
 
     spot = _adapt_spot(villain_type=villain_type, scenario_id=resolved_scenario_id, street=street_key, node=node, villain_is_ip=villain_is_ip, pot=float(pot), effective_stack_size=effective_stack, facing_size_raw=facing_size_raw, villain_hand=list(villain_hand), board=list(board), history_events=history_events)
     flat = _derive_flat_predictors(villain_type=villain_type, scenario_id=resolved_scenario_id, street=street_key, node=node, villain_is_ip=villain_is_ip, pot=float(pot), effective_stack_size=effective_stack, facing_size_raw=facing_size_raw, villain_hand=list(villain_hand), board=list(board), history_events=history_events)
-    v5 = _predict_v5(spot, flat)
-    final_probs = dict(v5.get('raw_action_probs') or {})
+    v6 = _predict_v6(spot, flat)
+    final_probs = dict(v6.get('raw_action_probs') or {})
     if not can_raise and 'r' in final_probs:
         final_probs['r'] = 0.0
     final_probs = _normalize_probs(final_probs)
@@ -1382,22 +1583,21 @@ def choose_villain_action(
     raise_size_mult = None
     raise_size_key = None
     if node == 'open_action' and action == ActionType.BET:
-        size_result = _predict_size_v2(flat, node='open_action')
-        bet_size_frac = float(size_result['pred_open_bet_size_pct_pot_v2'] or 0.5)
+        size_result = _predict_size_v3(flat, spot=spot)
+        bet_size_frac = float(size_result['pred_open_bet_size_pct_pot_v3'] or 0.5)
         bet_size_key = _bet_size_key_from_fraction(bet_size_frac)
     elif node == 'facing_bet' and action == ActionType.RAISE:
-        size_result = _predict_size_v2(flat, node='facing_bet')
-        raise_size_mult = float(size_result['pred_raise_multiple_vs_facing_v2'] or 3.0)
+        size_result = _predict_size_v3(flat, spot=spot)
+        raise_size_mult = float(size_result['pred_raise_multiple_vs_facing_v3'] or 3.0)
         raise_size_key = _raise_size_key_from_multiple(raise_size_mult)
     elif node == 'facing_raise' and action == ActionType.RAISE:
-        size_result = _predict_size_v2(flat, node='facing_raise')
-        raise_size_mult = float(size_result['pred_reraise_multiple_vs_facing_v2'] or 3.0)
+        size_result = _predict_size_v3(flat, spot=spot)
+        raise_size_mult = float(size_result['pred_reraise_multiple_vs_facing_v3'] or 3.0)
         raise_size_key = _raise_size_key_from_multiple(raise_size_mult)
 
     note = (
-        f"model=v5 selection=top_action "
+        f"model=v6 size_model=v3 selection=top_action "
         f"confidence={selection_meta['selection_confidence_band']} "
-        f"scope={v5.get('blend_scope')} "
         f"[{_format_probs_for_note(final_probs)}]"
     )
     return VillainDecisionResult(

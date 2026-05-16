@@ -1,0 +1,321 @@
+{
+  "trained_at": "2026-05-15T19:04:28.429770+00:00",
+  "model_family": "v6_villain_priority_meta_stacker",
+  "benchmark_long_csv": "data/benchmark_runs/cycle_5_v7_bucketizer__manual_compare__20260515T161840Z_long.csv",
+  "rows_total": 1142,
+  "rows_by_dataset": {
+    "oof": 1012,
+    "benchmark": 130
+  },
+  "rows_by_node": {
+    "facing_bet": 426,
+    "open_action": 402,
+    "facing_raise": 314
+  },
+  "expert_model_order": [
+    "v1",
+    "v2",
+    "v3",
+    "v4",
+    "v5"
+  ],
+  "selection_rule": "final action is always argmax of predicted action probabilities",
+  "villain_priority_design": [
+    "villain_type as raw categorical",
+    "villain_type x node/street/scenario/subgroup/current-strength/equity/SPR/board interactions",
+    "expert top-action consensus and expert disagreement features"
+  ],
+  "node_results": [
+    {
+      "node": "open_action",
+      "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models_v6/open_action_meta_model_v6.pkl",
+      "selected_candidate": "villain_depth4_regularized",
+      "selected_metrics": {
+        "candidate_name": "villain_depth4_regularized",
+        "node": "open_action",
+        "rows": 402,
+        "cv_folds": 5,
+        "cv_mae": 0.18342484527455202,
+        "cv_brier": 0.05838999552678562,
+        "cv_rmse": 0.24164021918295314,
+        "cv_top_action_acc": 0.7761194029850746,
+        "params": {
+          "candidate_name": "villain_depth4_regularized",
+          "iterations": 360,
+          "depth": 4,
+          "learning_rate": 0.035,
+          "l2_leaf_reg": 16.0,
+          "loss_function": "MultiRMSE"
+        }
+      },
+      "candidate_results": [
+        {
+          "candidate_name": "villain_depth3_balanced",
+          "node": "open_action",
+          "rows": 402,
+          "cv_folds": 5,
+          "cv_mae": 0.1837078632598757,
+          "cv_brier": 0.05886714081875284,
+          "cv_rmse": 0.24262551559708811,
+          "cv_top_action_acc": 0.7835820895522388,
+          "params": {
+            "candidate_name": "villain_depth3_balanced",
+            "iterations": 260,
+            "depth": 3,
+            "learning_rate": 0.045,
+            "l2_leaf_reg": 12.0,
+            "loss_function": "MultiRMSE"
+          }
+        },
+        {
+          "candidate_name": "villain_depth4_regularized",
+          "node": "open_action",
+          "rows": 402,
+          "cv_folds": 5,
+          "cv_mae": 0.18342484527455202,
+          "cv_brier": 0.05838999552678562,
+          "cv_rmse": 0.24164021918295314,
+          "cv_top_action_acc": 0.7761194029850746,
+          "params": {
+            "candidate_name": "villain_depth4_regularized",
+            "iterations": 360,
+            "depth": 4,
+            "learning_rate": 0.035,
+            "l2_leaf_reg": 16.0,
+            "loss_function": "MultiRMSE"
+          }
+        },
+        {
+          "candidate_name": "villain_depth5_expressive",
+          "node": "open_action",
+          "rows": 402,
+          "cv_folds": 5,
+          "cv_mae": 0.18364889593795833,
+          "cv_brier": 0.058098548426362785,
+          "cv_rmse": 0.24103640477397348,
+          "cv_top_action_acc": 0.7736318407960199,
+          "params": {
+            "candidate_name": "villain_depth5_expressive",
+            "iterations": 420,
+            "depth": 5,
+            "learning_rate": 0.03,
+            "l2_leaf_reg": 20.0,
+            "loss_function": "MultiRMSE"
+          }
+        },
+        {
+          "candidate_name": "villain_mae_depth4",
+          "node": "open_action",
+          "rows": 402,
+          "cv_folds": 5,
+          "cv_mae": 0.18365303932044738,
+          "cv_brier": 0.05884012062311247,
+          "cv_rmse": 0.2425698262833044,
+          "cv_top_action_acc": 0.7885572139303483,
+          "params": {
+            "candidate_name": "villain_mae_depth4",
+            "iterations": 380,
+            "depth": 4,
+            "learning_rate": 0.035,
+            "l2_leaf_reg": 14.0,
+            "loss_function": "MultiRMSE"
+          }
+        }
+      ]
+    },
+    {
+      "node": "facing_bet",
+      "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models_v6/facing_bet_meta_model_v6.pkl",
+      "selected_candidate": "villain_mae_depth4",
+      "selected_metrics": {
+        "candidate_name": "villain_mae_depth4",
+        "node": "facing_bet",
+        "rows": 426,
+        "cv_folds": 5,
+        "cv_mae": 0.14585131005831667,
+        "cv_brier": 0.0478338478608893,
+        "cv_rmse": 0.2187095056482212,
+        "cv_top_action_acc": 0.7934272300469484,
+        "params": {
+          "candidate_name": "villain_mae_depth4",
+          "iterations": 380,
+          "depth": 4,
+          "learning_rate": 0.035,
+          "l2_leaf_reg": 14.0,
+          "loss_function": "MultiRMSE"
+        }
+      },
+      "candidate_results": [
+        {
+          "candidate_name": "villain_depth3_balanced",
+          "node": "facing_bet",
+          "rows": 426,
+          "cv_folds": 5,
+          "cv_mae": 0.1478310592291366,
+          "cv_brier": 0.048521134742131794,
+          "cv_rmse": 0.2202751341893401,
+          "cv_top_action_acc": 0.795774647887324,
+          "params": {
+            "candidate_name": "villain_depth3_balanced",
+            "iterations": 260,
+            "depth": 3,
+            "learning_rate": 0.045,
+            "l2_leaf_reg": 12.0,
+            "loss_function": "MultiRMSE"
+          }
+        },
+        {
+          "candidate_name": "villain_depth4_regularized",
+          "node": "facing_bet",
+          "rows": 426,
+          "cv_folds": 5,
+          "cv_mae": 0.14695823292097113,
+          "cv_brier": 0.04799196952934774,
+          "cv_rmse": 0.21907069527745546,
+          "cv_top_action_acc": 0.7981220657276995,
+          "params": {
+            "candidate_name": "villain_depth4_regularized",
+            "iterations": 360,
+            "depth": 4,
+            "learning_rate": 0.035,
+            "l2_leaf_reg": 16.0,
+            "loss_function": "MultiRMSE"
+          }
+        },
+        {
+          "candidate_name": "villain_depth5_expressive",
+          "node": "facing_bet",
+          "rows": 426,
+          "cv_folds": 5,
+          "cv_mae": 0.14699598971067257,
+          "cv_brier": 0.04807185717373715,
+          "cv_rmse": 0.2192529524857924,
+          "cv_top_action_acc": 0.795774647887324,
+          "params": {
+            "candidate_name": "villain_depth5_expressive",
+            "iterations": 420,
+            "depth": 5,
+            "learning_rate": 0.03,
+            "l2_leaf_reg": 20.0,
+            "loss_function": "MultiRMSE"
+          }
+        },
+        {
+          "candidate_name": "villain_mae_depth4",
+          "node": "facing_bet",
+          "rows": 426,
+          "cv_folds": 5,
+          "cv_mae": 0.14585131005831667,
+          "cv_brier": 0.0478338478608893,
+          "cv_rmse": 0.2187095056482212,
+          "cv_top_action_acc": 0.7934272300469484,
+          "params": {
+            "candidate_name": "villain_mae_depth4",
+            "iterations": 380,
+            "depth": 4,
+            "learning_rate": 0.035,
+            "l2_leaf_reg": 14.0,
+            "loss_function": "MultiRMSE"
+          }
+        }
+      ]
+    },
+    {
+      "node": "facing_raise",
+      "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models_v6/facing_raise_meta_model_v6.pkl",
+      "selected_candidate": "villain_depth3_balanced",
+      "selected_metrics": {
+        "candidate_name": "villain_depth3_balanced",
+        "node": "facing_raise",
+        "rows": 314,
+        "cv_folds": 5,
+        "cv_mae": 0.13959097975525392,
+        "cv_brier": 0.04814432856417513,
+        "cv_rmse": 0.21941815914863363,
+        "cv_top_action_acc": 0.7738853503184714,
+        "params": {
+          "candidate_name": "villain_depth3_balanced",
+          "iterations": 260,
+          "depth": 3,
+          "learning_rate": 0.045,
+          "l2_leaf_reg": 12.0,
+          "loss_function": "MultiRMSE"
+        }
+      },
+      "candidate_results": [
+        {
+          "candidate_name": "villain_depth3_balanced",
+          "node": "facing_raise",
+          "rows": 314,
+          "cv_folds": 5,
+          "cv_mae": 0.13959097975525392,
+          "cv_brier": 0.04814432856417513,
+          "cv_rmse": 0.21941815914863363,
+          "cv_top_action_acc": 0.7738853503184714,
+          "params": {
+            "candidate_name": "villain_depth3_balanced",
+            "iterations": 260,
+            "depth": 3,
+            "learning_rate": 0.045,
+            "l2_leaf_reg": 12.0,
+            "loss_function": "MultiRMSE"
+          }
+        },
+        {
+          "candidate_name": "villain_depth4_regularized",
+          "node": "facing_raise",
+          "rows": 314,
+          "cv_folds": 5,
+          "cv_mae": 0.14114813230056106,
+          "cv_brier": 0.04836425417290453,
+          "cv_rmse": 0.21991874447828347,
+          "cv_top_action_acc": 0.7738853503184714,
+          "params": {
+            "candidate_name": "villain_depth4_regularized",
+            "iterations": 360,
+            "depth": 4,
+            "learning_rate": 0.035,
+            "l2_leaf_reg": 16.0,
+            "loss_function": "MultiRMSE"
+          }
+        },
+        {
+          "candidate_name": "villain_depth5_expressive",
+          "node": "facing_raise",
+          "rows": 314,
+          "cv_folds": 5,
+          "cv_mae": 0.1439730742758918,
+          "cv_brier": 0.04933958524399917,
+          "cv_rmse": 0.22212515671125407,
+          "cv_top_action_acc": 0.7770700636942676,
+          "params": {
+            "candidate_name": "villain_depth5_expressive",
+            "iterations": 420,
+            "depth": 5,
+            "learning_rate": 0.03,
+            "l2_leaf_reg": 20.0,
+            "loss_function": "MultiRMSE"
+          }
+        },
+        {
+          "candidate_name": "villain_mae_depth4",
+          "node": "facing_raise",
+          "rows": 314,
+          "cv_folds": 5,
+          "cv_mae": 0.1413188013338829,
+          "cv_brier": 0.048484860440619705,
+          "cv_rmse": 0.22019278017369168,
+          "cv_top_action_acc": 0.7707006369426752,
+          "params": {
+            "candidate_name": "villain_mae_depth4",
+            "iterations": 380,
+            "depth": 4,
+            "learning_rate": 0.035,
+            "l2_leaf_reg": 14.0,
+            "loss_function": "MultiRMSE"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -92,7 +92,7 @@ def public_config() -> dict:
             "public_credentials": settings.demo_public_credentials and settings.public_status_show_demo_details,
             "organization_name": settings.demo_org_name,
             "accounts": demo_accounts,
-            "seed_command": "python -m api.scripts.seed_demo_data --reset" if settings.public_status_show_demo_details else None,
+            "seed_command": "make demo-seed" if settings.public_status_show_demo_details else None,
         },
     }
 

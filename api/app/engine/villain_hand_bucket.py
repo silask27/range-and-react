@@ -45,6 +45,7 @@ class VillainHandBucketResult:
     bucket_label: str
     subgroup_label: str
     equity_vs_hero: float
+    current_strength_vs_hero: float
     user_type: str
     internal_class: str
     has_draw: bool
@@ -81,44 +82,20 @@ class VillainHandBucketResult:
     uses_scenario_hero_range: bool
 
 
-@lru_cache(maxsize=10_000)
-def _cached_fixed_hero_combos() -> tuple[tuple[str, str], ...]:
-    """
-    Cache the fixed hero comparison range used by the villain engine for all
-    villains except Erik.
-    """
-    return tuple(bz.expand_range_to_combos(list(bz.HERO_RANGE_TOKENS)))
-
-
-@lru_cache(maxsize=10_000)
-def _cached_scenario_hero_combos(
-    labels: tuple[str, ...],
-) -> tuple[tuple[str, str], ...]:
-    """
-    Cache scenario hero comparison combos for Erik.
-    """
-    exact_labels = tuple(bz.expand_range_tokens(labels))
-    return tuple(bz.expand_range_to_combos(list(exact_labels)))
-
-
-def _hero_combos_for_villain(
+def _hero_mix_for_villain(
     villain_profile_id: str,
     scenario_hero_range_tokens: Iterable[str] | None,
-) -> tuple[tuple[tuple[str, str], ...], str, bool]:
-    """
-    Return the hero comparison combo set, a label describing its source,
-    and whether scenario range logic was used.
-
-    Rules locked in from the design discussion:
-    - Erik ("tag") uses scenario hero range when available
-    - all other villains use the fixed HERO_RANGE_TOKENS baseline
-    """
-    if villain_profile_id == "tag" and scenario_hero_range_tokens:
-        labels = tuple(str(token).strip() for token in scenario_hero_range_tokens if str(token).strip())
-        if labels:
-            return _cached_scenario_hero_combos(labels), "scenario", True
-
-    return _cached_fixed_hero_combos(), "fixed", False
+) -> tuple[dict, str, bool]:
+    """Return the same hybrid hero comparison mix used by bucketizer v7."""
+    hero_mix = bz.selected_hero_range_mix(
+        villain_profile_id=villain_profile_id,
+        scenario_hero_range_tokens=scenario_hero_range_tokens,
+    )
+    uses_scenario_hero_range = (
+        bool(hero_mix.get("scenario_combos"))
+        and float(hero_mix.get("scenario_weight", 0.0)) > 0.0
+    )
+    return hero_mix, str(hero_mix.get("source") or "fixed"), uses_scenario_hero_range
 
 
 @lru_cache(maxsize=1)
@@ -283,7 +260,7 @@ def _is_invulnerable_value(
 
 
 def _is_made_hand(subgroup_label: str) -> bool:
-    return subgroup_label in {
+    return bz.is_pair_draw_subgroup(subgroup_label) or subgroup_label in {
         "Overpair",
         "Top Pair",
         "Mid Pair",
@@ -303,7 +280,7 @@ def _is_strong_draw(
     subgroup_label: str,
     draw_profile: dict[str, bool | int | list[int]],
 ) -> bool:
-    if subgroup_label in {"Combo Draw", "Pair + Draw"}:
+    if subgroup_label == "Combo Draw" or bz.is_pair_draw_subgroup(subgroup_label):
         return True
     if subgroup_label in {"Straight Draw", "Flush Draw"}:
         return True
@@ -391,7 +368,7 @@ def _draw_strength_score(
 
     if subgroup_label == "Combo Draw":
         base = 0.92
-    elif subgroup_label == "Pair + Draw":
+    elif bz.is_pair_draw_subgroup(subgroup_label):
         base = 0.78
     elif subgroup_label in {"Straight Draw", "Flush Draw"}:
         base = 0.70
@@ -551,7 +528,10 @@ def _bucket_villain_hand_cached(
     villain_profile_id: str,
     hero_range_source: str,
     uses_scenario_hero_range: bool,
-    hero_combos: tuple[tuple[str, str], ...],
+    fixed_combos: tuple[tuple[str, str], ...],
+    scenario_combos: tuple[tuple[str, str], ...],
+    scenario_weight: float,
+    fixed_weight: float,
     iters: int,
     seed: int,
 ) -> VillainHandBucketResult:
@@ -559,15 +539,46 @@ def _bucket_villain_hand_cached(
     Cached core implementation.
     """
     board_list = list(board)
-    hero_combo_list = list(hero_combos)
-    rng = random.Random(seed)
+    hero_mix = {
+        "villain_profile_id": bz.normalize_villain_profile_id(villain_profile_id),
+        "scenario_weight": float(scenario_weight),
+        "fixed_weight": float(fixed_weight),
+        "scenario_labels": [],
+        "fixed_labels": [],
+        "scenario_combos": list(scenario_combos),
+        "fixed_combos": list(fixed_combos),
+        "source": hero_range_source,
+    }
 
     if len(board_list) == 5:
-        eq = bz.equity_vs_hero_range_river_exact(hole, board_list, hero_combo_list)
+        eq = bz.equity_vs_hybrid_hero_range_river_exact(hole, board_list, hero_mix)
     else:
-        eq = bz.equity_vs_hero_range_mc(hole, board_list, hero_combo_list, int(iters), rng)
+        eq = bz.equity_vs_hybrid_hero_range_mc(
+            villain_hole=hole,
+            board=board_list,
+            hero_mix=hero_mix,
+            iters=int(iters),
+            equity_base_seed=int(seed),
+            purpose="villain_hand_bucket",
+        )
 
-    bucket_label, subgroup_label = bz.bucket_combo(hole, board_list, eq)
+    current_strength = bz.current_score_vs_hybrid_hero_range_exact(hole, board_list, hero_mix)
+    subgroup_label = bz.subgroup_of(hole, board_list)
+    pair_component_current_strength = (
+        bz.pair_component_current_score_vs_hybrid_hero_range_rank_exact(hole, board_list, hero_mix)
+        if bz.is_pair_draw_subgroup(subgroup_label)
+        else None
+    )
+    thresholds = bz.equity_thresholds_for_board(board_list, hero_mix)
+    bucket_label, internal_subgroup_label = bz.bucket_combo(
+        hole,
+        board_list,
+        eq,
+        current_score_vs_hero=current_strength,
+        pair_component_current_score_vs_hero=pair_component_current_strength,
+        thresholds=thresholds,
+    )
+    subgroup_label = bz.display_subgroup_for_bucket(internal_subgroup_label, bucket_label)
     family_key = _family_key_from_bucket_label(bucket_label)
     river_family_key = _river_family_key_from_bucket_label(bucket_label)
 
@@ -582,29 +593,29 @@ def _bucket_villain_hand_cached(
     )
 
     rank_tier, is_nuts, is_near_nuts = _rank_tier_for_hole(hole, board)
-    is_pair_plus_draw = subgroup_label == "Pair + Draw"
-    is_made_hand = _is_made_hand(subgroup_label)
-    is_strong_draw = _is_strong_draw(subgroup_label, draw_profile)
-    is_weak_draw = _is_weak_draw(subgroup_label, draw_profile)
+    is_pair_plus_draw = bz.is_pair_draw_subgroup(internal_subgroup_label)
+    is_made_hand = _is_made_hand(internal_subgroup_label)
+    is_strong_draw = _is_strong_draw(internal_subgroup_label, draw_profile)
+    is_weak_draw = _is_weak_draw(internal_subgroup_label, draw_profile)
     is_ace_high_flush = _is_ace_high_flush(hole, board_list)
     has_nut_flush_draw = _has_nut_flush_draw(hole, board_list, draw_profile)
     can_make_nutted_draw = _can_make_nutted_draw(hole, board_list, draw_profile)
     is_invulnerable_value = _is_invulnerable_value(
-        subgroup_label,
+        internal_subgroup_label,
         is_nuts=is_nuts,
         board=board_list,
         hole=hole,
     )
-    is_missed_draw_river_air = _is_missed_draw_river_air(hole, board_list, subgroup_label)
+    is_missed_draw_river_air = _is_missed_draw_river_air(hole, board_list, internal_subgroup_label)
 
     draw_strength = _draw_strength_score(
-        subgroup_label=subgroup_label,
+        subgroup_label=internal_subgroup_label,
         draw_profile=draw_profile,
         equity_vs_hero=eq,
         can_make_nutted_draw=can_make_nutted_draw,
     )
     value_strength = _value_strength_score(
-        subgroup_label=subgroup_label,
+        subgroup_label=internal_subgroup_label,
         bucket_label=bucket_label,
         equity_vs_hero=eq,
         is_nuts=is_nuts,
@@ -614,7 +625,7 @@ def _bucket_villain_hand_cached(
     vulnerability = _vulnerability_score(
         hole=hole,
         board=board_list,
-        subgroup_label=subgroup_label,
+        subgroup_label=internal_subgroup_label,
         bucket_label=bucket_label,
         equity_vs_hero=eq,
         is_nuts=is_nuts,
@@ -628,6 +639,7 @@ def _bucket_villain_hand_cached(
         bucket_label=bucket_label,
         subgroup_label=subgroup_label,
         equity_vs_hero=eq,
+        current_strength_vs_hero=current_strength,
         user_type=subgroup_label,
         internal_class=internal_class,
         has_draw=has_draw,
@@ -670,9 +682,9 @@ def bucket_villain_hand(
     Bucket villain's exact hidden hand using the same logic as bucketizer.py,
     while exposing richer action-policy signals.
 
-    Equity comparison rule:
-    - Erik ("tag") -> scenario hero range when available
-    - all other villains -> fixed HERO_RANGE_TOKENS baseline
+    Equity/current-strength comparison rule:
+    use bucketizer v7's villain-aware hybrid of scenario hero range and fixed
+    fallback range.
 
     Iteration rule:
     - if iters is omitted, fall back to bucketizer.py street defaults via
@@ -688,7 +700,7 @@ def bucket_villain_hand(
         raise ValueError(f"board must contain 3 to 5 cards, got {len(board_cards)}")
 
     hole = tuple(sorted((hole_cards[0], hole_cards[1])))
-    hero_combos, hero_range_source, uses_scenario_hero_range = _hero_combos_for_villain(
+    hero_mix, hero_range_source, uses_scenario_hero_range = _hero_mix_for_villain(
         villain_profile_id=villain_profile_id,
         scenario_hero_range_tokens=scenario_hero_range_tokens,
     )
@@ -700,7 +712,10 @@ def bucket_villain_hand(
         villain_profile_id=villain_profile_id,
         hero_range_source=hero_range_source,
         uses_scenario_hero_range=uses_scenario_hero_range,
-        hero_combos=hero_combos,
+        fixed_combos=tuple(tuple(combo) for combo in hero_mix["fixed_combos"]),
+        scenario_combos=tuple(tuple(combo) for combo in hero_mix["scenario_combos"]),
+        scenario_weight=float(hero_mix["scenario_weight"]),
+        fixed_weight=float(hero_mix["fixed_weight"]),
         iters=resolved_iters,
         seed=int(seed),
     )

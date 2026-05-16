@@ -1,32 +1,32 @@
 {
-  "trained_at": "2026-04-20T01:26:42.878686+00:00",
+  "trained_at": "2026-05-15T15:42:55.728794+00:00",
   "db_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/calibration.db",
-  "all_labeled_rows": 1807,
-  "distribution_rows": 628,
+  "all_labeled_rows": 2191,
+  "distribution_rows": 1012,
   "hard_rows": 1179,
   "feature_versions": {
-    "v4": 1807
+    "v4": 2191
   },
   "node_counts": {
-    "facing_bet": 582,
-    "open_action": 757,
-    "facing_raise": 468
+    "facing_bet": 770,
+    "open_action": 864,
+    "facing_raise": 557
   },
   "villain_counts": {
-    "Tom": 261,
-    "Steve": 256,
-    "Mike": 249,
-    "Erik": 275,
-    "Dave": 280,
-    "Alex": 245,
-    "Blake": 241
+    "Tom": 305,
+    "Steve": 310,
+    "Mike": 312,
+    "Erik": 333,
+    "Dave": 330,
+    "Alex": 299,
+    "Blake": 302
   },
   "action_counts": {
-    "c": 492,
-    "x": 483,
-    "r": 148,
-    "f": 410,
-    "b": 274
+    "c": 651,
+    "x": 551,
+    "r": 188,
+    "f": 488,
+    "b": 313
   },
   "notes": [
     "V2 now clones V1 training structure: all labeled rows, hard-label targets, hierarchical CatBoost classifiers.",
@@ -37,75 +37,75 @@
     {
       "model_name": "open_action_model_v2",
       "trained": true,
-      "rows": 757,
+      "rows": 864,
       "class_counts": {
-        "x": 483,
-        "b": 274
+        "x": 551,
+        "b": 313
       },
       "cv_folds": 5,
-      "cv_log_loss": 0.5095766083399498,
-      "cv_balanced_accuracy": 0.7052853491964316,
-      "cv_brier": 0.1688161490994124,
+      "cv_log_loss": 0.524608958203383,
+      "cv_balanced_accuracy": 0.7162871585452231,
+      "cv_brier": 0.17540235041531466,
       "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models_v2/open_action_model_v2.pkl",
       "note": "V2 clone of V1: CatBoost hierarchical classifiers on all labels, but using V4 feature prioritization."
     },
     {
       "model_name": "facing_bet_fold_continue_model_v2",
       "trained": true,
-      "rows": 582,
+      "rows": 770,
       "class_counts": {
-        "continue": 405,
-        "f": 177
+        "continue": 550,
+        "f": 220
       },
       "cv_folds": 5,
-      "cv_log_loss": 0.3895646921855524,
-      "cv_balanced_accuracy": 0.8242592592592592,
-      "cv_brier": 0.12124159189989676,
+      "cv_log_loss": 0.31619940163396965,
+      "cv_balanced_accuracy": 0.8586363636363636,
+      "cv_brier": 0.09836232175237705,
       "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models_v2/facing_bet_fold_continue_model_v2.pkl",
       "note": "V2 clone of V1: CatBoost hierarchical classifiers on all labels, but using V4 feature prioritization."
     },
     {
       "model_name": "facing_bet_call_raise_model_v2",
       "trained": true,
-      "rows": 405,
+      "rows": 550,
       "class_counts": {
-        "c": 298,
-        "r": 107
+        "c": 405,
+        "r": 145
       },
       "cv_folds": 5,
-      "cv_log_loss": 0.49932963357904,
-      "cv_balanced_accuracy": 0.6934591679506934,
-      "cv_brier": 0.16004100709734642,
+      "cv_log_loss": 0.4602745368452986,
+      "cv_balanced_accuracy": 0.7604086845466156,
+      "cv_brier": 0.14364741862156133,
       "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models_v2/facing_bet_call_raise_model_v2.pkl",
       "note": "V2 clone of V1: CatBoost hierarchical classifiers on all labels, but using V4 feature prioritization."
     },
     {
       "model_name": "facing_raise_fold_continue_model_v2",
       "trained": true,
-      "rows": 468,
+      "rows": 557,
       "class_counts": {
-        "continue": 235,
-        "f": 233
+        "continue": 289,
+        "f": 268
       },
       "cv_folds": 5,
-      "cv_log_loss": 0.46663883142246376,
-      "cv_balanced_accuracy": 0.8056891766882515,
-      "cv_brier": 0.14650977791916842,
+      "cv_log_loss": 0.39255063996815476,
+      "cv_balanced_accuracy": 0.8369680436180454,
+      "cv_brier": 0.11914839730954349,
       "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models_v2/facing_raise_fold_continue_model_v2.pkl",
       "note": "V2 clone of V1: CatBoost hierarchical classifiers on all labels, but using V4 feature prioritization."
     },
     {
       "model_name": "facing_raise_call_reraise_model_v2",
       "trained": true,
-      "rows": 235,
+      "rows": 289,
       "class_counts": {
-        "c": 194,
-        "r": 41
+        "c": 246,
+        "r": 43
       },
       "cv_folds": 5,
-      "cv_log_loss": 0.35121168482639276,
-      "cv_balanced_accuracy": 0.7655026990553305,
-      "cv_brier": 0.10377706670880445,
+      "cv_log_loss": 0.3866169559093639,
+      "cv_balanced_accuracy": 0.7317766439909297,
+      "cv_brier": 0.11323925461692455,
       "model_path": "/Users/silaskluever/Documents/rangeandreact/villain-calibration-lab-v3_cleaned/data/trained_models_v2/facing_raise_call_reraise_model_v2.pkl",
       "note": "V2 clone of V1: CatBoost hierarchical classifiers on all labels, but using V4 feature prioritization."
     }

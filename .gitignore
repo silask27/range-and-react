@@ -20,6 +20,7 @@ web/node_modules/
 web/.next/
 node_modules/
 .next/
+*.tsbuildinfo
 
 # OS/editor junk
 .DS_Store

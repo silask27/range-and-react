@@ -102,7 +102,7 @@ export default function DemoPage() {
             <div style={helperStyle}>
               {config.demo.public_credentials
                 ? "Public demo credentials are enabled in this environment."
-                : `Seed demo data locally with: ${config.demo?.seed_command ?? "python -m api.scripts.seed_demo_data --reset"}`}
+                : `Seed demo data locally with: ${config.demo?.seed_command ?? "make demo-seed"}`}
             </div>
           </section>
         ) : (
