@@ -171,12 +171,12 @@ BUCKET_STRENGTH_PRIORITY: dict[str, int] = {
 
 STREET_EQUITY_THRESHOLDS: dict[str, dict[str, float]] = {
     "flop": {
-        "air": 0.25,
+        "air": 0.23,
         "value": 0.74,
         "nutted_value": 0.90,
     },
     "turn": {
-        "air": 0.25,
+        "air": 0.23,
         "value": 0.75,
         "nutted_value": 0.90,
     },
