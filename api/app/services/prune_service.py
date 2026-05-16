@@ -713,6 +713,8 @@ def remove_subgroup_from_current_row(
     hand_id: str,
     *,
     subgroup_name: str,
+    bucket_matrix_view_snapshot: dict | None = None,
+    elapsed_ms: int | None = None,
 ) -> HandState:
     """
     Remove an entire subgroup from the current prune row, while preserving same-label
@@ -761,7 +763,10 @@ def remove_subgroup_from_current_row(
             "removed_combo_count": removed_combo_count,
             "before_live_combos": before_live_combos,
             "after_live_combos": after_live_combos,
+            "history_event_count": len(hand.history.events),
             "labels": sorted(current_subgroup.keys()),
+            "elapsed_ms": max(0, int(elapsed_ms or 0)),
+            "bucket_matrix_view": dict(bucket_matrix_view_snapshot or {}),
         },
     })
     store.update_hand(hand_id, _hand_to_store_payload(hand))

@@ -111,6 +111,7 @@ const DISPLAY_SEATS = [
   "BB",
 ] as const;
 const TIMER_OPTIONS: TrainTimerSeconds[] = [0, 10, 30, 60];
+const PREFLOP_REPLAY_STEP_MS = 1600;
 
 type DisplaySeat = (typeof DISPLAY_SEATS)[number];
 
@@ -587,6 +588,7 @@ function Screen1PageContent() {
   const [replayStepIndex, setReplayStepIndex] = useState(
     Number.isFinite(replayStepFromUrl) ? Math.max(0, replayStepFromUrl) : 0,
   );
+  const [isReplayPlaying, setIsReplayPlaying] = useState(true);
 
   const [heroDefaultBool, setHeroDefaultBool] =
     useState<MatrixBoolState | null>(null);
@@ -1271,6 +1273,18 @@ function Screen1PageContent() {
     }
   }, [isReplayMode, currentReplayStep]);
 
+  useEffect(() => {
+    if (!isReplayMode || !replayPayload || !currentReplayStep || !isReplayPlaying) return;
+    if (replayStepIndex >= replayPayload.steps.length - 1) {
+      setIsReplayPlaying(false);
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      goToReplayStep(replayStepIndex + 1);
+    }, PREFLOP_REPLAY_STEP_MS);
+    return () => window.clearTimeout(timeoutId);
+  }, [isReplayMode, replayPayload, currentReplayStep, isReplayPlaying, replayStepIndex]);
+
   const saveButtonLabel = currentButtonLabel(
     session,
     selectedScenario,
@@ -1610,7 +1624,10 @@ function Screen1PageContent() {
                         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                           <button
                             type="button"
-                            onClick={() => goToReplayStep(replayStepIndex - 1)}
+                            onClick={() => {
+                              setIsReplayPlaying(false);
+                              goToReplayStep(replayStepIndex - 1);
+                            }}
                             disabled={replayStepIndex <= 0}
                             style={replayArrowStyle(replayStepIndex > 0)}
                             aria-label="Previous replay step"
@@ -1622,7 +1639,26 @@ function Screen1PageContent() {
                           </div>
                           <button
                             type="button"
-                            onClick={() => goToReplayStep(replayStepIndex + 1)}
+                            onClick={() => setIsReplayPlaying((value) => !value)}
+                            style={{
+                              border: `1px solid ${THEME.primary}`,
+                              borderRadius: 999,
+                              padding: "12px 18px",
+                              background: THEME.primary,
+                              color: THEME.text,
+                              fontSize: 13.5,
+                              fontWeight: 950,
+                              cursor: "pointer",
+                            }}
+                          >
+                            {isReplayPlaying ? "Pause" : "Resume"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsReplayPlaying(false);
+                              goToReplayStep(replayStepIndex + 1);
+                            }}
                             disabled={replayStepIndex >= replayPayload.steps.length - 1}
                             style={replayArrowStyle(replayStepIndex < replayPayload.steps.length - 1)}
                             aria-label="Next replay step"

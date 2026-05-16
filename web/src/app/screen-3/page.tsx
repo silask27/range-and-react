@@ -205,8 +205,14 @@ const API_BASE =
 
 const HERO_NAME = "Hero";
 
-const SCREEN3_ITERS = 500;
+// Keep interaction requests quick. Final debrief/scoring can still use richer
+// result metadata, but Train-mode clicks should not wait on 500-iteration UI
+// recomputes.
+const SCREEN3_ITERS = 96;
 const TIMEOUT_OVERLAY_MS = 2000;
+const VILLAIN_ACTION_REVEAL_MS = 3000;
+const REPLAY_STEP_MS = 1400;
+const REPLAY_MATRIX_CELL_MS = 260;
 
 const BUCKET_CLASS: Record<string, string> = {
   "Nutted Value": "nutted",
@@ -278,10 +284,15 @@ function Screen3PageContent() {
   const [debriefPreview, setDebriefPreview] = useState<DebriefPreview | null>(null);
   const [replayPayload, setReplayPayload] = useState<ReplayPayload | null>(null);
   const [replayStepIndex, setReplayStepIndex] = useState(0);
+  const [isReplayPlaying, setIsReplayPlaying] = useState(true);
+  const [replayMatrixRevealCount, setReplayMatrixRevealCount] = useState<number | null>(null);
 
   const [responseSelections, setResponseSelections] = useState<
     Record<string, Record<string, string>>
   >({});
+  const [responseFillSequence, setResponseFillSequence] = useState<
+    Array<{ bucket: string; column: string; value: string; elapsed_ms: number }>
+  >([]);
   const [stableResponseColumns, setStableResponseColumns] = useState<string[]>([]);
   const [betInput, setBetInput] = useState("");
   const [raiseInput, setRaiseInput] = useState("");
@@ -305,7 +316,9 @@ function Screen3PageContent() {
   const activeTimerTargetRef = useRef<number | null>(null);
   const timeoutHandledSignatureRef = useRef<string | null>(null);
   const responseSelectionsRef = useRef<Record<string, Record<string, string>>>({});
+  const responseMatrixStartedAtRef = useRef<number | null>(null);
   const responseNodeSignatureRef = useRef<string>("");
+  const pruneRowStartedAtRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!getStoredAuthToken()) {
@@ -320,8 +333,15 @@ function Screen3PageContent() {
   );
   const activeHand = replayHand ?? hand;
   const activeResponseSelections = useMemo(
-    () => currentReplayStep ? buildReplayResponseSelections(currentReplayStep) : responseSelections,
-    [currentReplayStep, responseSelections],
+    () => {
+      if (!currentReplayStep) return responseSelections;
+      const savedSelections = buildReplayResponseSelections(currentReplayStep);
+      if (currentReplayStep.kind !== "response_matrix" || replayMatrixRevealCount == null) {
+        return savedSelections;
+      }
+      return limitReplayResponseSelectionsForStep(currentReplayStep, savedSelections, replayMatrixRevealCount);
+    },
+    [currentReplayStep, responseSelections, replayMatrixRevealCount],
   );
   const activeStableColumns = currentReplayStep ? [] : stableResponseColumns;
 
@@ -381,7 +401,7 @@ function Screen3PageContent() {
         : formatGateLabel(activeHand.ui_gate)
       : "";
   const headerSubtitle = isReplayMode
-    ? "Replay this saved hand inside the training view. Everything is read-only; use the arrows to move through the exact saved sequence."
+    ? getScreenSubtitle(activeHand, isVillainThinking)
     : getScreenSubtitle(activeHand, isVillainThinking);
   const timedStepSignature = useMemo(
     () => isReplayMode ? null : getTimedStepSignature(activeHand, isVillainThinking, isTimeoutTransitioning),
@@ -573,7 +593,7 @@ function Screen3PageContent() {
           setIsLoading(false);
           loadingResolvedEarly = true;
 
-          await sleep(3000);
+          await sleep(VILLAIN_ACTION_REVEAL_MS);
           if (!isMountedRef.current || !isMounted) return;
 
           setIsVillainThinking(false);
@@ -623,6 +643,10 @@ function Screen3PageContent() {
     const isNewResponseNode =
       hand.ui_gate === "must_fill_response_matrix" &&
       responseNodeSignature !== responseNodeSignatureRef.current;
+    if (isNewResponseNode) {
+      responseMatrixStartedAtRef.current = Date.now();
+      setResponseFillSequence([]);
+    }
     const nextSelections = initializeSelectionsFromHand(
       hand,
       resolvedColumns,
@@ -703,6 +727,54 @@ function Screen3PageContent() {
     void handlePruneSaveRow();
   }, [hand, currentPruneBucket, currentPruneSubgroups, isPruneBusy, isTimeoutTransitioning, isReplayMode]);
 
+  useEffect(() => {
+    pruneRowStartedAtRef.current = currentPruneBucket ? Date.now() : null;
+  }, [currentPruneBucket]);
+
+  useEffect(() => {
+    if (!isReplayMode || !currentReplayStep) return;
+
+    if (currentReplayStep.kind !== "response_matrix") {
+      setReplayMatrixRevealCount(null);
+      return;
+    }
+
+    const savedSelections = buildReplayResponseSelections(currentReplayStep);
+    const total = countReplayResponseSelections(savedSelections);
+    setReplayMatrixRevealCount(total > 0 ? 0 : null);
+    if (!isReplayPlaying || total <= 0) return;
+
+    let nextCount = 0;
+    const intervalId = window.setInterval(() => {
+      nextCount += 1;
+      setReplayMatrixRevealCount(Math.min(nextCount, total));
+      if (nextCount >= total) {
+        window.clearInterval(intervalId);
+      }
+    }, REPLAY_MATRIX_CELL_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [isReplayMode, currentReplayStep, isReplayPlaying]);
+
+  useEffect(() => {
+    if (!isReplayMode || !replayPayload || !currentReplayStep || !isReplayPlaying) return;
+    if (replayStepIndex >= replayPayload.steps.length - 1) {
+      setIsReplayPlaying(false);
+      return;
+    }
+
+    const matrixSelections = currentReplayStep.kind === "response_matrix"
+      ? countReplayResponseSelections(buildReplayResponseSelections(currentReplayStep))
+      : 0;
+    const delayMs = currentReplayStep.kind === "response_matrix"
+      ? Math.max(REPLAY_STEP_MS, matrixSelections * REPLAY_MATRIX_CELL_MS + 650)
+      : REPLAY_STEP_MS;
+    const timeoutId = window.setTimeout(() => {
+      goToReplayStep(replayStepIndex + 1);
+    }, delayMs);
+    return () => window.clearTimeout(timeoutId);
+  }, [isReplayMode, replayPayload, currentReplayStep, isReplayPlaying, replayStepIndex]);
+
     async function applyHandUpdateWithVillainPause(
     previousHand: HandState | null,
     nextHand: HandState,
@@ -722,12 +794,28 @@ function Screen3PageContent() {
     const previewHand = buildVillainPausePreview(previousHand, nextHand);
     setHand(previewHand ?? nextHand);
     setIsVillainThinking(true);
-    await sleep(3000);
+    await sleep(VILLAIN_ACTION_REVEAL_MS);
 
     if (!isMountedRef.current) return;
 
     setIsVillainThinking(false);
     setHand(nextHand);
+  }
+
+  function goToReplayStep(nextIndex: number) {
+    if (!replayPayload) return;
+    const bounded = Math.max(0, Math.min(nextIndex, replayPayload.steps.length - 1));
+    const targetStep = replayPayload.steps[bounded];
+    if (targetStep?.street === "preflop") {
+      router.push(
+        `/screen-1?session_id=${encodeURIComponent(replayPayload.session_id)}&hand_id=${encodeURIComponent(replayPayload.hand_id)}&replay=1&replay_step=${bounded}`,
+      );
+      return;
+    }
+    setReplayStepIndex(bounded);
+    router.replace(
+      `/screen-3?session_id=${encodeURIComponent(replayPayload.session_id)}&hand_id=${encodeURIComponent(replayPayload.hand_id)}&replay=1&replay_step=${bounded}`,
+    );
   }
 
   async function ensurePruneStarted(handId: string) {
@@ -772,6 +860,9 @@ function Screen3PageContent() {
         hand_id: handId,
         iters: SCREEN3_ITERS,
         selections,
+        row_order: displayedBucketRows.map((row) => row.bucket_name),
+        fill_sequence: responseFillSequence,
+        bucket_matrix_view: handRef.current?.bucket_matrix_view,
         allow_partial: allowPartial,
         save_reason: allowPartial ? "timer_expired" : "manual",
       }),
@@ -948,6 +1039,17 @@ function Screen3PageContent() {
   }
 
   function updateSelection(bucketName: string, column: string, value: string) {
+    const startedAt = responseMatrixStartedAtRef.current ?? Date.now();
+    responseMatrixStartedAtRef.current = startedAt;
+    setResponseFillSequence((prev) => [
+      ...prev,
+      {
+        bucket: bucketName,
+        column,
+        value,
+        elapsed_ms: Math.max(0, Date.now() - startedAt),
+      },
+    ]);
     setResponseSelections((prev) => ({
       ...prev,
       [bucketName]: {
@@ -1039,6 +1141,11 @@ function Screen3PageContent() {
         body: JSON.stringify({
           hand_id: hand.hand_id,
           subgroup_name: subgroupName,
+          bucket_matrix_view: hand.bucket_matrix_view,
+          elapsed_ms: Math.max(
+            0,
+            Date.now() - (pruneRowStartedAtRef.current ?? Date.now()),
+          ),
           iters: SCREEN3_ITERS,
         }),
       });
@@ -1197,7 +1304,7 @@ function Screen3PageContent() {
         <div className="screen3-wrap">
           <TrainingHeader
             stepLabel={isReplayMode ? `Replay ${Math.min(replayStepIndex + 1, replayPayload?.steps.length ?? 1)} of ${replayPayload?.steps.length ?? 1}` : "Step 2 of 2"}
-            title={isReplayMode ? "Hand Replay" : "Postflop Training"}
+            title="Postflop Training"
             subtitle={headerSubtitle}
             subtitleMinHeight="3.4em"
             stage={`${scenario.display_name} · ${activeHand.street.toUpperCase()}`}
@@ -1522,26 +1629,15 @@ function Screen3PageContent() {
                       stepIndex={replayStepIndex}
                       totalSteps={replayPayload.steps.length}
                       handId={replayPayload.hand_id}
+                      isPlaying={isReplayPlaying}
+                      onTogglePlaying={() => setIsReplayPlaying((value) => !value)}
                       onPrevious={() => {
-                        const nextIndex = Math.max(0, replayStepIndex - 1);
-                        const targetStep = replayPayload.steps[nextIndex];
-                        if (targetStep?.street === "preflop") {
-                          router.push(
-                            `/screen-1?session_id=${encodeURIComponent(replayPayload.session_id)}&hand_id=${encodeURIComponent(replayPayload.hand_id)}&replay=1&replay_step=${nextIndex}`,
-                          );
-                          return;
-                        }
-                        setReplayStepIndex(nextIndex);
-                        router.replace(
-                          `/screen-3?session_id=${encodeURIComponent(replayPayload.session_id)}&hand_id=${encodeURIComponent(replayPayload.hand_id)}&replay=1&replay_step=${nextIndex}`,
-                        );
+                        setIsReplayPlaying(false);
+                        goToReplayStep(replayStepIndex - 1);
                       }}
                       onNext={() => {
-                        const nextIndex = Math.min(replayPayload.steps.length - 1, replayStepIndex + 1);
-                        setReplayStepIndex(nextIndex);
-                        router.replace(
-                          `/screen-3?session_id=${encodeURIComponent(replayPayload.session_id)}&hand_id=${encodeURIComponent(replayPayload.hand_id)}&replay=1&replay_step=${nextIndex}`,
-                        );
+                        setIsReplayPlaying(false);
+                        goToReplayStep(replayStepIndex + 1);
                       }}
                     />
                   ) : isVillainThinking ? (
@@ -2816,6 +2912,9 @@ function buildReplayHandView(
       ? [step.details.column]
       : [];
   const responseSelections = buildReplayResponseSelections(step);
+  const replayBucketView = isPlainRecord(step.details?.bucket_matrix_view)
+    ? (step.details.bucket_matrix_view as BucketMatrixView)
+    : baseHand.bucket_matrix_view;
   const currentPruneBucket = step.kind === "range_prune" && typeof step.details?.actual_bucket === "string"
     ? step.details.actual_bucket
     : null;
@@ -2831,6 +2930,7 @@ function buildReplayHandView(
     hero_stack: replay.hero_stack,
     villain_stack: replay.villain_stack,
     hero_hand: normalizeHoleCards(replay.hero_hand) ?? baseHand.hero_hand,
+    bucket_matrix_view: replayBucketView,
     history: { events: actionEvents },
     current_actor: currentEvent?.actor ?? "hero",
     ui_gate: step.kind === "response_matrix"
@@ -2876,6 +2976,51 @@ function buildReplayResponseSelections(step: ReplayStep): Record<string, Record<
     if (!isPlainRecord(raw) || typeof raw.bucket !== "string") continue;
     const predicted = typeof raw.predicted === "string" ? raw.predicted : "";
     out[raw.bucket] = { [column]: predicted };
+  }
+  return out;
+}
+
+function countReplayResponseSelections(selections: Record<string, Record<string, string>>): number {
+  return Object.values(selections).reduce(
+    (total, row) => total + Object.values(row).filter(Boolean).length,
+    0,
+  );
+}
+
+function limitReplayResponseSelectionsForStep(
+  step: ReplayStep,
+  selections: Record<string, Record<string, string>>,
+  limit: number,
+): Record<string, Record<string, string>> {
+  const out: Record<string, Record<string, string>> = {};
+  for (const [bucket, row] of Object.entries(selections)) {
+    out[bucket] = {};
+    for (const column of Object.keys(row)) {
+      out[bucket][column] = "";
+    }
+  }
+  const fillSequence = Array.isArray(step.details?.fill_sequence)
+    ? step.details.fill_sequence
+    : [];
+  if (fillSequence.length) {
+    for (const raw of fillSequence.slice(0, limit)) {
+      if (!isPlainRecord(raw)) continue;
+      const bucket = typeof raw.bucket === "string" ? raw.bucket : "";
+      const column = typeof raw.column === "string" ? raw.column : "";
+      const value = typeof raw.value === "string" ? raw.value : "";
+      if (!bucket || !column || !value || !(bucket in out)) continue;
+      out[bucket][column] = value;
+    }
+    return out;
+  }
+
+  let shown = 0;
+  for (const [bucket, row] of Object.entries(selections)) {
+    for (const [column, value] of Object.entries(row)) {
+      if (!value || shown >= limit) continue;
+      out[bucket][column] = value;
+      shown += 1;
+    }
   }
   return out;
 }
@@ -3313,6 +3458,8 @@ function ReplayControls({
   stepIndex,
   totalSteps,
   handId,
+  isPlaying,
+  onTogglePlaying,
   onPrevious,
   onNext,
 }: {
@@ -3320,6 +3467,8 @@ function ReplayControls({
   stepIndex: number;
   totalSteps: number;
   handId: string;
+  isPlaying: boolean;
+  onTogglePlaying: () => void;
   onPrevious: () => void;
   onNext: () => void;
 }) {
@@ -3331,6 +3480,9 @@ function ReplayControls({
       <div className="screen3-replay-nav">
         <button type="button" className="btn btn-ghost screen3-replay-arrow" onClick={onPrevious} disabled={stepIndex <= 0} aria-label="Previous replay step">
           ‹
+        </button>
+        <button type="button" className="btn btn-primary" onClick={onTogglePlaying}>
+          {isPlaying ? "Pause" : "Resume"}
         </button>
         <button type="button" className="btn btn-ghost screen3-replay-arrow" onClick={onNext} disabled={stepIndex >= totalSteps - 1} aria-label="Next replay step">
           ›

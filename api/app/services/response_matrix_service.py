@@ -265,6 +265,9 @@ def save_response_matrix(
     hand_id: str,
     *,
     selections: dict,
+    row_order: list[str] | None = None,
+    fill_sequence: list[dict] | None = None,
+    bucket_matrix_view_snapshot: dict | None = None,
     iters: int | None = None,
     seed: int = 42,
     allow_partial: bool = False,
@@ -303,7 +306,12 @@ def save_response_matrix(
     if not columns:
         raise ValueError(f"Hand {hand_id} has no response_matrix_columns to validate against")
 
-    row_order = _current_bucket_row_order(hand, iters=iters)
+    if row_order:
+        row_order = [str(row) for row in row_order if str(row)]
+    else:
+        row_order = list(selections.keys()) if isinstance(selections, dict) else []
+    if not row_order:
+        row_order = _current_bucket_row_order(hand, iters=iters)
 
     normalized_selections = _validate_and_normalize_response_matrix_payload(
         hand=hand,
@@ -330,6 +338,9 @@ def save_response_matrix(
             "columns": columns,
             "row_order": row_order,
             "selections": normalized_selections,
+            "fill_sequence": list(fill_sequence or []),
+            "bucket_matrix_view": dict(bucket_matrix_view_snapshot or {}),
+            "history_event_count": len(hand.history.events),
             "complete": not allow_partial,
             "save_reason": save_reason or ("timer_expired" if allow_partial else "manual"),
         },

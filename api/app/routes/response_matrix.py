@@ -88,6 +88,9 @@ def save_response_matrix_route(
 ) -> dict:
     hand_id = payload.get("hand_id")
     selections = payload.get("selections")
+    row_order = payload.get("row_order")
+    fill_sequence = payload.get("fill_sequence")
+    bucket_matrix_view = payload.get("bucket_matrix_view")
     raw_iters = payload.get("iters")
     allow_partial = bool(payload.get("allow_partial", False))
     save_reason = payload.get("save_reason")
@@ -105,6 +108,9 @@ def save_response_matrix_route(
         hand = save_response_matrix(
             hand_id=hand_id,
             selections=selections,
+            row_order=row_order if isinstance(row_order, list) else None,
+            fill_sequence=fill_sequence if isinstance(fill_sequence, list) else None,
+            bucket_matrix_view_snapshot=bucket_matrix_view if isinstance(bucket_matrix_view, dict) else None,
             iters=iters,
             allow_partial=allow_partial,
             save_reason=str(save_reason) if save_reason is not None else None,

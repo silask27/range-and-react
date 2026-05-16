@@ -124,6 +124,8 @@ def remove_subgroup_route(
 ) -> dict:
     hand_id = payload.get("hand_id")
     subgroup_name = payload.get("subgroup_name")
+    bucket_matrix_view = payload.get("bucket_matrix_view")
+    elapsed_ms = payload.get("elapsed_ms")
     raw_iters = payload.get("iters")
 
     if not hand_id:
@@ -138,6 +140,8 @@ def remove_subgroup_route(
         hand = remove_subgroup_from_current_row(
             hand_id=hand_id,
             subgroup_name=subgroup_name,
+            bucket_matrix_view_snapshot=bucket_matrix_view if isinstance(bucket_matrix_view, dict) else None,
+            elapsed_ms=int(elapsed_ms) if elapsed_ms is not None else None,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

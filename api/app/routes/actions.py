@@ -47,7 +47,7 @@ def _serialize_prune_row_for_ui(
 def _serialize_hand_public(
     hand: HandState,
     *,
-    iters: int = 500,
+    iters: int | None = None,
 ) -> dict:
     payload = asdict(hand)
 
@@ -57,7 +57,7 @@ def _serialize_hand_public(
         hero_hand=hand.hero_hand,
         villain_profile_id=hand.villain_profile_id,
         scenario_hero_range_tokens=hand.hero_tokens_saved,
-        iters=int(iters),
+        iters=iters,
         seed=int(hand.bucket_seed),
     )
 
@@ -89,7 +89,8 @@ def apply_hero_action_route(
     hand_id = payload.get("hand_id")
     action = payload.get("action")
     amount = payload.get("amount")
-    iters = int(payload.get("iters", 500))
+    raw_iters = payload.get("iters")
+    iters = int(raw_iters) if raw_iters is not None else None
     seed = int(payload.get("seed", 42))
 
     if not hand_id:

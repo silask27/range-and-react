@@ -425,6 +425,8 @@ def record_response_matrix_evaluation(
         'columns': list(saved.get('columns') or []),
         'row_order': list(saved.get('row_order') or []),
         'selections': selections,
+        'fill_sequence': list(saved.get('fill_sequence') or []),
+        'history_event_count': len(hand.history.events),
         'predicted': (selections.get(actual['bucket_label']) or {}).get(column) if column else None,
         'actual': actual_code,
         'villain_action': villain_action_type.value if villain_action_type else None,
