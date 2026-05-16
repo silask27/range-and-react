@@ -27,7 +27,13 @@ type DebriefPayload = {
     bucket_label: string;
     subgroup_label: string;
     equity_vs_hero: number;
+    current_strength_vs_hero?: number;
     hero_range_source: string;
+  };
+  review?: {
+    flagged: boolean;
+    sent_to_coaches: boolean;
+    status: string;
   };
   prune_evaluations: Array<{
     street: string;
@@ -167,7 +173,13 @@ export default function HandDebriefPage() {
               <div style={truthHeadlineStyle}>
                 {payload.actual_final_bucket.bucket_label} · {payload.actual_final_bucket.subgroup_label}
               </div>
-              <div style={truthMetaStyle}>Equity vs hero: {payload.actual_final_bucket.equity_vs_hero.toFixed(3)}</div>
+              <div style={truthMetaStyle}>
+                Bucket score vs hero:{" "}
+                {(payload.actual_final_bucket.current_strength_vs_hero ?? payload.actual_final_bucket.equity_vs_hero).toFixed(3)}
+              </div>
+              <div style={truthMetaStyle}>
+                Total equity vs hero: {payload.actual_final_bucket.equity_vs_hero.toFixed(3)}
+              </div>
             </div>
             <div style={truthGridStyle}>
               <InfoChip label="Hero hand" value={payload.hero_hand.join(" ")} />
@@ -232,7 +244,9 @@ export default function HandDebriefPage() {
                   <div style={eyebrowStyle}>Line recap</div>
                   <h2 style={sectionTitleStyle}>Street-by-street sequence</h2>
                 </div>
-                <Link href={`/screen-3?session_id=${encodeURIComponent(payload.session_id)}&hand_id=${encodeURIComponent(payload.hand_id)}`} style={secondaryLinkStyle}>Open replay</Link>
+                {payload.review?.flagged ? (
+                  <Link href={`/results/hand/${encodeURIComponent(payload.hand_id)}/replay`} style={secondaryLinkStyle}>Replay hand</Link>
+                ) : null}
               </div>
               <div style={historyListStyle}>
                 {payload.history.map((event, index) => (

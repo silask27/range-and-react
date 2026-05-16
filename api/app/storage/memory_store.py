@@ -373,7 +373,7 @@ class SqliteStore:
             if user_id:
                 rows = conn.execute(
                     '''
-                    SELECT hand_id, session_id, scenario_id, villain_profile_id, status, street, ui_gate,
+                    SELECT hand_id, user_id, session_id, scenario_id, villain_profile_id, status, street, ui_gate,
                            hand_over, total_live_combos, started_at, updated_at, completed_at,
                            ranging_score, response_score, overall_score, metadata_json
                     FROM hand_results
@@ -386,7 +386,7 @@ class SqliteStore:
             else:
                 rows = conn.execute(
                     '''
-                    SELECT hand_id, session_id, scenario_id, villain_profile_id, status, street, ui_gate,
+                    SELECT hand_id, user_id, session_id, scenario_id, villain_profile_id, status, street, ui_gate,
                            hand_over, total_live_combos, started_at, updated_at, completed_at,
                            ranging_score, response_score, overall_score, metadata_json
                     FROM hand_results
@@ -398,6 +398,7 @@ class SqliteStore:
         return [
             {
                 'hand_id': row['hand_id'],
+                'user_id': row['user_id'],
                 'session_id': row['session_id'],
                 'scenario_id': row['scenario_id'],
                 'villain_profile_id': row['villain_profile_id'],

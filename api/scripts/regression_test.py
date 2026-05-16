@@ -100,6 +100,7 @@ class RegressionTestCase(unittest.TestCase):
             json={"email": "member@example.com", "password": "Password123!", "display_name": "Member", "invite_code": member_code},
         )
         assert member_signup.status_code == 200, member_signup.text
+        cls.member_token = member_signup.json()["token"]
         cls.member_user_id = member_signup.json()["user"]["user_id"]
 
         other_invite = cls.client.post(
@@ -288,6 +289,87 @@ class RegressionTestCase(unittest.TestCase):
 
         self.assertTrue(updated.hand_over)
         self.assertEqual(updated.ui_gate, UIGate.HAND_OVER)
+
+    def test_member_can_send_flagged_hand_to_coach_replay_queue(self) -> None:
+        session = SessionState(
+            session_id="review-session",
+            user_id=self.member_user_id,
+            villain_profile_id="tag",
+            train_timer_seconds=30,
+            scenario_id="srp_ip_btn_vs_bb",
+            pot=20.0,
+            hero_stack=100.0,
+            villain_stack=100.0,
+            hero_range_matrix_saved={"AA": True, "AKs": True},
+            hero_tokens_saved=["AA", "AKs"],
+            villain_range_matrix_saved={"QQ": True},
+            villain_tokens_saved=["QQ"],
+            hero_range_confirmed=True,
+            villain_range_confirmed=True,
+        )
+        store.create_session(session.session_id, asdict(session))
+
+        hand = HandState(
+            hand_id="review-hand",
+            session_id=session.session_id,
+            user_id=self.member_user_id,
+            scenario_id="srp_ip_btn_vs_bb",
+            villain_profile_id="tag",
+            pot=40.0,
+            hero_stack=90.0,
+            villain_stack=90.0,
+            hero_hand=("Ah", "Kd"),
+            villain_hand=("Qs", "Qd"),
+            board=["2h", "4d", "Qh", "8c", "9s"],
+            street=Street.RIVER,
+            betting_round=BettingRoundState(),
+            hero_tokens_saved=["AA", "AKs"],
+            villain_range_matrix_saved={"QQ": True},
+            villain_range_combos_live={"QQ": [["Qs", "Qd"]]},
+            current_actor=Player.HERO,
+            ui_gate=UIGate.HAND_OVER,
+            hand_over=True,
+        )
+        store.create_hand(hand.hand_id, asdict(hand))
+
+        flag_response = self.client.post(
+            f"/results/hand/{hand.hand_id}/flag",
+            headers={"Authorization": f"Bearer {self.member_token}"},
+            json={"flagged": True},
+        )
+        self.assertEqual(flag_response.status_code, 200)
+        self.assertTrue(flag_response.json()["review"]["flagged"])
+
+        coach_queue_before = self.client.get(
+            "/results/review-queue",
+            headers={"Authorization": f"Bearer {self.coach_token}"},
+        )
+        self.assertEqual(coach_queue_before.status_code, 200)
+        self.assertNotIn(hand.hand_id, {row["hand_id"] for row in coach_queue_before.json()["review_queue"]})
+
+        send_response = self.client.post(
+            "/results/review/send",
+            headers={"Authorization": f"Bearer {self.member_token}"},
+            json={},
+        )
+        self.assertEqual(send_response.status_code, 200)
+        self.assertEqual(send_response.json()["sent_count"], 1)
+
+        coach_queue_after = self.client.get(
+            "/results/review-queue",
+            headers={"Authorization": f"Bearer {self.coach_token}"},
+        )
+        self.assertEqual(coach_queue_after.status_code, 200)
+        self.assertIn(hand.hand_id, {row["hand_id"] for row in coach_queue_after.json()["review_queue"]})
+
+        replay_response = self.client.get(
+            f"/results/hand/{hand.hand_id}/replay",
+            headers={"Authorization": f"Bearer {self.coach_token}"},
+        )
+        self.assertEqual(replay_response.status_code, 200)
+        replay = replay_response.json()
+        self.assertEqual(replay["hand_id"], hand.hand_id)
+        self.assertGreaterEqual(len(replay["steps"]), 3)
 
 
 if __name__ == "__main__":

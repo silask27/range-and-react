@@ -10,6 +10,7 @@ from api.app.engine.villain_decision import choose_villain_action
 from api.app.engine.villain_hand_bucket import bucket_villain_hand
 from api.app.models.enums import ActionType, Player, ResponseColumnType
 from api.app.models.state import HandState
+from api.app.services.review_state import review_state_from_metadata
 from api.app.storage.memory_store import store
 
 
@@ -63,6 +64,7 @@ def _actual_bucket_info(hand: HandState, *, iters: int | None) -> dict[str, Any]
         'bucket_label': result.bucket_label,
         'subgroup_label': result.subgroup_label,
         'equity_vs_hero': result.equity_vs_hero,
+        'current_strength_vs_hero': result.current_strength_vs_hero,
         'hero_range_source': result.hero_range_source,
     }
 
@@ -498,6 +500,7 @@ def build_hand_debrief(hand: HandState) -> dict[str, Any]:
         'villain_stack': hand.villain_stack,
         'hand_over': hand.hand_over,
         'actual_final_bucket': actual,
+        'review': review_state_from_metadata(metadata),
         'summary': summary,
         'prune_evaluations': prune_evals,
         'response_evaluations': response_evals,
@@ -562,6 +565,7 @@ def _result_context(result: dict[str, Any]) -> dict[str, Any]:
 
     return {
         'hand_id': result.get('hand_id'),
+        'owner_user_id': result.get('user_id'),
         'session_id': result.get('session_id'),
         'scenario_id': result.get('scenario_id'),
         'scenario_display_name': scenario.display_name if scenario else result.get('scenario_id'),
@@ -574,6 +578,7 @@ def _result_context(result: dict[str, Any]) -> dict[str, Any]:
         'ranging_score': result.get('ranging_score'),
         'response_score': result.get('response_score'),
         'overall_score': result.get('overall_score'),
+        'review': review_state_from_metadata(metadata),
         'completed_at': result.get('completed_at'),
         'streets_played': sorted(streets_played, key=lambda s: ['flop', 'turn', 'river'].index(s) if s in {'flop', 'turn', 'river'} else 99),
         'street_scores': street_scores,

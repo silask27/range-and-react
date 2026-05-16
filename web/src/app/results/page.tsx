@@ -9,8 +9,19 @@ import { useRequireAuth } from "../../lib/hooks/useRequireAuth";
 
 type Option = { id: string; display_name: string };
 
+type ReviewState = {
+  flagged: boolean;
+  sent_to_coaches: boolean;
+  status: string;
+  flagged_at: string | null;
+  sent_at: string | null;
+  coach_recipient_user_ids: string[];
+  organization_ids: string[];
+};
+
 type ResultEntry = {
   hand_id: string;
+  owner_user_id?: string | null;
   session_id: string;
   scenario_id: string | null;
   scenario_display_name: string | null;
@@ -26,6 +37,7 @@ type ResultEntry = {
   completed_at: string | null;
   streets_played: string[];
   street_scores: Array<{ street: string; ranging_score: number | null; response_score: number | null }>;
+  review?: ReviewState;
 };
 
 type ResultsPayload = {
@@ -44,6 +56,10 @@ type ResultsPayload = {
   };
   completed_results: ResultEntry[];
   recent_results: ResultEntry[];
+};
+
+type ReviewQueuePayload = {
+  review_queue: ResultEntry[];
 };
 
 type BreakdownDimension = "scenario" | "villain" | "street" | "position" | "timer";
@@ -95,6 +111,10 @@ export default function ResultsPage() {
   const [breakdown, setBreakdown] = useState<BreakdownDimension>("villain");
   const [memberOptions, setMemberOptions] = useState<Option[]>([]);
   const [membersLoaded, setMembersLoaded] = useState(false);
+  const [reviewQueue, setReviewQueue] = useState<ResultEntry[]>([]);
+  const [reviewMessage, setReviewMessage] = useState<string | null>(null);
+  const [flagBusyHandId, setFlagBusyHandId] = useState<string | null>(null);
+  const [sendBusy, setSendBusy] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState(() => {
     if (typeof window === "undefined") return "";
     return new URLSearchParams(window.location.search).get("member_id") ?? "";
@@ -147,26 +167,53 @@ export default function ResultsPage() {
     }
 
     let cancelled = false;
-    async function load() {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const query = selectedMemberId ? `?user_id=${encodeURIComponent(selectedMemberId)}` : "";
-        const res = await apiFetch(`${API_BASE}/results/overview${query}`, { cache: "no-store" });
-        const data = await res.json();
-        if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to load results.");
-        if (!cancelled) setPayload(data as ResultsPayload);
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Unable to load results.");
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    }
-    void load();
+    void loadResults({ cancelled: () => cancelled });
     return () => {
       cancelled = true;
     };
   }, [user, selectedMemberId, isCoachResultsView, membersLoaded, memberOptions.length]);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    async function loadQueue() {
+      try {
+        const res = await apiFetch(`${API_BASE}/results/review-queue`, { cache: "no-store" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to load review queue.");
+        if (!cancelled) setReviewQueue((data as ReviewQueuePayload).review_queue ?? []);
+      } catch (err) {
+        if (!cancelled) setReviewMessage(err instanceof Error ? err.message : "Unable to load review queue.");
+      }
+    }
+    void loadQueue();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  async function loadResults({ cancelled }: { cancelled?: () => boolean } = {}) {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const query = selectedMemberId ? `?user_id=${encodeURIComponent(selectedMemberId)}` : "";
+      const res = await apiFetch(`${API_BASE}/results/overview${query}`, { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to load results.");
+      if (!cancelled?.()) setPayload(data as ResultsPayload);
+    } catch (err) {
+      if (!cancelled?.()) setError(err instanceof Error ? err.message : "Unable to load results.");
+    } finally {
+      if (!cancelled?.()) setIsLoading(false);
+    }
+  }
+
+  async function loadReviewQueue() {
+    const res = await apiFetch(`${API_BASE}/results/review-queue`, { cache: "no-store" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to load review queue.");
+    setReviewQueue((data as ReviewQueuePayload).review_queue ?? []);
+  }
 
   function handleMemberChange(memberId: string) {
     setSelectedMemberId(memberId);
@@ -177,6 +224,59 @@ export default function ResultsPage() {
       if (memberId) url.searchParams.set("member_id", memberId);
       else url.searchParams.delete("member_id");
       window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+    }
+  }
+
+  function applyReviewState(handId: string, review: ReviewState) {
+    const patchRows = (rows: ResultEntry[]) => rows.map((row) => row.hand_id === handId ? { ...row, review } : row);
+    setPayload((current) => current ? {
+      ...current,
+      completed_results: patchRows(current.completed_results),
+      recent_results: patchRows(current.recent_results),
+    } : current);
+    setReviewQueue((current) => patchRows(current).filter((row) => row.review?.flagged));
+  }
+
+  async function toggleFlag(result: ResultEntry) {
+    const nextFlagged = !result.review?.flagged;
+    setFlagBusyHandId(result.hand_id);
+    setReviewMessage(null);
+    try {
+      const res = await apiFetch(`${API_BASE}/results/hand/${encodeURIComponent(result.hand_id)}/flag`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ flagged: nextFlagged }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to update review flag.");
+      applyReviewState(result.hand_id, (data as { review: ReviewState }).review);
+      await loadReviewQueue();
+    } catch (err) {
+      setReviewMessage(err instanceof Error ? err.message : "Unable to update review flag.");
+    } finally {
+      setFlagBusyHandId(null);
+    }
+  }
+
+  async function sendFlaggedToCoaches() {
+    setSendBusy(true);
+    setReviewMessage(null);
+    try {
+      const res = await apiFetch(`${API_BASE}/results/review/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to send flagged hands.");
+      const count = Number((data as { sent_count?: number }).sent_count ?? 0);
+      setReviewMessage(count ? `Sent ${count} flagged hand${count === 1 ? "" : "s"} to your coach queue.` : "No flagged hands were waiting to send.");
+      await loadResults();
+      await loadReviewQueue();
+    } catch (err) {
+      setReviewMessage(err instanceof Error ? err.message : "Unable to send flagged hands.");
+    } finally {
+      setSendBusy(false);
     }
   }
 
@@ -218,6 +318,7 @@ export default function ResultsPage() {
   const breakdownRows = useMemo(() => buildBreakdownRows(filteredResults, breakdown, filters.street), [filteredResults, breakdown, filters.street]);
   const driverInsights = useMemo(() => buildDriverInsights(filteredResults), [filteredResults]);
   const debriefRows = filteredResults.slice().sort((a, b) => (b.completed_at || "").localeCompare(a.completed_at || "")).slice(0, 6);
+  const canSendFlagged = !isCoachResultsView && Boolean(payload?.completed_results.some((row) => row.review?.flagged && !row.review.sent_to_coaches));
 
   const headerStats = (
     <>
@@ -232,6 +333,7 @@ export default function ResultsPage() {
       {isAuthLoading || isLoading ? <div style={panelStyle}>Loading results…</div> : null}
       {authError ? <div style={errorStyle}>{authError}</div> : null}
       {error ? <div style={errorStyle}>{error}</div> : null}
+      {reviewMessage ? <div style={noticeStyle}>{reviewMessage}</div> : null}
       {payload ? (
         <>
           <section style={panelStyle}>
@@ -316,6 +418,11 @@ export default function ResultsPage() {
                 <div style={eyebrowStyle}>Debriefs</div>
                 <h2 style={sectionTitleStyle}>Most recent finished hands</h2>
               </div>
+              {canSendFlagged ? (
+                <button type="button" onClick={sendFlaggedToCoaches} disabled={sendBusy} style={primaryButtonStyle}>
+                  {sendBusy ? "Sending…" : "Send flagged to coach"}
+                </button>
+              ) : null}
             </div>
             {debriefRows.length ? (
               <div style={tableStackStyle}>
@@ -327,13 +434,58 @@ export default function ResultsPage() {
                       <div style={rowHelperStyle}>
                         Villain ranging {formatScore(result.ranging_score)} · {result.response_score == null ? "Action prediction unscored for this hand path" : `Action prediction ${formatScore(result.response_score)}`}
                       </div>
+                      {result.review?.flagged ? (
+                        <div style={rowHelperStyle}>{result.review.sent_to_coaches ? "Flagged and sent to coach queue" : "Flagged for review"}</div>
+                      ) : null}
                     </div>
-                    <Link href={`/results/hand/${encodeURIComponent(result.hand_id)}`} style={secondaryLinkStyle}>Open debrief</Link>
+                    <div style={rowActionsStyle}>
+                      {!isCoachResultsView || result.owner_user_id === user?.user_id ? (
+                        <button
+                          type="button"
+                          aria-label={result.review?.flagged ? "Remove review flag" : "Flag hand for review"}
+                          title={result.review?.flagged ? "Remove review flag" : "Flag hand for review"}
+                          onClick={() => toggleFlag(result)}
+                          disabled={flagBusyHandId === result.hand_id}
+                          style={{ ...iconButtonStyle, ...(result.review?.flagged ? activeIconButtonStyle : null) }}
+                        >
+                          {result.review?.flagged ? "★" : "☆"}
+                        </button>
+                      ) : null}
+                      {result.review?.flagged ? (
+                        <Link href={`/results/hand/${encodeURIComponent(result.hand_id)}/replay`} style={secondaryLinkStyle}>Replay</Link>
+                      ) : null}
+                      <Link href={`/results/hand/${encodeURIComponent(result.hand_id)}`} style={secondaryLinkStyle}>Open debrief</Link>
+                    </div>
                   </div>
                 ))}
               </div>
             ) : <EmptyState copy="Complete a postflop hand to unlock debrief history." />}
           </section>
+
+          {reviewQueue.length ? (
+            <section style={panelStyle}>
+              <div style={sectionHeaderStyle}>
+                <div>
+                  <div style={eyebrowStyle}>Review queue</div>
+                  <h2 style={sectionTitleStyle}>{isCoachResultsView ? "Flagged hands from members" : "Hands flagged for review"}</h2>
+                </div>
+              </div>
+              <div style={tableStackStyle}>
+                {reviewQueue.slice(0, 10).map((result) => (
+                  <div key={`review-${result.hand_id}`} style={rowStyle}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={rowTitleStyle}>{result.scenario_display_name || "Scenario"} · {result.villain_display_name || "Villain"}</div>
+                      <div style={rowMetaStyle}>{compactDateTime(result.completed_at)} · {result.review?.sent_to_coaches ? "Sent to coach queue" : "Flagged"}</div>
+                    </div>
+                    <div style={rowActionsStyle}>
+                      <Link href={`/results/hand/${encodeURIComponent(result.hand_id)}/replay`} style={secondaryLinkStyle}>Replay</Link>
+                      <Link href={`/results/hand/${encodeURIComponent(result.hand_id)}`} style={secondaryLinkStyle}>Debrief</Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
         </>
       ) : null}
     </AppShell>
@@ -526,6 +678,7 @@ function labelForBreakdown(value: BreakdownDimension) {
 
 const panelStyle: CSSProperties = { borderTop: "1px solid var(--line-soft)", paddingTop: 18 };
 const errorStyle: CSSProperties = { color: "var(--accent)", fontWeight: 700 };
+const noticeStyle: CSSProperties = { color: PALETTE.cream, border: "1px solid var(--line)", background: "var(--surface-fill-strong)", borderRadius: 14, padding: "12px 14px", fontWeight: 700 };
 const barHeaderStyle: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", marginBottom: 18 };
 const sectionHeaderStyle: CSSProperties = { display: "grid", gap: 8, marginBottom: 16 };
 const eyebrowStyle: CSSProperties = { color: PALETTE.coral, fontSize: 12, textTransform: "uppercase", letterSpacing: 1.3, fontWeight: 900 };
@@ -549,6 +702,7 @@ const insightCopyStyle: CSSProperties = { marginTop: 8, color: "var(--text-65)",
 const tableStackStyle: CSSProperties = { display: "grid", gap: 18 };
 const breakdownRowStyle: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 180px) minmax(0, 1fr)", gap: 18, alignItems: "center", paddingTop: 14, borderTop: "1px solid var(--line-soft)" };
 const rowStyle: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 14, alignItems: "center", padding: 16, borderRadius: 18, background: "var(--surface-fill)", border: "1px solid var(--line)" };
+const rowActionsStyle: CSSProperties = { display: "flex", gap: 10, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap" };
 const rowTitleStyle: CSSProperties = { fontWeight: 800, fontSize: 15, color: PALETTE.cream };
 const rowMetaStyle: CSSProperties = { color: "var(--text-45)", fontSize: 13, marginTop: 4, lineHeight: 1.5 };
 const rowHelperStyle: CSSProperties = { color: "var(--text-65)", fontSize: 13, lineHeight: 1.55, marginTop: 4 };
@@ -558,5 +712,8 @@ const railHeaderStyle: CSSProperties = { display: "flex", justifyContent: "space
 const railTrackStyle: CSSProperties = { height: 10, borderRadius: 999, background: "rgba(240,235,224,0.12)", overflow: "hidden" };
 const railFillStyle: CSSProperties = { height: "100%", borderRadius: 999 };
 const ghostButtonStyle: CSSProperties = { padding: "10px 14px", borderRadius: 14, border: "1px solid var(--line)", background: "var(--surface-fill-strong)", color: PALETTE.cream, fontWeight: 700 };
+const primaryButtonStyle: CSSProperties = { padding: "10px 14px", borderRadius: 14, border: `1px solid ${PALETTE.coral}`, background: PALETTE.coral, color: PALETTE.cream, fontWeight: 800 };
+const iconButtonStyle: CSSProperties = { width: 42, height: 42, borderRadius: 14, border: "1px solid var(--line)", background: "var(--surface-fill-strong)", color: PALETTE.cream, fontWeight: 900, fontSize: 20, lineHeight: 1, display: "inline-flex", alignItems: "center", justifyContent: "center" };
+const activeIconButtonStyle: CSSProperties = { borderColor: PALETTE.coral, color: PALETTE.coral };
 const secondaryLinkStyle: CSSProperties = { padding: "10px 14px", borderRadius: 14, border: "1px solid var(--line)", color: PALETTE.cream, textDecoration: "none", fontWeight: 700, background: "var(--surface-fill-strong)", whiteSpace: "nowrap" };
 const emptyStateStyle: CSSProperties = { color: "var(--text-65)", padding: "8px 0 4px", lineHeight: 1.6 };
