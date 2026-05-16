@@ -80,6 +80,21 @@ type TimeoutOverlayState = {
   subtitle: string;
 };
 
+type ReplayStep = {
+  kind: string;
+  street: "preflop" | "flop" | "turn" | "river";
+  title: string;
+  summary: string;
+  board: string[];
+  details: Record<string, unknown> | null;
+};
+
+type ReplayPayload = {
+  hand_id: string;
+  session_id: string;
+  steps: ReplayStep[];
+};
+
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
 
@@ -532,12 +547,31 @@ function buttonStyle(
   };
 }
 
+function replayArrowStyle(enabled: boolean): CSSProperties {
+  return {
+    width: 46,
+    height: 46,
+    borderRadius: 999,
+    border: `1px solid ${THEME.border}`,
+    background: enabled ? "rgba(240,235,224,0.06)" : "transparent",
+    color: enabled ? THEME.text : THEME.textSoft,
+    fontSize: 28,
+    lineHeight: "28px",
+    fontWeight: 950,
+    cursor: enabled ? "pointer" : "default",
+    opacity: enabled ? 1 : 0.45,
+  };
+}
+
 function Screen1PageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const sessionIdFromUrl = searchParams.get("session_id");
   const scenarioIdPrefill = searchParams.get("scenario_id");
   const villainIdPrefill = searchParams.get("villain_profile_id");
+  const handIdFromUrl = searchParams.get("hand_id");
+  const isReplayMode = searchParams.get("replay") === "1";
+  const replayStepFromUrl = Number(searchParams.get("replay_step") ?? "0");
 
   const [mode, setMode] = useState<TrainStudyMode>("train");
   const [villains, setVillains] = useState<VillainProfile[]>([]);
@@ -549,6 +583,10 @@ function Screen1PageContent() {
   const [opponentChosenExplicitly, setOpponentChosenExplicitly] =
     useState(false);
   const [session, setSession] = useState<SessionState | null>(null);
+  const [replayPayload, setReplayPayload] = useState<ReplayPayload | null>(null);
+  const [replayStepIndex, setReplayStepIndex] = useState(
+    Number.isFinite(replayStepFromUrl) ? Math.max(0, replayStepFromUrl) : 0,
+  );
 
   const [heroDefaultBool, setHeroDefaultBool] =
     useState<MatrixBoolState | null>(null);
@@ -595,6 +633,10 @@ function Screen1PageContent() {
       scenarios.find((scenario) => scenario.id === selectedScenarioId) ?? null,
     [scenarios, selectedScenarioId],
   );
+
+  const currentReplayStep = isReplayMode
+    ? replayPayload?.steps[replayStepIndex] ?? null
+    : null;
 
   const castSeats = useMemo(
     () =>
@@ -723,6 +765,7 @@ function Screen1PageContent() {
   function hydrateRangeEditors(
     nextSession: SessionState,
     scenario: Scenario | null,
+    replayActor?: RangeEditorActor | null,
   ) {
     if (!scenario) {
       setHeroDefaultBool(null);
@@ -744,7 +787,7 @@ function Screen1PageContent() {
     setVillainCurrentBool(
       nextSession.villain_range_matrix_saved ?? nextVillainDefault,
     );
-    setCurrentActor(initialCurrentActor(nextSession, scenario));
+    setCurrentActor(replayActor ?? initialCurrentActor(nextSession, scenario));
   }
 
   async function startOrResetTrainSession(args: {
@@ -783,6 +826,42 @@ function Screen1PageContent() {
       setError(null);
 
       try {
+        let replayData: ReplayPayload | null = null;
+        let activeSessionId = sessionIdFromUrl;
+
+        if (isReplayMode) {
+          if (!handIdFromUrl) {
+            throw new Error("A hand id is required to replay a saved hand.");
+          }
+          const replayRes = await apiFetch(
+            `${API_BASE}/results/hand/${encodeURIComponent(handIdFromUrl)}/replay`,
+            { cache: "no-store" },
+          );
+          if (!replayRes.ok) {
+            const detail = await safeReadError(replayRes);
+            throw new Error(detail || `Failed to load replay (${replayRes.status})`);
+          }
+          replayData = (await replayRes.json()) as ReplayPayload;
+          activeSessionId = activeSessionId || replayData.session_id;
+          const boundedReplayStep = Math.max(
+            0,
+            Math.min(
+              Number.isFinite(replayStepFromUrl) ? replayStepFromUrl : 0,
+              Math.max(0, replayData.steps.length - 1),
+            ),
+          );
+          setReplayPayload(replayData);
+          setReplayStepIndex(boundedReplayStep);
+          const targetStep = replayData.steps[boundedReplayStep];
+          if (targetStep && targetStep.street !== "preflop") {
+            const replaySessionId = activeSessionId || replayData.session_id;
+            router.replace(
+              `/screen-3?session_id=${encodeURIComponent(replaySessionId)}&hand_id=${encodeURIComponent(replayData.hand_id)}&replay=1&replay_step=${boundedReplayStep}`,
+            );
+            return;
+          }
+        }
+
         const [villainsRes, scenariosRes] = await Promise.all([
           apiFetch(`${API_BASE}/villains`, { cache: "no-store" }),
           apiFetch(`${API_BASE}/scenarios`, { cache: "no-store" }),
@@ -801,7 +880,7 @@ function Screen1PageContent() {
         setVillains(villainsData);
         setScenarios(scenariosData);
 
-        if (!sessionIdFromUrl && isMounted) {
+        if (!activeSessionId && isMounted) {
           if (villainIdPrefill) {
             setSelectedVillainId(villainIdPrefill);
             setOpponentChosenExplicitly(true);
@@ -811,9 +890,9 @@ function Screen1PageContent() {
           }
         }
 
-        if (sessionIdFromUrl) {
+        if (activeSessionId) {
           const sessionRes = await apiFetch(
-            `${API_BASE}/sessions/${sessionIdFromUrl}`,
+            `${API_BASE}/sessions/${activeSessionId}`,
             {
               cache: "no-store",
             },
@@ -834,7 +913,22 @@ function Screen1PageContent() {
               scenariosData.find(
                 (item) => item.id === sessionData.scenario_id,
               ) ?? null;
-            hydrateRangeEditors(sessionData, scenario);
+            const replayActor = replayData?.steps[
+              Math.max(
+                0,
+                Math.min(
+                  Number.isFinite(replayStepFromUrl) ? replayStepFromUrl : 0,
+                  Math.max(0, replayData.steps.length - 1),
+                ),
+              )
+            ]?.details?.actor;
+            hydrateRangeEditors(
+              sessionData,
+              scenario,
+              replayActor === "hero" || replayActor === "villain"
+                ? replayActor
+                : null,
+            );
           } else if (sessionRes.status === 404) {
             setSession(null);
             setSelectedVillainId("");
@@ -878,9 +972,10 @@ function Screen1PageContent() {
     return () => {
       isMounted = false;
     };
-  }, [router, sessionIdFromUrl, scenarioIdPrefill, villainIdPrefill]);
+  }, [router, sessionIdFromUrl, scenarioIdPrefill, villainIdPrefill, isReplayMode, handIdFromUrl, replayStepFromUrl]);
 
   useEffect(() => {
+    if (isReplayMode) return;
     if (sessionIdFromUrl || autoStartedQuickDrillRef.current) return;
     if (!villainIdPrefill || !scenarioIdPrefill) return;
     if (!villains.length || !scenarios.length) return;
@@ -892,7 +987,7 @@ function Screen1PageContent() {
     }).catch(() => {
       autoStartedQuickDrillRef.current = false;
     });
-  }, [sessionIdFromUrl, villainIdPrefill, scenarioIdPrefill, villains.length, scenarios.length, selectedTimerSeconds]);
+  }, [isReplayMode, sessionIdFromUrl, villainIdPrefill, scenarioIdPrefill, villains.length, scenarios.length, selectedTimerSeconds]);
 
   useEffect(() => {
     return () => {
@@ -904,6 +999,7 @@ function Screen1PageContent() {
 
   useEffect(() => {
     if (
+      isReplayMode ||
       mode !== "train" ||
       !selectedScenario ||
       !currentActor ||
@@ -918,6 +1014,7 @@ function Screen1PageContent() {
     setTimeRemaining(selectedTimerSeconds);
     handledTimeoutStepRef.current = null;
   }, [
+    isReplayMode,
     mode,
     selectedScenario?.id,
     currentActor,
@@ -936,6 +1033,7 @@ function Screen1PageContent() {
       !session ||
       !currentStepSignature ||
       isBusy ||
+      isReplayMode ||
       timeoutOverlay.open
     ) {
       return;
@@ -956,6 +1054,7 @@ function Screen1PageContent() {
 
     return () => window.clearTimeout(timeoutId);
   }, [
+    isReplayMode,
     mode,
     selectedTimerSeconds,
     selectedScenario,
@@ -1135,28 +1234,60 @@ function Screen1PageContent() {
   }
 
   async function handleTimedSave(actorToTimeout: RangeEditorActor) {
+    if (isReplayMode) return;
     if (currentActor !== actorToTimeout) return;
     await saveCurrentRange({
       timeoutSubtitle: "Saving current range and advancing...",
     });
   }
 
+  function goToReplayStep(nextIndex: number) {
+    if (!replayPayload) return;
+    const bounded = Math.max(0, Math.min(nextIndex, replayPayload.steps.length - 1));
+    const step = replayPayload.steps[bounded];
+    if (!step) return;
+    if (step.street !== "preflop") {
+      router.push(
+        `/screen-3?session_id=${encodeURIComponent(replayPayload.session_id)}&hand_id=${encodeURIComponent(replayPayload.hand_id)}&replay=1&replay_step=${bounded}`,
+      );
+      return;
+    }
+
+    setReplayStepIndex(bounded);
+    const actor = step.details?.actor;
+    if (actor === "hero" || actor === "villain") {
+      setCurrentActor(actor);
+    }
+    router.replace(
+      `/screen-1?session_id=${encodeURIComponent(replayPayload.session_id)}&hand_id=${encodeURIComponent(replayPayload.hand_id)}&replay=1&replay_step=${bounded}`,
+    );
+  }
+
+  useEffect(() => {
+    if (!isReplayMode || !currentReplayStep || currentReplayStep.street !== "preflop") return;
+    const actor = currentReplayStep.details?.actor;
+    if (actor === "hero" || actor === "villain") {
+      setCurrentActor(actor);
+    }
+  }, [isReplayMode, currentReplayStep]);
+
   const saveButtonLabel = currentButtonLabel(
     session,
     selectedScenario,
     currentActor,
   );
-  const timerSelectable = mode === "train" && !isLoading && !isBusy;
-  const opponentSelectable = mode === "train" && !isLoading && !isBusy;
+  const timerSelectable = mode === "train" && !isReplayMode && !isLoading && !isBusy;
+  const opponentSelectable = mode === "train" && !isReplayMode && !isLoading && !isBusy;
   const scenarioSelectable =
     mode === "train" &&
+    !isReplayMode &&
     opponentChosenExplicitly &&
     !!selectedVillainId &&
     !isLoading &&
     !isBusy;
 
 
-  const preflopHeaderControls = (
+  const preflopHeaderControls = isReplayMode ? null : (
     <div
       style={{
         display: "flex",
@@ -1387,10 +1518,18 @@ function Screen1PageContent() {
 
       <div style={{ maxWidth: 1500, margin: "0 auto", display: "grid", gap: 18 }}>
         <TrainingHeader
-          stepLabel="Step 1 of 2"
+          stepLabel={
+            isReplayMode
+              ? `Replay ${Math.min(replayStepIndex + 1, replayPayload?.steps.length ?? 1)} of ${replayPayload?.steps.length ?? 1}`
+              : "Step 1 of 2"
+          }
           title="Preflop Setup"
-          subtitle="Set the scenario, choose the opponent, and shape the starting ranges."
-          stage={mode === "train" ? "Train mode" : "Study mode"}
+          subtitle={
+            isReplayMode
+              ? "Review the saved preflop range exactly as it was submitted, then step forward into the played postflop hand."
+              : "Set the scenario, choose the opponent, and shape the starting ranges."
+          }
+          stage={isReplayMode ? "Replay mode" : mode === "train" ? "Train mode" : "Study mode"}
           headerContent={preflopHeaderControls}
         />
 
@@ -1419,9 +1558,13 @@ function Screen1PageContent() {
           <>
             <WorkflowBar
               steps={workflowSteps}
-              helperText={workflowHelperText}
+              helperText={
+                isReplayMode && currentReplayStep
+                  ? `${currentReplayStep.title}: ${currentReplayStep.summary}`
+                  : workflowHelperText
+              }
               timerLabel={timerLabel}
-              showTimer
+              showTimer={!isReplayMode}
               showHelper={false}
             />
 
@@ -1444,13 +1587,16 @@ function Screen1PageContent() {
                       defaultActions={defaultActions}
                       currentActions={currentActions}
                       showDefaultOverlay
+                      forceShowChangesOnly={isReplayMode}
+                      highlightShowChanges={isReplayMode}
+                      readOnly={isReplayMode}
                       maxWidth={820}
                       title={titleForActor(
                         currentActor,
                         selectedScenario,
                         selectedVillain,
                       )}
-                      onChange={handleMatrixChange}
+                      onChange={isReplayMode ? () => undefined : handleMatrixChange}
                     />
 
                     <div
@@ -1460,28 +1606,54 @@ function Screen1PageContent() {
                         marginTop: 14,
                       }}
                     >
-                      <button
-                        type="button"
-                        onClick={() => void saveCurrentRange()}
-                        disabled={isBusy || timeoutOverlay.open}
-                        style={{
-                          border: `1px solid ${THEME.primary}`,
-                          borderRadius: 999,
-                          padding: "12px 18px",
-                          background: THEME.primary,
-                          color: THEME.text,
-                          fontSize: 13.5,
-                          fontWeight: 950,
-                          cursor:
-                            isBusy || timeoutOverlay.open
-                              ? "default"
-                              : "pointer",
-                          boxShadow: "none",
-                          opacity: isBusy || timeoutOverlay.open ? 0.7 : 1,
-                        }}
-                      >
-                        {isBusy ? "Saving…" : saveButtonLabel}
-                      </button>
+                      {isReplayMode && replayPayload && currentReplayStep ? (
+                        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                          <button
+                            type="button"
+                            onClick={() => goToReplayStep(replayStepIndex - 1)}
+                            disabled={replayStepIndex <= 0}
+                            style={replayArrowStyle(replayStepIndex > 0)}
+                            aria-label="Previous replay step"
+                          >
+                            ‹
+                          </button>
+                          <div style={{ color: "var(--text-65)", fontSize: 13, fontWeight: 800 }}>
+                            {currentReplayStep.summary}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => goToReplayStep(replayStepIndex + 1)}
+                            disabled={replayStepIndex >= replayPayload.steps.length - 1}
+                            style={replayArrowStyle(replayStepIndex < replayPayload.steps.length - 1)}
+                            aria-label="Next replay step"
+                          >
+                            ›
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => void saveCurrentRange()}
+                          disabled={isBusy || timeoutOverlay.open}
+                          style={{
+                            border: `1px solid ${THEME.primary}`,
+                            borderRadius: 999,
+                            padding: "12px 18px",
+                            background: THEME.primary,
+                            color: THEME.text,
+                            fontSize: 13.5,
+                            fontWeight: 950,
+                            cursor:
+                              isBusy || timeoutOverlay.open
+                                ? "default"
+                                : "pointer",
+                            boxShadow: "none",
+                            opacity: isBusy || timeoutOverlay.open ? 0.7 : 1,
+                          }}
+                        >
+                          {isBusy ? "Saving…" : saveButtonLabel}
+                        </button>
+                      )}
                     </div>
                   </>
                 ) : (

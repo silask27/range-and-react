@@ -119,6 +119,11 @@ class HandState:
     response_matrix_columns: list[str] = field(default_factory=list)
     response_matrix_saved: dict[str, Any] = field(default_factory=dict)
 
+    # Ordered read-only replay breadcrumbs for decisions that are not fully
+    # recoverable from final hand state alone, such as subgroup-by-subgroup
+    # prune removals and exact response matrix saves.
+    replay_events: list[dict[str, Any]] = field(default_factory=list)
+
     prune_row_order: list[str] = field(default_factory=list)
     prune_row_index: int = 0
 

@@ -273,26 +273,52 @@ def build_hand_replay(hand_id: str, *, user: UserAccount) -> dict[str, Any]:
     }
 
 
+def _preflop_actor_payload(
+    actor: str,
+    *,
+    session: dict[str, Any],
+    hand: HandState,
+) -> dict[str, Any]:
+    if actor == "hero":
+        tokens = list(session.get("hero_tokens_saved") or hand.hero_tokens_saved or [])
+        matrix = session.get("hero_range_matrix_saved")
+    else:
+        tokens = list(session.get("villain_tokens_saved") or [])
+        matrix = session.get("villain_range_matrix_saved")
+    return {
+        "actor": actor,
+        "range_tokens": tokens,
+        "matrix": matrix,
+    }
+
+
 def _build_replay_steps(hand: HandState, *, session: dict[str, Any], metadata: dict[str, Any]) -> list[dict[str, Any]]:
     steps: list[dict[str, Any]] = []
-    hero_tokens = list(session.get("hero_tokens_saved") or hand.hero_tokens_saved or [])
-    villain_tokens = list(session.get("villain_tokens_saved") or [])
+    scenario = SCENARIOS.get(hand.scenario_id)
+    first_actor = scenario.preflop_aggressor.value if scenario and hasattr(scenario.preflop_aggressor, "value") else (
+        str(scenario.preflop_aggressor) if scenario else "hero"
+    )
+    if first_actor not in {"hero", "villain"}:
+        first_actor = "hero"
+    second_actor = "villain" if first_actor == "hero" else "hero"
+    first_payload = _preflop_actor_payload(first_actor, session=session, hand=hand)
+    second_payload = _preflop_actor_payload(second_actor, session=session, hand=hand)
 
     steps.append({
         "kind": "preflop_range",
         "street": "preflop",
         "title": "Preflop aggressor range",
-        "summary": f"{len(hero_tokens)} range labels saved.",
+        "summary": f"{len(first_payload['range_tokens'])} range labels saved.",
         "board": [],
-        "details": {"range_tokens": hero_tokens, "matrix": session.get("hero_range_matrix_saved")},
+        "details": {**first_payload, "role": "aggressor"},
     })
     steps.append({
         "kind": "preflop_range",
         "street": "preflop",
-        "title": "Preflop caller range",
-        "summary": f"{len(villain_tokens)} range labels saved.",
+        "title": "Preflop non-aggressor range",
+        "summary": f"{len(second_payload['range_tokens'])} range labels saved.",
         "board": [],
-        "details": {"range_tokens": villain_tokens, "matrix": session.get("villain_range_matrix_saved")},
+        "details": {**second_payload, "role": "non_aggressor"},
     })
 
     prune_evals_by_street: dict[str, list[dict[str, Any]]] = {}
@@ -302,6 +328,13 @@ def _build_replay_steps(hand: HandState, *, session: dict[str, Any], metadata: d
     response_evals_by_street: dict[str, list[dict[str, Any]]] = {}
     for item in metadata.get("response_evaluations") or []:
         response_evals_by_street.setdefault(str(item.get("street") or ""), []).append(dict(item))
+
+    replay_events_by_street: dict[str, list[dict[str, Any]]] = {}
+    for item in hand.replay_events or []:
+        if not isinstance(item, dict):
+            continue
+        street_name = str(item.get("street") or "")
+        replay_events_by_street.setdefault(street_name, []).append(dict(item))
 
     events_by_street: dict[str, list[Any]] = {}
     for event in hand.history.events:
@@ -322,9 +355,16 @@ def _build_replay_steps(hand: HandState, *, session: dict[str, Any], metadata: d
 
         response_queue = list(response_evals_by_street.get(street) or [])
         prune_queue = list(prune_evals_by_street.get(street) or [])
+        replay_queue = list(replay_events_by_street.get(street) or [])
+        replay_response_queue = [item for item in replay_queue if item.get("kind") == "response_matrix"]
+        replay_prune_queue = [item for item in replay_queue if item.get("kind") == "prune_remove_subgroup"]
         for event in events_by_street.get(street) or []:
-            if event.actor.value == "hero" and response_queue:
-                steps.append(_response_step(street, board, response_queue.pop(0)))
+            if event.actor.value == "hero":
+                if replay_response_queue:
+                    evaluation = response_queue.pop(0) if response_queue else {}
+                    steps.append(_response_step(street, board, evaluation, replay_event=replay_response_queue.pop(0)))
+                elif response_queue:
+                    steps.append(_response_step(street, board, response_queue.pop(0)))
             steps.append({
                 "kind": "action",
                 "street": street,
@@ -333,8 +373,11 @@ def _build_replay_steps(hand: HandState, *, session: dict[str, Any], metadata: d
                 "board": board,
                 "details": {"event": _event_to_dict(event)},
             })
-            if event.actor.value == "villain" and prune_queue:
-                steps.append(_prune_step(street, board, prune_queue.pop(0)))
+            if event.actor.value == "villain":
+                while replay_prune_queue:
+                    steps.append(_prune_subgroup_step(street, board, replay_prune_queue.pop(0)))
+                if prune_queue:
+                    steps.append(_prune_step(street, board, prune_queue.pop(0)))
         for evaluation in response_queue:
             steps.append(_response_step(street, board, evaluation))
         for evaluation in prune_queue:
@@ -343,16 +386,26 @@ def _build_replay_steps(hand: HandState, *, session: dict[str, Any], metadata: d
     return steps
 
 
-def _response_step(street: str, board: list[str], evaluation: dict[str, Any]) -> dict[str, Any]:
+def _response_step(
+    street: str,
+    board: list[str],
+    evaluation: dict[str, Any],
+    *,
+    replay_event: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     actual = evaluation.get("actual") or "not scored"
     predicted = evaluation.get("predicted") or "none"
+    details = dict(evaluation)
+    if replay_event:
+        details.update(dict(replay_event.get("details") or {}))
+        details["replay_event_kind"] = replay_event.get("kind")
     return {
         "kind": "response_matrix",
         "street": street,
         "title": "Response matrix",
         "summary": f"Selected {predicted}; villain response was {actual}.",
         "board": board,
-        "details": evaluation,
+        "details": details,
     }
 
 
@@ -366,4 +419,25 @@ def _prune_step(street: str, board: list[str], evaluation: dict[str, Any]) -> di
         "summary": f"Live combos moved from {start} to {end}.",
         "board": board,
         "details": evaluation,
+    }
+
+
+def _prune_subgroup_step(street: str, board: list[str], replay_event: dict[str, Any]) -> dict[str, Any]:
+    details = dict(replay_event.get("details") or {})
+    bucket = details.get("bucket") or "bucket"
+    subgroup = details.get("subgroup") or "subgroup"
+    before = details.get("before_live_combos")
+    after = details.get("after_live_combos")
+    return {
+        "kind": "range_prune",
+        "street": street,
+        "title": f"Removed {subgroup}",
+        "summary": f"{bucket}: live combos moved from {before} to {after}.",
+        "board": board,
+        "details": {
+            **details,
+            "actual_bucket": bucket,
+            "actual_subgroup": subgroup,
+            "replay_event_kind": replay_event.get("kind"),
+        },
     }

@@ -682,7 +682,7 @@ function replayHref(result: ResultEntry) {
     replay: "1",
   });
   if (result.session_id) params.set("session_id", result.session_id);
-  return `/screen-3?${params.toString()}`;
+  return `/screen-1?${params.toString()}`;
 }
 
 const panelStyle: CSSProperties = { borderTop: "1px solid var(--line-soft)", paddingTop: 18 };

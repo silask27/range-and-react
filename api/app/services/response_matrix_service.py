@@ -322,6 +322,18 @@ def save_response_matrix(
         "allow_partial": allow_partial,
         "save_reason": save_reason or ("timer_expired" if allow_partial else "manual"),
     }
+    hand.replay_events.append({
+        "kind": "response_matrix",
+        "street": hand.street.value,
+        "board": list(hand.board),
+        "details": {
+            "columns": columns,
+            "row_order": row_order,
+            "selections": normalized_selections,
+            "complete": not allow_partial,
+            "save_reason": save_reason or ("timer_expired" if allow_partial else "manual"),
+        },
+    })
     hand.ui_gate = UIGate.HERO_TO_ACT
 
     store.update_hand(hand_id, _hand_to_store_payload(hand))

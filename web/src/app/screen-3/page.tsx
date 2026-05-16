@@ -268,6 +268,7 @@ function Screen3PageContent() {
   const sessionId = searchParams.get("session_id");
   const handIdFromUrl = searchParams.get("hand_id");
   const isReplayMode = searchParams.get("replay") === "1";
+  const replayStepFromUrl = Number(searchParams.get("replay_step") ?? "0");
 
   const [session, setSession] = useState<SessionState | null>(null);
   const [villain, setVillain] = useState<VillainProfile | null>(null);
@@ -528,8 +529,21 @@ function Screen3PageContent() {
         setVillain(villainData);
         setScenario(scenarioData);
         if (replayData) {
+          const boundedReplayStep = Math.max(
+            0,
+            Math.min(
+              Number.isFinite(replayStepFromUrl) ? replayStepFromUrl : 0,
+              Math.max(0, replayData.steps.length - 1),
+            ),
+          );
+          if (replayData.steps[boundedReplayStep]?.street === "preflop") {
+            router.replace(
+              `/screen-1?session_id=${encodeURIComponent(replayData.session_id)}&hand_id=${encodeURIComponent(replayData.hand_id)}&replay=1&replay_step=${boundedReplayStep}`,
+            );
+            return;
+          }
           setReplayPayload(replayData);
-          setReplayStepIndex(0);
+          setReplayStepIndex(boundedReplayStep);
           setReveal({
             hand_id: replayData.hand_id,
             session_id: replayData.session_id,
@@ -583,7 +597,7 @@ function Screen3PageContent() {
     return () => {
       isMounted = false;
     };
-  }, [handIdFromUrl, router, sessionId, isReplayMode]);
+  }, [handIdFromUrl, router, sessionId, isReplayMode, replayStepFromUrl]);
 
   useEffect(() => {
     if (!hand) return;
@@ -1508,8 +1522,27 @@ function Screen3PageContent() {
                       stepIndex={replayStepIndex}
                       totalSteps={replayPayload.steps.length}
                       handId={replayPayload.hand_id}
-                      onPrevious={() => setReplayStepIndex((value) => Math.max(0, value - 1))}
-                      onNext={() => setReplayStepIndex((value) => Math.min(replayPayload.steps.length - 1, value + 1))}
+                      onPrevious={() => {
+                        const nextIndex = Math.max(0, replayStepIndex - 1);
+                        const targetStep = replayPayload.steps[nextIndex];
+                        if (targetStep?.street === "preflop") {
+                          router.push(
+                            `/screen-1?session_id=${encodeURIComponent(replayPayload.session_id)}&hand_id=${encodeURIComponent(replayPayload.hand_id)}&replay=1&replay_step=${nextIndex}`,
+                          );
+                          return;
+                        }
+                        setReplayStepIndex(nextIndex);
+                        router.replace(
+                          `/screen-3?session_id=${encodeURIComponent(replayPayload.session_id)}&hand_id=${encodeURIComponent(replayPayload.hand_id)}&replay=1&replay_step=${nextIndex}`,
+                        );
+                      }}
+                      onNext={() => {
+                        const nextIndex = Math.min(replayPayload.steps.length - 1, replayStepIndex + 1);
+                        setReplayStepIndex(nextIndex);
+                        router.replace(
+                          `/screen-3?session_id=${encodeURIComponent(replayPayload.session_id)}&hand_id=${encodeURIComponent(replayPayload.hand_id)}&replay=1&replay_step=${nextIndex}`,
+                        );
+                      }}
                     />
                   ) : isVillainThinking ? (
                     <div className="screen3-muted-block">
@@ -2777,9 +2810,11 @@ function buildReplayHandView(
     .map((item) => item.kind === "action" ? actionEventFromReplayStep(item) : null)
     .filter((event): event is ActionEvent => Boolean(event));
   const currentEvent = step.kind === "action" ? actionEventFromReplayStep(step) : null;
-  const responseColumns = step.kind === "response_matrix" && typeof step.details?.column === "string"
-    ? [step.details.column]
-    : [];
+  const responseColumns = step.kind === "response_matrix" && Array.isArray(step.details?.columns)
+    ? step.details.columns.map(String)
+    : step.kind === "response_matrix" && typeof step.details?.column === "string"
+      ? [step.details.column]
+      : [];
   const responseSelections = buildReplayResponseSelections(step);
   const currentPruneBucket = step.kind === "range_prune" && typeof step.details?.actual_bucket === "string"
     ? step.details.actual_bucket
@@ -2823,7 +2858,13 @@ function buildReplayHandView(
 }
 
 function buildReplayResponseSelections(step: ReplayStep): Record<string, Record<string, string>> {
-  if (step.kind !== "response_matrix" || !step.details || typeof step.details.column !== "string") {
+  if (step.kind !== "response_matrix" || !step.details) {
+    return {};
+  }
+  if (isPlainRecord(step.details.selections)) {
+    return step.details.selections as Record<string, Record<string, string>>;
+  }
+  if (typeof step.details.column !== "string") {
     return {};
   }
   const column = step.details.column;

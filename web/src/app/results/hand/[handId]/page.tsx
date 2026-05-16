@@ -245,7 +245,7 @@ export default function HandDebriefPage() {
                   <h2 style={sectionTitleStyle}>Street-by-street sequence</h2>
                 </div>
                 {payload.review?.flagged ? (
-                  <Link href={`/screen-3?session_id=${encodeURIComponent(payload.session_id)}&hand_id=${encodeURIComponent(payload.hand_id)}&replay=1`} style={secondaryLinkStyle}>Replay hand</Link>
+                  <Link href={`/screen-1?session_id=${encodeURIComponent(payload.session_id)}&hand_id=${encodeURIComponent(payload.hand_id)}&replay=1`} style={secondaryLinkStyle}>Replay hand</Link>
                 ) : null}
               </div>
               <div style={historyListStyle}>

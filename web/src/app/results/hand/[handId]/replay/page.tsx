@@ -28,7 +28,7 @@ export default function LegacyReplayRedirectPage() {
         return;
       }
       const replay = data as ReplayPayload;
-      router.replace(`/screen-3?session_id=${encodeURIComponent(replay.session_id)}&hand_id=${encodeURIComponent(replay.hand_id)}&replay=1`);
+      router.replace(`/screen-1?session_id=${encodeURIComponent(replay.session_id)}&hand_id=${encodeURIComponent(replay.hand_id)}&replay=1`);
     }
     void loadAndRedirect();
     return () => {

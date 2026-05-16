@@ -730,6 +730,8 @@ def remove_subgroup_from_current_row(
             f"Subgroup {subgroup_name!r} is not present in current prune row {bucket_name!r}"
         )
 
+    removed_combo_count = sum(len(combos) for combos in current_subgroup.values())
+    before_live_combos = sum(len(combos) for combos in hand.villain_range_combos_live.values())
     targets_by_label = {
         label: {tuple(combo) for combo in combos}
         for label, combos in current_subgroup.items()
@@ -748,6 +750,20 @@ def remove_subgroup_from_current_row(
         else:
             hand.villain_range_combos_live.pop(label, None)
 
+    after_live_combos = sum(len(combos) for combos in hand.villain_range_combos_live.values())
+    hand.replay_events.append({
+        "kind": "prune_remove_subgroup",
+        "street": hand.street.value,
+        "board": list(hand.board),
+        "details": {
+            "bucket": bucket_name,
+            "subgroup": subgroup_name,
+            "removed_combo_count": removed_combo_count,
+            "before_live_combos": before_live_combos,
+            "after_live_combos": after_live_combos,
+            "labels": sorted(current_subgroup.keys()),
+        },
+    })
     store.update_hand(hand_id, _hand_to_store_payload(hand))
     return hand
 

@@ -12,6 +12,9 @@ type Props = {
   currentActions: Record<string, MatrixAction>;
 
   showDefaultOverlay: boolean;
+  forceShowChangesOnly?: boolean;
+  highlightShowChanges?: boolean;
+  readOnly?: boolean;
   maxWidth?: number;
 
   title?: string;
@@ -56,13 +59,24 @@ function textForAction(action: MatrixAction): string {
 }
 
 export function HandMatrix(props: Props) {
-  const { allowedActions, defaultActions, currentActions, showDefaultOverlay, onChange } = props;
+  const {
+    allowedActions,
+    defaultActions,
+    currentActions,
+    showDefaultOverlay,
+    forceShowChangesOnly,
+    highlightShowChanges,
+    readOnly,
+    onChange,
+  } = props;
 
   const cells = useMemo(() => make13x13Grid(), []);
   const [hoverToken, setHoverToken] = useState<string | null>(null);
   const [showChangesOnly, setShowChangesOnly] = useState<boolean>(false);
+  const effectiveShowChangesOnly = forceShowChangesOnly ?? showChangesOnly;
 
   function handleClick(token: string) {
+    if (readOnly) return;
     const cur = currentActions[token] ?? "FOLD";
     const nextAction = cycleAction(cur, allowedActions);
 
@@ -75,6 +89,7 @@ export function HandMatrix(props: Props) {
   }
 
   function handleReset() {
+    if (readOnly) return;
     onChange({ ...defaultActions });
   }
 
@@ -116,6 +131,9 @@ export function HandMatrix(props: Props) {
     background: on ? "#6A9E72" : "transparent",
     border: on ? "1px solid #6A9E72" : "1px solid var(--border)",
     color: on ? "var(--bg)" : "var(--text)",
+    boxShadow: highlightShowChanges
+      ? "0 0 0 3px rgba(106,158,114,0.24)"
+      : undefined,
   });
 
   const squareWrapStyle: React.CSSProperties = {
@@ -149,22 +167,27 @@ export function HandMatrix(props: Props) {
 
         <div style={headerRightStyle}>
           <button
-            style={toggleBtnStyle(showChangesOnly)}
-            onClick={() => setShowChangesOnly((v) => !v)}
+            style={toggleBtnStyle(effectiveShowChangesOnly)}
+            onClick={() => {
+              if (!forceShowChangesOnly) setShowChangesOnly((v) => !v);
+            }}
             title="Dim unchanged tiles so only deviations pop"
             type="button"
+            disabled={Boolean(forceShowChangesOnly)}
           >
             Show Changes
           </button>
 
-          <button
-            style={smallBtnStyle}
-            onClick={handleReset}
-            title="Revert matrix back to default"
-            type="button"
-          >
-            Reset
-          </button>
+          {!readOnly ? (
+            <button
+              style={smallBtnStyle}
+              onClick={handleReset}
+              title="Revert matrix back to default"
+              type="button"
+            >
+              Reset
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -178,7 +201,7 @@ export function HandMatrix(props: Props) {
 
             const isHover = hoverToken === token;
             const isChanged = def !== cur;
-            const dimTile = showChangesOnly && !isChanged;
+            const dimTile = effectiveShowChangesOnly && !isChanged;
             const cornerSize = 20;
 
             const tileStyle: React.CSSProperties = {
@@ -186,7 +209,7 @@ export function HandMatrix(props: Props) {
               borderRadius: 10,
               border: `1px solid ${borderForAction(cur)}`,
               background: bgForAction(cur),
-              cursor: "pointer",
+              cursor: readOnly ? "default" : "pointer",
               userSelect: "none",
               display: "flex",
               alignItems: "center",
