@@ -452,7 +452,7 @@ export default function ResultsPage() {
                         </button>
                       ) : null}
                       {result.review?.flagged ? (
-                        <Link href={`/results/hand/${encodeURIComponent(result.hand_id)}/replay`} style={secondaryLinkStyle}>Replay</Link>
+                        <Link href={replayHref(result)} style={secondaryLinkStyle}>Replay</Link>
                       ) : null}
                       <Link href={`/results/hand/${encodeURIComponent(result.hand_id)}`} style={secondaryLinkStyle}>Open debrief</Link>
                     </div>
@@ -478,7 +478,7 @@ export default function ResultsPage() {
                       <div style={rowMetaStyle}>{compactDateTime(result.completed_at)} · {result.review?.sent_to_coaches ? "Sent to coach queue" : "Flagged"}</div>
                     </div>
                     <div style={rowActionsStyle}>
-                      <Link href={`/results/hand/${encodeURIComponent(result.hand_id)}/replay`} style={secondaryLinkStyle}>Replay</Link>
+                      <Link href={replayHref(result)} style={secondaryLinkStyle}>Replay</Link>
                       <Link href={`/results/hand/${encodeURIComponent(result.hand_id)}`} style={secondaryLinkStyle}>Debrief</Link>
                     </div>
                   </div>
@@ -674,6 +674,15 @@ function capitalize(value: string) { return value.slice(0, 1).toUpperCase() + va
 function streetOrder(value: string) { return ["flop", "turn", "river"].indexOf(value); }
 function labelForBreakdown(value: BreakdownDimension) {
   return value === "position" ? "IP / OOP" : value === "timer" ? "Timer" : capitalize(value);
+}
+
+function replayHref(result: ResultEntry) {
+  const params = new URLSearchParams({
+    hand_id: result.hand_id,
+    replay: "1",
+  });
+  if (result.session_id) params.set("session_id", result.session_id);
+  return `/screen-3?${params.toString()}`;
 }
 
 const panelStyle: CSSProperties = { borderTop: "1px solid var(--line-soft)", paddingTop: 18 };
