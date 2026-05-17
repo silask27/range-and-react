@@ -206,9 +206,10 @@ const API_BASE =
 const HERO_NAME = "Hero";
 
 // Keep interaction requests quick. Final debrief/scoring can still use richer
-// result metadata, but Train-mode clicks should not wait on 500-iteration UI
-// recomputes.
-const SCREEN3_ITERS = 96;
+// result metadata, but Train-mode clicks should not wait on heavy bucket
+// recomputes. Railway is noticeably slower than local here, so Screen 3 uses a
+// deliberately light Monte Carlo pass for responsive training clicks.
+const SCREEN3_ITERS = 32;
 const TIMEOUT_OVERLAY_MS = 2000;
 const VILLAIN_ACTION_REVEAL_MS = 3000;
 
@@ -1240,7 +1241,7 @@ function Screen3PageContent() {
             <div className="screen3-deal-card screen3-deal-card-b">K</div>
             <div className="screen3-deal-card screen3-deal-card-c">Q</div>
           </div>
-          <p className="screen3-deal-title">Dealing Cards</p>
+          <p className="screen3-deal-title">Dealing Cards...</p>
         </div>
       ) : error && !activeHand ? (
         <div className="screen3-state">
@@ -2476,40 +2477,41 @@ var(--bg);
 
         .screen3-deal-animation {
           position: relative;
-          width: 112px;
-          height: 84px;
+          width: 132px;
+          height: 88px;
+          filter: drop-shadow(0 22px 34px rgba(231, 111, 81, 0.14));
         }
 
         .screen3-deal-card {
           position: absolute;
-          left: 32px;
-          top: 8px;
-          width: 48px;
-          height: 66px;
-          border-radius: 10px;
-          border: 1px solid rgba(240, 235, 224, 0.36);
-          background: var(--card-bg);
+          top: 9px;
+          width: 50px;
+          height: 68px;
+          border-radius: 12px;
+          border: 1px solid rgba(231, 111, 81, 0.54);
+          background:
+            radial-gradient(circle at 22% 18%, rgba(255, 214, 165, 0.24), transparent 34%),
+            linear-gradient(145deg, rgba(49, 43, 37, 0.98), rgba(20, 18, 16, 0.98));
           color: var(--text);
           display: grid;
           place-items: center;
           font-weight: 950;
-          box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
-          animation: deal-card 1.18s ease-in-out infinite;
+          box-shadow:
+            inset 0 0 0 1px rgba(240, 235, 224, 0.08),
+            0 18px 42px rgba(0, 0, 0, 0.34);
+          will-change: left, transform, z-index;
         }
 
         .screen3-deal-card-a {
-          transform: rotate(-12deg) translateX(-26px);
-          animation-delay: 0s;
+          animation: deal-card-a 1.45s ease-in-out infinite;
         }
 
         .screen3-deal-card-b {
-          transform: rotate(0deg);
-          animation-delay: 0.12s;
+          animation: deal-card-b 1.45s ease-in-out infinite;
         }
 
         .screen3-deal-card-c {
-          transform: rotate(12deg) translateX(26px);
-          animation-delay: 0.24s;
+          animation: deal-card-c 1.45s ease-in-out infinite;
         }
 
         .screen3-deal-title {
@@ -2775,14 +2777,66 @@ var(--bg);
           }
         }
 
-        @keyframes deal-card {
+        @keyframes deal-card-a {
           0%, 100% {
-            margin-top: 0;
-            opacity: 0.82;
-          }
-          50% {
-            margin-top: -10px;
+            left: 4px;
+            z-index: 3;
+            transform: rotate(-12deg) scale(1);
             opacity: 1;
+          }
+          33% {
+            left: 41px;
+            z-index: 2;
+            transform: rotate(0deg) scale(0.96);
+            opacity: 0.88;
+          }
+          66% {
+            left: 78px;
+            z-index: 1;
+            transform: rotate(12deg) scale(0.92);
+            opacity: 0.72;
+          }
+        }
+
+        @keyframes deal-card-b {
+          0%, 100% {
+            left: 41px;
+            z-index: 2;
+            transform: rotate(0deg) scale(0.96);
+            opacity: 0.88;
+          }
+          33% {
+            left: 78px;
+            z-index: 1;
+            transform: rotate(12deg) scale(0.92);
+            opacity: 0.72;
+          }
+          66% {
+            left: 4px;
+            z-index: 3;
+            transform: rotate(-12deg) scale(1);
+            opacity: 1;
+          }
+        }
+
+        @keyframes deal-card-c {
+          0%, 100% {
+            left: 78px;
+            z-index: 1;
+            transform: rotate(12deg) scale(0.92);
+            opacity: 0.72;
+          }
+          33% {
+            left: 4px;
+            z-index: 3;
+            transform: rotate(-12deg) scale(1);
+            opacity: 1;
+          }
+          66% {
+            left: 41px;
+            z-index: 2;
+            transform: rotate(0deg) scale(0.96);
+            opacity: 0.88;
           }
         }
 
@@ -2929,9 +2983,14 @@ function buildReplayHandView(
       ? [step.details.column]
       : [];
   const responseSelections = buildReplayResponseSelections(step);
-  const replayBucketView = isPlainRecord(step.details?.bucket_matrix_view)
+  const rawReplayBucketView = isPlainRecord(step.details?.bucket_matrix_view)
     ? (step.details.bucket_matrix_view as BucketMatrixView)
     : baseHand.bucket_matrix_view;
+  const replayBucketView = normalizeReplayBucketViewForStep(
+    step,
+    rawReplayBucketView,
+    responseSelections,
+  );
   const currentPruneBucket = step.kind === "range_prune" && typeof step.details?.actual_bucket === "string"
     ? step.details.actual_bucket
     : null;
@@ -2995,6 +3054,60 @@ function buildReplayResponseSelections(step: ReplayStep): Record<string, Record<
     out[raw.bucket] = { [column]: predicted };
   }
   return out;
+}
+
+function normalizeReplayBucketViewForStep(
+  step: ReplayStep,
+  view: BucketMatrixView,
+  selections: Record<string, Record<string, string>>,
+): BucketMatrixView {
+  if (!isReplayResponseStep(step)) return view;
+
+  const rowOrder = Array.isArray(step.details?.row_order)
+    ? step.details.row_order.map(String).filter(Boolean)
+    : Object.keys(selections);
+  const uniqueRowOrder = Array.from(new Set(rowOrder));
+  if (!uniqueRowOrder.length) return view;
+
+  const existingRows = new Map((view.rows ?? []).map((row) => [row.bucket_name, row]));
+  const scoreRows = new Map<string, BucketRow>();
+  const bucketScores = Array.isArray(step.details?.bucket_level_scores)
+    ? step.details.bucket_level_scores
+    : [];
+
+  for (const raw of bucketScores) {
+    if (!isPlainRecord(raw) || typeof raw.bucket !== "string") continue;
+    const bucketName = raw.bucket;
+    const comboCount = typeof raw.combo_count === "number" ? raw.combo_count : 0;
+    const bucketPercent = typeof raw.bucket_percent === "number" ? raw.bucket_percent : 0;
+    scoreRows.set(bucketName, {
+      bucket_name: bucketName,
+      bucket_percent: bucketPercent,
+      combo_count: comboCount,
+      holdings_count: comboCount,
+      subgroups: [],
+      hands: [],
+    });
+  }
+
+  const rows = uniqueRowOrder.map((bucketName) =>
+    existingRows.get(bucketName) ??
+    scoreRows.get(bucketName) ??
+    {
+      bucket_name: bucketName,
+      bucket_percent: 0,
+      combo_count: 0,
+      holdings_count: 0,
+      subgroups: [],
+      hands: [],
+    },
+  );
+
+  return {
+    ...view,
+    row_order: uniqueRowOrder,
+    rows,
+  };
 }
 
 function isReplayResponseStep(step: ReplayStep | null | undefined): boolean {
@@ -3279,6 +3392,23 @@ function getDisplayedBucketRows(hand: HandState): BucketRow[] {
   });
 
   if (hand.ui_gate !== "must_prune_range" || hand.prune_row_order.length === 0) {
+    if (
+      hand.ui_gate === "must_fill_response_matrix" &&
+      "row_order" in hand.response_matrix_saved &&
+      Array.isArray(hand.response_matrix_saved.row_order) &&
+      hand.response_matrix_saved.row_order.length > 0
+    ) {
+      const rank = new Map<string, number>();
+      hand.response_matrix_saved.row_order.forEach((bucket, index) => {
+        rank.set(bucket, index);
+      });
+      return rowsByPercent.sort((a, b) => {
+        const aRank = rank.get(a.bucket_name) ?? Number.MAX_SAFE_INTEGER;
+        const bRank = rank.get(b.bucket_name) ?? Number.MAX_SAFE_INTEGER;
+        if (aRank !== bRank) return aRank - bRank;
+        return a.bucket_name.localeCompare(b.bucket_name);
+      });
+    }
     return rowsByPercent;
   }
 
