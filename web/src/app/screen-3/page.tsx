@@ -1234,9 +1234,13 @@ function Screen3PageContent() {
   return (
     <main className="screen3-shell">
       {isLoading ? (
-        <div className="screen3-state">
-          <div className="screen3-spinner" />
-          <p className="muted">Loading postflop...</p>
+        <div className="screen3-state screen3-deal-state">
+          <div className="screen3-deal-animation" aria-hidden="true">
+            <div className="screen3-deal-card screen3-deal-card-a">A</div>
+            <div className="screen3-deal-card screen3-deal-card-b">K</div>
+            <div className="screen3-deal-card screen3-deal-card-c">Q</div>
+          </div>
+          <p className="screen3-deal-title">Dealing Cards</p>
         </div>
       ) : error && !activeHand ? (
         <div className="screen3-state">
@@ -1266,13 +1270,15 @@ function Screen3PageContent() {
             stage={`${scenario.display_name} · ${activeHand.street.toUpperCase()}`}
           />
 
-          <WorkflowBar
-            steps={workflowSteps}
-            helperText={workflowHelperText}
-            timerLabel={timerLabel}
-            showTimer={!isReplayMode}
-            showHelper={false}
-          />
+          {!isReplayMode ? (
+            <WorkflowBar
+              steps={workflowSteps}
+              helperText={workflowHelperText}
+              timerLabel={timerLabel}
+              showTimer
+              showHelper={false}
+            />
+          ) : null}
 
           <div className="screen3-grid">
             <section className="screen3-left">
@@ -2463,6 +2469,56 @@ var(--bg);
           justify-content: center;
         }
 
+        .screen3-deal-state {
+          flex-direction: column;
+          gap: 18px;
+        }
+
+        .screen3-deal-animation {
+          position: relative;
+          width: 112px;
+          height: 84px;
+        }
+
+        .screen3-deal-card {
+          position: absolute;
+          left: 32px;
+          top: 8px;
+          width: 48px;
+          height: 66px;
+          border-radius: 10px;
+          border: 1px solid rgba(240, 235, 224, 0.36);
+          background: var(--card-bg);
+          color: var(--text);
+          display: grid;
+          place-items: center;
+          font-weight: 950;
+          box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
+          animation: deal-card 1.18s ease-in-out infinite;
+        }
+
+        .screen3-deal-card-a {
+          transform: rotate(-12deg) translateX(-26px);
+          animation-delay: 0s;
+        }
+
+        .screen3-deal-card-b {
+          transform: rotate(0deg);
+          animation-delay: 0.12s;
+        }
+
+        .screen3-deal-card-c {
+          transform: rotate(12deg) translateX(26px);
+          animation-delay: 0.24s;
+        }
+
+        .screen3-deal-title {
+          margin: 0;
+          color: var(--text);
+          font-size: 18px;
+          font-weight: 900;
+        }
+
         .screen3-spinner {
           width: 36px;
           height: 36px;
@@ -2716,6 +2772,17 @@ var(--bg);
         @keyframes spin {
           to {
             transform: rotate(360deg);
+          }
+        }
+
+        @keyframes deal-card {
+          0%, 100% {
+            margin-top: 0;
+            opacity: 0.82;
+          }
+          50% {
+            margin-top: -10px;
+            opacity: 1;
           }
         }
 
@@ -3515,7 +3582,7 @@ function replayStepDetailLabel(step: ReplayStep): string {
         : "";
     if (bucket && subgroup) return `Removed ${subgroup} from ${bucket}`;
   }
-  if (step.kind === "action") return step.summary;
+  if (step.kind === "action") return step.title;
   return "";
 }
 

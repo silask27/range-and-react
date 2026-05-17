@@ -470,8 +470,8 @@ export default function ResultsPage() {
                   <h2 style={sectionTitleStyle}>{isCoachResultsView ? "Flagged hands from members" : "Hands flagged for review"}</h2>
                 </div>
               </div>
-              <div style={tableStackStyle}>
-                {reviewQueue.slice(0, 10).map((result) => (
+              <div style={scrollTableStackStyle}>
+                {reviewQueue.map((result) => (
                   <div key={`review-${result.hand_id}`} style={rowStyle}>
                     <div style={{ minWidth: 0 }}>
                       <div style={rowTitleStyle}>{result.scenario_display_name || "Scenario"} · {result.villain_display_name || "Villain"}</div>
@@ -709,6 +709,7 @@ const insightCardStyle: CSSProperties = { padding: 18, borderRadius: 18, backgro
 const insightFocusStyle: CSSProperties = { marginTop: 8, fontSize: 24, fontWeight: 900, color: PALETTE.cream, lineHeight: 1.12 };
 const insightCopyStyle: CSSProperties = { marginTop: 8, color: "var(--text-65)", lineHeight: 1.6 };
 const tableStackStyle: CSSProperties = { display: "grid", gap: 18 };
+const scrollTableStackStyle: CSSProperties = { ...tableStackStyle, maxHeight: 560, overflowY: "auto", paddingRight: 6 };
 const breakdownRowStyle: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 180px) minmax(0, 1fr)", gap: 18, alignItems: "center", paddingTop: 14, borderTop: "1px solid var(--line-soft)" };
 const rowStyle: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 14, alignItems: "center", padding: 16, borderRadius: 18, background: "var(--surface-fill)", border: "1px solid var(--line)" };
 const rowActionsStyle: CSSProperties = { display: "flex", gap: 10, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap" };

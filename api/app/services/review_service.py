@@ -340,14 +340,18 @@ def _build_replay_steps(hand: HandState, *, session: dict[str, Any], metadata: d
     for event_index, event in enumerate(hand.history.events, start=1):
         events_by_street.setdefault(event.street.value, []).append((event_index, event))
 
+    replay_is_over = False
     for street in _STREET_ORDER[1:]:
+        if replay_is_over:
+            break
         board = _street_board(list(hand.board), street)
         if not board and not events_by_street.get(street) and not prune_evals_by_street.get(street) and not response_evals_by_street.get(street):
             continue
+        street_title = "Flop board" if street == "flop" else f"{street.title()} Card"
         steps.append({
             "kind": "street_start",
             "street": street,
-            "title": f"{street.title()} board",
+            "title": street_title,
             "summary": " ".join(board) if board else "No board cards recorded.",
             "board": board,
             "details": {"pot": hand.pot, "hero_stack": hand.hero_stack, "villain_stack": hand.villain_stack},
@@ -373,11 +377,16 @@ def _build_replay_steps(hand: HandState, *, session: dict[str, Any], metadata: d
                 "board": board,
                 "details": {"event": _event_to_dict(event)},
             })
+            if event.action.value == "fold":
+                replay_is_over = True
+                break
             if event.actor.value == "villain":
                 while replay_prune_queue and _replay_event_history_count(replay_prune_queue[0]) <= event_index:
                     steps.append(_prune_subgroup_step(street, board, replay_prune_queue.pop(0)))
                 if prune_queue:
                     steps.append(_prune_step(street, board, prune_queue.pop(0)))
+        if replay_is_over:
+            break
         while replay_prune_queue:
             steps.append(_prune_subgroup_step(street, board, replay_prune_queue.pop(0)))
         for evaluation in response_queue:
