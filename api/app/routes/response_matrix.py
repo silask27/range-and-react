@@ -48,10 +48,11 @@ def _serialize_hand_public(
     hand: HandState,
     *,
     iters: int | None = None,
+    bucket_matrix_view_override: dict | None = None,
 ) -> dict:
     payload = asdict(hand)
 
-    bucket_matrix_view = build_bucket_matrix_view(
+    bucket_matrix_view = bucket_matrix_view_override or build_bucket_matrix_view(
         villain_range_combos_live=hand.villain_range_combos_live,
         board=hand.board,
         hero_hand=hand.hero_hand,
@@ -118,4 +119,8 @@ def save_response_matrix_route(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return _serialize_hand_public(hand, iters=iters)
+    return _serialize_hand_public(
+        hand,
+        iters=iters,
+        bucket_matrix_view_override=bucket_matrix_view if isinstance(bucket_matrix_view, dict) else None,
+    )

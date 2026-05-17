@@ -211,8 +211,6 @@ const HERO_NAME = "Hero";
 const SCREEN3_ITERS = 96;
 const TIMEOUT_OVERLAY_MS = 2000;
 const VILLAIN_ACTION_REVEAL_MS = 3000;
-const REPLAY_STEP_MS = 1400;
-const REPLAY_MATRIX_CELL_MS = 260;
 
 const BUCKET_CLASS: Record<string, string> = {
   "Nutted Value": "nutted",
@@ -284,8 +282,6 @@ function Screen3PageContent() {
   const [debriefPreview, setDebriefPreview] = useState<DebriefPreview | null>(null);
   const [replayPayload, setReplayPayload] = useState<ReplayPayload | null>(null);
   const [replayStepIndex, setReplayStepIndex] = useState(0);
-  const [isReplayPlaying, setIsReplayPlaying] = useState(true);
-  const [replayMatrixRevealCount, setReplayMatrixRevealCount] = useState<number | null>(null);
 
   const [responseSelections, setResponseSelections] = useState<
     Record<string, Record<string, string>>
@@ -336,12 +332,13 @@ function Screen3PageContent() {
     () => {
       if (!currentReplayStep) return responseSelections;
       const savedSelections = buildReplayResponseSelections(currentReplayStep);
-      if (currentReplayStep.kind !== "response_matrix" || replayMatrixRevealCount == null) {
+      const revealCount = getReplayResponseRevealCount(currentReplayStep);
+      if (revealCount == null) {
         return savedSelections;
       }
-      return limitReplayResponseSelectionsForStep(currentReplayStep, savedSelections, replayMatrixRevealCount);
+      return limitReplayResponseSelectionsForStep(currentReplayStep, savedSelections, revealCount);
     },
-    [currentReplayStep, responseSelections, replayMatrixRevealCount],
+    [currentReplayStep, responseSelections],
   );
   const activeStableColumns = currentReplayStep ? [] : stableResponseColumns;
 
@@ -396,28 +393,20 @@ function Screen3PageContent() {
   const gateLabel = isVillainThinking
     ? "Villain Thinking"
     : activeHand
-      ? isReplayMode
-        ? "Replay"
-        : formatGateLabel(activeHand.ui_gate)
+      ? formatGateLabel(activeHand.ui_gate)
       : "";
-  const headerSubtitle = isReplayMode
-    ? getScreenSubtitle(activeHand, isVillainThinking)
-    : getScreenSubtitle(activeHand, isVillainThinking);
+  const headerSubtitle = getScreenSubtitle(activeHand, isVillainThinking);
   const timedStepSignature = useMemo(
     () => isReplayMode ? null : getTimedStepSignature(activeHand, isVillainThinking, isTimeoutTransitioning),
     [activeHand, isVillainThinking, isTimeoutTransitioning, isReplayMode],
   );
   const workflowSteps = useMemo(
-    () => isReplayMode && replayPayload
-      ? buildReplayWorkflowSteps(replayPayload.steps, replayStepIndex)
-      : buildWorkflowSteps(currentStep, activeHand?.hand_over ?? false, scenario?.hero_is_ip === false),
-    [currentStep, activeHand?.hand_over, scenario?.hero_is_ip, isReplayMode, replayPayload, replayStepIndex],
+    () => buildWorkflowSteps(currentStep, activeHand?.hand_over ?? false, scenario?.hero_is_ip === false),
+    [currentStep, activeHand?.hand_over, scenario?.hero_is_ip],
   );
   const workflowHelperText = useMemo(
-    () => isReplayMode && currentReplayStep
-      ? `${currentReplayStep.title}: ${currentReplayStep.summary}`
-      : getWorkflowHelperText(activeHand, isVillainThinking),
-    [activeHand, isVillainThinking, isReplayMode, currentReplayStep],
+    () => getWorkflowHelperText(activeHand, isVillainThinking),
+    [activeHand, isVillainThinking],
   );
   const configuredTimerSeconds = isReplayMode ? 0 : session?.train_timer_seconds ?? 0;
   const timerLabel = getWorkflowTimerLabel(
@@ -472,7 +461,7 @@ function Screen3PageContent() {
             const detail = await safeReadError(replayRes);
             throw new Error(detail || `Failed to load replay (${replayRes.status})`);
           }
-          replayData = (await replayRes.json()) as ReplayPayload;
+          replayData = expandReplayPayloadSteps((await replayRes.json()) as ReplayPayload);
           activeSessionId = activeSessionId || replayData.session_id;
         }
 
@@ -731,51 +720,7 @@ function Screen3PageContent() {
     pruneRowStartedAtRef.current = currentPruneBucket ? Date.now() : null;
   }, [currentPruneBucket]);
 
-  useEffect(() => {
-    if (!isReplayMode || !currentReplayStep) return;
-
-    if (currentReplayStep.kind !== "response_matrix") {
-      setReplayMatrixRevealCount(null);
-      return;
-    }
-
-    const savedSelections = buildReplayResponseSelections(currentReplayStep);
-    const total = countReplayResponseSelections(savedSelections);
-    setReplayMatrixRevealCount(total > 0 ? 0 : null);
-    if (!isReplayPlaying || total <= 0) return;
-
-    let nextCount = 0;
-    const intervalId = window.setInterval(() => {
-      nextCount += 1;
-      setReplayMatrixRevealCount(Math.min(nextCount, total));
-      if (nextCount >= total) {
-        window.clearInterval(intervalId);
-      }
-    }, REPLAY_MATRIX_CELL_MS);
-
-    return () => window.clearInterval(intervalId);
-  }, [isReplayMode, currentReplayStep, isReplayPlaying]);
-
-  useEffect(() => {
-    if (!isReplayMode || !replayPayload || !currentReplayStep || !isReplayPlaying) return;
-    if (replayStepIndex >= replayPayload.steps.length - 1) {
-      setIsReplayPlaying(false);
-      return;
-    }
-
-    const matrixSelections = currentReplayStep.kind === "response_matrix"
-      ? countReplayResponseSelections(buildReplayResponseSelections(currentReplayStep))
-      : 0;
-    const delayMs = currentReplayStep.kind === "response_matrix"
-      ? Math.max(REPLAY_STEP_MS, matrixSelections * REPLAY_MATRIX_CELL_MS + 650)
-      : REPLAY_STEP_MS;
-    const timeoutId = window.setTimeout(() => {
-      goToReplayStep(replayStepIndex + 1);
-    }, delayMs);
-    return () => window.clearTimeout(timeoutId);
-  }, [isReplayMode, replayPayload, currentReplayStep, isReplayPlaying, replayStepIndex]);
-
-    async function applyHandUpdateWithVillainPause(
+  async function applyHandUpdateWithVillainPause(
     previousHand: HandState | null,
     nextHand: HandState,
   ) {
@@ -813,9 +758,6 @@ function Screen3PageContent() {
       return;
     }
     setReplayStepIndex(bounded);
-    router.replace(
-      `/screen-3?session_id=${encodeURIComponent(replayPayload.session_id)}&hand_id=${encodeURIComponent(replayPayload.hand_id)}&replay=1&replay_step=${bounded}`,
-    );
   }
 
   async function ensurePruneStarted(handId: string) {
@@ -1090,11 +1032,24 @@ function Screen3PageContent() {
 
     try {
       const previousHand = hand;
+      const useImmediateVillainPause = shouldStartImmediateVillainPause(previousHand, action);
+      const requestPromise = submitHeroActionRequest(hand.hand_id, action, amount)
+        .then((updated) => normalizePostActionHand(updated));
 
-      let updated = await submitHeroActionRequest(hand.hand_id, action, amount);
-      updated = await normalizePostActionHand(updated);
-
-      await applyHandUpdateWithVillainPause(previousHand, updated);
+      if (useImmediateVillainPause) {
+        setHand(buildImmediateHeroActionPreview(previousHand, action, amount));
+        setIsVillainThinking(true);
+        const [updated] = await Promise.all([
+          requestPromise,
+          sleep(VILLAIN_ACTION_REVEAL_MS),
+        ]);
+        if (!isMountedRef.current) return;
+        setIsVillainThinking(false);
+        setHand(updated);
+      } else {
+        const updated = await requestPromise;
+        await applyHandUpdateWithVillainPause(previousHand, updated);
+      }
       setReveal(null);
       setDebriefPreview(null);
 
@@ -1105,6 +1060,7 @@ function Screen3PageContent() {
         setRaiseInput("");
       }
     } catch (err) {
+      setIsVillainThinking(false);
       const message = err instanceof Error ? err.message : "Failed to apply action.";
       if (
         hand &&
@@ -1315,7 +1271,7 @@ function Screen3PageContent() {
             helperText={workflowHelperText}
             timerLabel={timerLabel}
             showTimer={!isReplayMode}
-            showHelper={isReplayMode}
+            showHelper={false}
           />
 
           <div className="screen3-grid">
@@ -1545,9 +1501,7 @@ function Screen3PageContent() {
                     ? "Villain thinking..."
                     : activeHand.ui_gate === "must_prune_range"
                       ? `Pruning: ${currentPruneBucket ?? "—"}`
-                      : isReplayMode && currentReplayStep
-                        ? currentReplayStep.title
-                        : `${activeHand.bucket_matrix_view.total_live_combos} live combos`}
+                      : `${activeHand.bucket_matrix_view.total_live_combos} live combos`}
                 </div>
               </div>
             </section>
@@ -1628,15 +1582,10 @@ function Screen3PageContent() {
                       step={currentReplayStep}
                       stepIndex={replayStepIndex}
                       totalSteps={replayPayload.steps.length}
-                      handId={replayPayload.hand_id}
-                      isPlaying={isReplayPlaying}
-                      onTogglePlaying={() => setIsReplayPlaying((value) => !value)}
                       onPrevious={() => {
-                        setIsReplayPlaying(false);
                         goToReplayStep(replayStepIndex - 1);
                       }}
                       onNext={() => {
-                        setIsReplayPlaying(false);
                         goToReplayStep(replayStepIndex + 1);
                       }}
                     />
@@ -2906,9 +2855,10 @@ function buildReplayHandView(
     .map((item) => item.kind === "action" ? actionEventFromReplayStep(item) : null)
     .filter((event): event is ActionEvent => Boolean(event));
   const currentEvent = step.kind === "action" ? actionEventFromReplayStep(step) : null;
-  const responseColumns = step.kind === "response_matrix" && Array.isArray(step.details?.columns)
+  const isResponseStep = isReplayResponseStep(step);
+  const responseColumns = isResponseStep && Array.isArray(step.details?.columns)
     ? step.details.columns.map(String)
-    : step.kind === "response_matrix" && typeof step.details?.column === "string"
+    : isResponseStep && typeof step.details?.column === "string"
       ? [step.details.column]
       : [];
   const responseSelections = buildReplayResponseSelections(step);
@@ -2933,7 +2883,7 @@ function buildReplayHandView(
     bucket_matrix_view: replayBucketView,
     history: { events: actionEvents },
     current_actor: currentEvent?.actor ?? "hero",
-    ui_gate: step.kind === "response_matrix"
+    ui_gate: isResponseStep
       ? "must_fill_response_matrix"
       : step.kind === "range_prune"
         ? "must_prune_range"
@@ -2958,7 +2908,7 @@ function buildReplayHandView(
 }
 
 function buildReplayResponseSelections(step: ReplayStep): Record<string, Record<string, string>> {
-  if (step.kind !== "response_matrix" || !step.details) {
+  if (!isReplayResponseStep(step) || !step.details) {
     return {};
   }
   if (isPlainRecord(step.details.selections)) {
@@ -2980,11 +2930,81 @@ function buildReplayResponseSelections(step: ReplayStep): Record<string, Record<
   return out;
 }
 
-function countReplayResponseSelections(selections: Record<string, Record<string, string>>): number {
-  return Object.values(selections).reduce(
-    (total, row) => total + Object.values(row).filter(Boolean).length,
-    0,
-  );
+function isReplayResponseStep(step: ReplayStep | null | undefined): boolean {
+  return step?.kind === "response_matrix" || step?.kind === "response_matrix_cell";
+}
+
+function getReplayResponseRevealCount(step: ReplayStep): number | null {
+  if (!isReplayResponseStep(step)) return null;
+  const raw = step.details?.reveal_count;
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return null;
+  return Math.max(0, raw);
+}
+
+function expandReplayPayloadSteps(payload: ReplayPayload): ReplayPayload {
+  return {
+    ...payload,
+    steps: expandReplaySteps(payload.steps),
+  };
+}
+
+function expandReplaySteps(steps: ReplayStep[]): ReplayStep[] {
+  const expanded: ReplayStep[] = [];
+  for (const step of steps) {
+    if (step.kind !== "response_matrix") {
+      expanded.push(step);
+      continue;
+    }
+
+    const sequence = replayResponseFillSequence(step);
+    if (!sequence.length) {
+      expanded.push(step);
+      continue;
+    }
+
+    sequence.forEach((entry, index) => {
+      expanded.push({
+        ...step,
+        kind: "response_matrix_cell",
+        title: "Response matrix",
+        summary: `${entry.bucket} · ${COLUMN_LABELS[entry.column] ?? titleCase(entry.column)}: ${entry.value}`,
+        details: {
+          ...(step.details ?? {}),
+          reveal_count: index + 1,
+          active_bucket: entry.bucket,
+          active_column: entry.column,
+          active_value: entry.value,
+        },
+      });
+    });
+  }
+  return expanded;
+}
+
+function replayResponseFillSequence(
+  step: ReplayStep,
+): Array<{ bucket: string; column: string; value: string }> {
+  const rawSequence = Array.isArray(step.details?.fill_sequence)
+    ? step.details.fill_sequence
+    : [];
+  const sequence: Array<{ bucket: string; column: string; value: string }> = [];
+  for (const raw of rawSequence) {
+    if (!isPlainRecord(raw)) continue;
+    const bucket = typeof raw.bucket === "string" ? raw.bucket : "";
+    const column = typeof raw.column === "string" ? raw.column : "";
+    const value = typeof raw.value === "string" ? raw.value : "";
+    if (!bucket || !column || !value) continue;
+    sequence.push({ bucket, column, value });
+  }
+  if (sequence.length) return sequence;
+
+  const selections = buildReplayResponseSelections(step);
+  for (const [bucket, row] of Object.entries(selections)) {
+    for (const [column, value] of Object.entries(row)) {
+      if (value) sequence.push({ bucket, column, value });
+    }
+  }
+  return sequence;
 }
 
 function limitReplayResponseSelectionsForStep(
@@ -3023,17 +3043,6 @@ function limitReplayResponseSelectionsForStep(
     }
   }
   return out;
-}
-
-function buildReplayWorkflowSteps(steps: ReplayStep[], activeIndex: number): WorkflowStep[] {
-  const streets = ["preflop", "flop", "turn", "river"];
-  const activeStreet = steps[activeIndex]?.street ?? "preflop";
-  const activeRank = streets.indexOf(activeStreet);
-  return streets.map((street, index) => ({
-    key: street,
-    label: street === "preflop" ? "Setup" : titleCase(street),
-    state: index < activeRank ? "complete" : index === activeRank ? "active" : "upcoming",
-  }));
 }
 
 function actionEventFromReplayStep(step: ReplayStep): ActionEvent | null {
@@ -3457,47 +3466,57 @@ function ReplayControls({
   step,
   stepIndex,
   totalSteps,
-  handId,
-  isPlaying,
-  onTogglePlaying,
   onPrevious,
   onNext,
 }: {
   step: ReplayStep;
   stepIndex: number;
   totalSteps: number;
-  handId: string;
-  isPlaying: boolean;
-  onTogglePlaying: () => void;
   onPrevious: () => void;
   onNext: () => void;
 }) {
+  const stepDetail = replayStepDetailLabel(step);
   return (
     <div className="screen3-replay-controls">
       <div className="screen3-replay-kicker">Step {stepIndex + 1} of {totalSteps}</div>
       <div className="screen3-replay-title">{step.title}</div>
-      <div className="screen3-muted-block">{step.summary}</div>
+      <div className="screen3-muted-block">{stepDetail || step.summary}</div>
       <div className="screen3-replay-nav">
         <button type="button" className="btn btn-ghost screen3-replay-arrow" onClick={onPrevious} disabled={stepIndex <= 0} aria-label="Previous replay step">
           ‹
-        </button>
-        <button type="button" className="btn btn-primary" onClick={onTogglePlaying}>
-          {isPlaying ? "Pause" : "Resume"}
         </button>
         <button type="button" className="btn btn-ghost screen3-replay-arrow" onClick={onNext} disabled={stepIndex >= totalSteps - 1} aria-label="Next replay step">
           ›
         </button>
       </div>
-      <div className="screen3-preview-secondary-actions">
-        <Link href={`/results/hand/${encodeURIComponent(handId)}`} className="btn btn-ghost">
-          Debrief
-        </Link>
-        <Link href="/results" className="btn btn-ghost">
-          Results
-        </Link>
-      </div>
     </div>
   );
+}
+
+function replayStepDetailLabel(step: ReplayStep): string {
+  if (step.kind === "response_matrix_cell") {
+    const bucket = typeof step.details?.active_bucket === "string" ? step.details.active_bucket : "";
+    const column = typeof step.details?.active_column === "string" ? step.details.active_column : "";
+    const value = typeof step.details?.active_value === "string" ? step.details.active_value : "";
+    if (bucket && column && value) {
+      return `${bucket}: ${COLUMN_LABELS[column] ?? titleCase(column)} = ${value}`;
+    }
+  }
+  if (step.kind === "range_prune") {
+    const subgroup = typeof step.details?.actual_subgroup === "string"
+      ? step.details.actual_subgroup
+      : typeof step.details?.subgroup === "string"
+        ? step.details.subgroup
+        : "";
+    const bucket = typeof step.details?.actual_bucket === "string"
+      ? step.details.actual_bucket
+      : typeof step.details?.bucket === "string"
+        ? step.details.bucket
+        : "";
+    if (bucket && subgroup) return `Removed ${subgroup} from ${bucket}`;
+  }
+  if (step.kind === "action") return step.summary;
+  return "";
 }
 
 function buildHeroActor(scenario: Scenario, hand: HandState | null) {
@@ -3643,6 +3662,80 @@ function hasNewVillainAction(
   nextHand: HandState,
 ): boolean {
   return getVillainEventSignature(previousHand) !== getVillainEventSignature(nextHand);
+}
+
+function shouldStartImmediateVillainPause(hand: HandState, action: string): boolean {
+  if (hand.hand_over || hand.ui_gate !== "hero_to_act") return false;
+  if (action === "bet" || action === "raise") return true;
+  if (action !== "check") return false;
+
+  const latestStreetEvent = getLatestStreetEvent(hand);
+  return !latestStreetEvent || latestStreetEvent.actor !== "villain";
+}
+
+function buildImmediateHeroActionPreview(
+  hand: HandState,
+  action: string,
+  amount?: number,
+): HandState {
+  const preview = JSON.parse(JSON.stringify(hand)) as HandState;
+  const eventAmount = round2(amount ?? (action === "call" ? getToCallForHero(hand) : 0));
+  const event: ActionEvent = {
+    street: hand.street,
+    actor: "hero",
+    action: isAction(action) ? action : "check",
+    amount: eventAmount,
+    note: "",
+    forced: false,
+  };
+
+  preview.history = {
+    events: [...hand.history.events, event],
+  };
+  preview.current_actor = "villain";
+  preview.ui_gate = "hero_to_act";
+  preview.hand_over = false;
+  preview.villain_hand_revealed = false;
+  preview.prune_row_order = [];
+  preview.prune_row_index = 0;
+  preview.current_prune_bucket = null;
+  preview.current_prune_row_saved_version = null;
+  preview.current_prune_row_original = null;
+  preview.response_matrix_columns = [];
+  preview.response_matrix_saved = {};
+
+  if (action === "bet" && eventAmount > 0) {
+    const previousHeroContrib = round2(hand.betting_round.hero_contrib ?? 0);
+    const putIn = Math.max(0, round2(eventAmount - previousHeroContrib));
+    preview.pot = round2(hand.pot + putIn);
+    preview.hero_stack = round2(hand.hero_stack - putIn);
+    preview.betting_round = {
+      ...hand.betting_round,
+      current_bet: eventAmount,
+      hero_contrib: eventAmount,
+      last_raise_size: eventAmount,
+      folded: false,
+    };
+    preview.current_aggressor = "hero";
+  }
+
+  if (action === "raise" && eventAmount > 0) {
+    const previousHeroContrib = round2(hand.betting_round.hero_contrib ?? 0);
+    const priorBet = round2(hand.betting_round.current_bet ?? 0);
+    const putIn = Math.max(0, round2(eventAmount - previousHeroContrib));
+    preview.pot = round2(hand.pot + putIn);
+    preview.hero_stack = round2(hand.hero_stack - putIn);
+    preview.betting_round = {
+      ...hand.betting_round,
+      current_bet: eventAmount,
+      hero_contrib: eventAmount,
+      last_raise_size: Math.max(0, round2(eventAmount - priorBet)),
+      folded: false,
+    };
+    preview.current_aggressor = "hero";
+  }
+
+  return preview;
 }
 
 function isIpCheckbackNode(hand: HandState, scenario: Scenario): boolean {

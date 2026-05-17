@@ -336,9 +336,9 @@ def _build_replay_steps(hand: HandState, *, session: dict[str, Any], metadata: d
         street_name = str(item.get("street") or "")
         replay_events_by_street.setdefault(street_name, []).append(dict(item))
 
-    events_by_street: dict[str, list[Any]] = {}
-    for event in hand.history.events:
-        events_by_street.setdefault(event.street.value, []).append(event)
+    events_by_street: dict[str, list[tuple[int, Any]]] = {}
+    for event_index, event in enumerate(hand.history.events, start=1):
+        events_by_street.setdefault(event.street.value, []).append((event_index, event))
 
     for street in _STREET_ORDER[1:]:
         board = _street_board(list(hand.board), street)
@@ -358,13 +358,13 @@ def _build_replay_steps(hand: HandState, *, session: dict[str, Any], metadata: d
         replay_queue = list(replay_events_by_street.get(street) or [])
         replay_response_queue = [item for item in replay_queue if item.get("kind") == "response_matrix"]
         replay_prune_queue = [item for item in replay_queue if item.get("kind") == "prune_remove_subgroup"]
-        for event in events_by_street.get(street) or []:
+        for event_index, event in events_by_street.get(street) or []:
             if event.actor.value == "hero":
                 if replay_response_queue:
                     evaluation = response_queue.pop(0) if response_queue else {}
-                    steps.append(_response_step(street, board, evaluation, replay_event=replay_response_queue.pop(0)))
+                    steps.extend(_response_steps(street, board, evaluation, replay_event=replay_response_queue.pop(0)))
                 elif response_queue:
-                    steps.append(_response_step(street, board, response_queue.pop(0)))
+                    steps.extend(_response_steps(street, board, response_queue.pop(0)))
             steps.append({
                 "kind": "action",
                 "street": street,
@@ -374,16 +374,62 @@ def _build_replay_steps(hand: HandState, *, session: dict[str, Any], metadata: d
                 "details": {"event": _event_to_dict(event)},
             })
             if event.actor.value == "villain":
-                while replay_prune_queue:
+                while replay_prune_queue and _replay_event_history_count(replay_prune_queue[0]) <= event_index:
                     steps.append(_prune_subgroup_step(street, board, replay_prune_queue.pop(0)))
                 if prune_queue:
                     steps.append(_prune_step(street, board, prune_queue.pop(0)))
+        while replay_prune_queue:
+            steps.append(_prune_subgroup_step(street, board, replay_prune_queue.pop(0)))
         for evaluation in response_queue:
-            steps.append(_response_step(street, board, evaluation))
+            steps.extend(_response_steps(street, board, evaluation))
         for evaluation in prune_queue:
             steps.append(_prune_step(street, board, evaluation))
 
     return steps
+
+
+def _response_steps(
+    street: str,
+    board: list[str],
+    evaluation: dict[str, Any],
+    *,
+    replay_event: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    base_step = _response_step(street, board, evaluation, replay_event=replay_event)
+    sequence = _response_fill_sequence(base_step.get("details") or {})
+    if not sequence:
+        return [base_step]
+
+    steps: list[dict[str, Any]] = []
+    for index, entry in enumerate(sequence, start=1):
+        bucket = entry.get("bucket") or "Bucket"
+        column = entry.get("column") or "column"
+        value = entry.get("value") or ""
+        steps.append({
+            **base_step,
+            "kind": "response_matrix_cell",
+            "title": "Response matrix",
+            "summary": f"{bucket}: {column} = {value}",
+            "details": {
+                **dict(base_step.get("details") or {}),
+                "reveal_count": index,
+                "active_bucket": bucket,
+                "active_column": column,
+                "active_value": value,
+            },
+        })
+    return steps
+
+
+def _replay_event_history_count(replay_event: dict[str, Any]) -> int:
+    details = replay_event.get("details")
+    if isinstance(details, dict):
+        value = details.get("history_event_count")
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
+    return 0
 
 
 def _response_step(
@@ -407,6 +453,33 @@ def _response_step(
         "board": board,
         "details": details,
     }
+
+
+def _response_fill_sequence(details: dict[str, Any]) -> list[dict[str, str]]:
+    raw_sequence = details.get("fill_sequence")
+    sequence: list[dict[str, str]] = []
+    if isinstance(raw_sequence, list):
+        for raw in raw_sequence:
+            if not isinstance(raw, dict):
+                continue
+            bucket = raw.get("bucket")
+            column = raw.get("column")
+            value = raw.get("value")
+            if isinstance(bucket, str) and isinstance(column, str) and isinstance(value, str) and value:
+                sequence.append({"bucket": bucket, "column": column, "value": value})
+    if sequence:
+        return sequence
+
+    selections = details.get("selections")
+    if not isinstance(selections, dict):
+        return []
+    for bucket, row in selections.items():
+        if not isinstance(bucket, str) or not isinstance(row, dict):
+            continue
+        for column, value in row.items():
+            if isinstance(column, str) and isinstance(value, str) and value:
+                sequence.append({"bucket": bucket, "column": column, "value": value})
+    return sequence
 
 
 def _prune_step(street: str, board: list[str], evaluation: dict[str, Any]) -> dict[str, Any]:
