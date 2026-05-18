@@ -345,7 +345,13 @@ def _build_replay_steps(hand: HandState, *, session: dict[str, Any], metadata: d
         if replay_is_over:
             break
         board = _street_board(list(hand.board), street)
-        if not board and not events_by_street.get(street) and not prune_evals_by_street.get(street) and not response_evals_by_street.get(street):
+        if (
+            not board
+            and not events_by_street.get(street)
+            and not prune_evals_by_street.get(street)
+            and not response_evals_by_street.get(street)
+            and not replay_events_by_street.get(street)
+        ):
             continue
         street_title = "Flop board" if street == "flop" else f"{street.title()} Card"
         steps.append({
@@ -360,39 +366,72 @@ def _build_replay_steps(hand: HandState, *, session: dict[str, Any], metadata: d
         response_queue = list(response_evals_by_street.get(street) or [])
         prune_queue = list(prune_evals_by_street.get(street) or [])
         replay_queue = list(replay_events_by_street.get(street) or [])
-        replay_response_queue = [item for item in replay_queue if item.get("kind") == "response_matrix"]
-        replay_prune_queue = [item for item in replay_queue if item.get("kind") == "prune_remove_subgroup"]
-        for event_index, event in events_by_street.get(street) or []:
-            if event.actor.value == "hero":
-                if replay_response_queue:
-                    evaluation = response_queue.pop(0) if response_queue else {}
-                    steps.extend(_response_steps(street, board, evaluation, replay_event=replay_response_queue.pop(0)))
-                elif response_queue:
-                    steps.extend(_response_steps(street, board, response_queue.pop(0)))
-            steps.append({
-                "kind": "action",
-                "street": street,
-                "title": _action_title(event),
-                "summary": event.note or ("Forced action" if event.forced else "Action event"),
-                "board": board,
-                "details": {"event": _event_to_dict(event)},
-            })
-            if event.action.value == "fold":
-                replay_is_over = True
+
+        if replay_queue:
+            pending_replay_events = list(replay_queue)
+
+            def append_replay_events_through(max_history_count: int) -> None:
+                while (
+                    pending_replay_events
+                    and _replay_event_history_count(pending_replay_events[0]) <= max_history_count
+                ):
+                    steps.extend(
+                        _steps_from_replay_event(
+                            street,
+                            board,
+                            pending_replay_events.pop(0),
+                            response_queue=response_queue,
+                        )
+                    )
+
+            for event_index, event in events_by_street.get(street) or []:
+                append_replay_events_through(event_index - 1)
+                steps.append({
+                    "kind": "action",
+                    "street": street,
+                    "title": _action_title(event),
+                    "summary": event.note or ("Forced action" if event.forced else "Action event"),
+                    "board": board,
+                    "details": {"event": _event_to_dict(event)},
+                })
+                if event.action.value == "fold":
+                    replay_is_over = True
+                    break
+                append_replay_events_through(event_index)
+            if replay_is_over:
                 break
-            if event.actor.value == "villain":
-                while replay_prune_queue and _replay_event_history_count(replay_prune_queue[0]) <= event_index:
-                    steps.append(_prune_subgroup_step(street, board, replay_prune_queue.pop(0)))
-                if prune_queue:
+            while pending_replay_events:
+                steps.extend(
+                    _steps_from_replay_event(
+                        street,
+                        board,
+                        pending_replay_events.pop(0),
+                        response_queue=response_queue,
+                    )
+                )
+        else:
+            for event_index, event in events_by_street.get(street) or []:
+                if event.actor.value == "hero" and response_queue:
+                    steps.extend(_response_steps(street, board, response_queue.pop(0)))
+                steps.append({
+                    "kind": "action",
+                    "street": street,
+                    "title": _action_title(event),
+                    "summary": event.note or ("Forced action" if event.forced else "Action event"),
+                    "board": board,
+                    "details": {"event": _event_to_dict(event)},
+                })
+                if event.action.value == "fold":
+                    replay_is_over = True
+                    break
+                if event.actor.value == "villain" and prune_queue:
                     steps.append(_prune_step(street, board, prune_queue.pop(0)))
-        if replay_is_over:
-            break
-        while replay_prune_queue:
-            steps.append(_prune_subgroup_step(street, board, replay_prune_queue.pop(0)))
-        for evaluation in response_queue:
-            steps.extend(_response_steps(street, board, evaluation))
-        for evaluation in prune_queue:
-            steps.append(_prune_step(street, board, evaluation))
+            if replay_is_over:
+                break
+            for evaluation in response_queue:
+                steps.extend(_response_steps(street, board, evaluation))
+            for evaluation in prune_queue:
+                steps.append(_prune_step(street, board, evaluation))
 
     return steps
 
@@ -439,6 +478,22 @@ def _replay_event_history_count(replay_event: dict[str, Any]) -> int:
         if isinstance(value, str) and value.isdigit():
             return int(value)
     return 0
+
+
+def _steps_from_replay_event(
+    street: str,
+    board: list[str],
+    replay_event: dict[str, Any],
+    *,
+    response_queue: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    kind = replay_event.get("kind")
+    if kind == "response_matrix":
+        evaluation = response_queue.pop(0) if response_queue else {}
+        return _response_steps(street, board, evaluation, replay_event=replay_event)
+    if kind == "prune_remove_subgroup":
+        return [_prune_subgroup_step(street, board, replay_event)]
+    return []
 
 
 def _response_step(

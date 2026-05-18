@@ -418,7 +418,15 @@ def _scenario_hero_range_tokens(scenario_id: str) -> tuple[str, ...] | None:
     return tuple(str(token) for token in tokens)
 
 
-def _compute_hand_strength_context(*, villain_type: str, scenario_id: str, street: str, villain_hand: Sequence[str], board: Sequence[str]) -> tuple[float, float, str]:
+def _compute_hand_strength_context(
+    *,
+    villain_type: str,
+    scenario_id: str,
+    street: str,
+    villain_hand: Sequence[str],
+    board: Sequence[str],
+    iters: int | None,
+) -> tuple[float, float, str]:
     normalized_board = normalize_cards(list(board))
     normalized_hole = normalize_cards(list(villain_hand))
     hole = tuple(sorted((normalized_hole[0], normalized_hole[1])))
@@ -430,12 +438,12 @@ def _compute_hand_strength_context(*, villain_type: str, scenario_id: str, stree
     if len(normalized_board) == 5:
         equity = bz.equity_vs_hybrid_hero_range_river_exact(hole, normalized_board, hero_mix)
     else:
-        iters = bz.resolve_iters(normalized_board, None)
+        resolved_iters = bz.resolve_iters(normalized_board, iters)
         equity = bz.equity_vs_hybrid_hero_range_mc(
             villain_hole=hole,
             board=normalized_board,
             hero_mix=hero_mix,
-            iters=iters,
+            iters=resolved_iters,
             equity_base_seed=_stable_seed(villain_type, scenario_id, street, ''.join(normalized_board), ''.join(normalized_hole)),
             purpose="runtime_predictor_equity",
         )
@@ -747,8 +755,8 @@ def _adapt_spot(*, villain_type: str, scenario_id: str, street: str, node: str, 
     )
 
 
-def _derive_flat_predictors(*, villain_type: str, scenario_id: str, street: str, node: str, villain_is_ip: bool, pot: float, effective_stack_size: float, facing_size_raw: float, villain_hand: Sequence[str], board: Sequence[str], history_events: Iterable[ActionEvent] | None) -> dict[str, object]:
-    hand_equity, current_strength, hand_subgroup = _compute_hand_strength_context(villain_type=villain_type, scenario_id=scenario_id, street=street, villain_hand=villain_hand, board=board)
+def _derive_flat_predictors(*, villain_type: str, scenario_id: str, street: str, node: str, villain_is_ip: bool, pot: float, effective_stack_size: float, facing_size_raw: float, villain_hand: Sequence[str], board: Sequence[str], history_events: Iterable[ActionEvent] | None, iters: int | None) -> dict[str, object]:
+    hand_equity, current_strength, hand_subgroup = _compute_hand_strength_context(villain_type=villain_type, scenario_id=scenario_id, street=street, villain_hand=villain_hand, board=board, iters=iters)
     board_state = _derive_board_state_flags(board)
     spr = float(effective_stack_size / pot) if pot > 0 else 0.0
     facing_size_pct_pot = float(facing_size_raw / pot) if pot > 0 else 0.0
@@ -1535,7 +1543,7 @@ def choose_villain_action(
     history_events: Iterable[ActionEvent] | None = None,
     effective_stack_size: float | None = None,
 ) -> VillainDecisionResult:
-    del scenario_hero_range_tokens, iters, villain_is_current_aggressor, villain_is_pfa, prior_villain_aggressive_actions, prior_hero_aggressive_actions
+    del scenario_hero_range_tokens, villain_is_current_aggressor, villain_is_pfa, prior_villain_aggressive_actions, prior_hero_aggressive_actions
     manifest_error: Exception | None = None
     try:
         validate_model_runtime()
@@ -1561,7 +1569,7 @@ def choose_villain_action(
         return _fallback_villain_decision(node=node, can_raise=can_raise, facing_size_raw=facing_size_raw, pot=float(pot), rng=rng)
 
     spot = _adapt_spot(villain_type=villain_type, scenario_id=resolved_scenario_id, street=street_key, node=node, villain_is_ip=villain_is_ip, pot=float(pot), effective_stack_size=effective_stack, facing_size_raw=facing_size_raw, villain_hand=list(villain_hand), board=list(board), history_events=history_events)
-    flat = _derive_flat_predictors(villain_type=villain_type, scenario_id=resolved_scenario_id, street=street_key, node=node, villain_is_ip=villain_is_ip, pot=float(pot), effective_stack_size=effective_stack, facing_size_raw=facing_size_raw, villain_hand=list(villain_hand), board=list(board), history_events=history_events)
+    flat = _derive_flat_predictors(villain_type=villain_type, scenario_id=resolved_scenario_id, street=street_key, node=node, villain_is_ip=villain_is_ip, pot=float(pot), effective_stack_size=effective_stack, facing_size_raw=facing_size_raw, villain_hand=list(villain_hand), board=list(board), history_events=history_events, iters=iters)
     v6 = _predict_v6(spot, flat)
     final_probs = dict(v6.get('raw_action_probs') or {})
     if not can_raise and 'r' in final_probs:

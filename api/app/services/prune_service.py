@@ -561,6 +561,7 @@ def initialize_prune_state(
     hand: HandState,
     *,
     iters: int | None = None,
+    bucket_view_snapshot: dict | None = None,
 ) -> None:
     """
     Initialize row-by-row prune state directly on an in-memory hand object.
@@ -573,7 +574,7 @@ def initialize_prune_state(
     If iters is omitted, bucketization uses the street-specific defaults defined
     in bucketizer.py.
     """
-    bucket_view = _build_bucket_view_for_hand(hand, iters=iters)
+    bucket_view = bucket_view_snapshot or _build_bucket_view_for_hand(hand, iters=iters)
     row_order = [
         row["bucket_name"]
         for row in sorted(

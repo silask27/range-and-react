@@ -13,6 +13,12 @@ from api.app.models.state import HandState
 from api.app.services.review_state import review_state_from_metadata
 from api.app.storage.memory_store import store
 
+FAST_INTERACTIVE_ITERS = 8
+
+
+def _is_fast_interactive_scoring(iters: int | None) -> bool:
+    return iters is not None and iters <= FAST_INTERACTIVE_ITERS
+
 
 def _sorted_combo(combo: tuple[str, str] | list[str]) -> list[str]:
     return sorted(list(combo))
@@ -301,6 +307,29 @@ def record_prune_evaluation(hand: HandState, *, iters: int | None) -> None:
     end_total = sum(len(combos) for combos in (hand.villain_range_combos_live or {}).values())
     actual = _actual_bucket_info(hand, iters=iters)
     combo_alive, live_labels = _combo_alive(hand)
+
+    if _is_fast_interactive_scoring(iters):
+        latest_villain_event = _latest_villain_event(hand)
+        metadata = _metadata_for_hand(hand.hand_id)
+        metadata['prune_evaluations'].append({
+            'street': hand.street.value,
+            'villain_action': latest_villain_event.action.value if latest_villain_event else None,
+            'actual_bucket': actual['bucket_label'],
+            'actual_subgroup': actual['subgroup_label'],
+            'start_live_combos': start_total,
+            'end_live_combos': end_total,
+            'combo_alive': combo_alive,
+            'bucket_alive': None,
+            'subgroup_alive': None,
+            'remaining_labels_for_true_combo': live_labels,
+            'posterior_scoring': None,
+            'efficiency_score': None,
+            'overall_score': 100.0 if combo_alive else 0.0,
+            'score_method': 'fast_combo_survival',
+        })
+        _persist_metadata(hand.hand_id, metadata)
+        return
+
     bucket_alive, subgroup_alive = _row_flags(
         _bucket_view(hand, iters=iters),
         actual_bucket=actual['bucket_label'],
@@ -398,6 +427,17 @@ def record_response_matrix_evaluation(
         if actual_code is None:
             supported = False
             reason = 'The villain action did not map cleanly to this response column.'
+        elif _is_fast_interactive_scoring(iters):
+            predicted_actual_bucket = (selections.get(actual['bucket_label']) or {}).get(column)
+            correct = predicted_actual_bucket == actual_code
+            score = 100.0 if correct else 0.0
+            bucket_scores = [{
+                "bucket": actual['bucket_label'],
+                "predicted": predicted_actual_bucket,
+                "actual": actual_code,
+                "score": score,
+                "combo_count": 1,
+            }]
         else:
             score, bucket_scores = _bucket_level_response_scores(
                 hand,
@@ -434,7 +474,7 @@ def record_response_matrix_evaluation(
         'score': score,
         'correct': correct,
         'bucket_level_scores': bucket_scores,
-        'score_method': 'bucket_probability_decision_quality',
+        'score_method': 'fast_actual_bucket_response' if _is_fast_interactive_scoring(iters) else 'bucket_probability_decision_quality',
         'reason': reason,
     })
     _persist_metadata(hand.hand_id, metadata)

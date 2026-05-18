@@ -232,6 +232,7 @@ def _set_prune_gate_for_hero(
     hand: HandState,
     *,
     iters: int | None,
+    bucket_view_snapshot: dict | None = None,
 ) -> None:
     """
     Move the hand to the hero-side prune step after any villain action that
@@ -250,7 +251,7 @@ def _set_prune_gate_for_hero(
     hand.response_matrix_columns = _response_columns_for_current_hero_node(hand)
     _clear_response_matrix_node_state(hand)
     _clear_prune_state(hand)
-    initialize_prune_state(hand, iters=iters)
+    initialize_prune_state(hand, iters=iters, bucket_view_snapshot=bucket_view_snapshot)
 
 
 def _set_hand_over(hand: HandState) -> None:
@@ -413,6 +414,7 @@ def _finalize_after_villain_non_aggressive_action(
     *,
     seed: int,
     iters: int | None,
+    bucket_view_snapshot: dict | None = None,
 ) -> None:
     """
     For normal villain CHECK / CALL actions, always stop at prune first.
@@ -428,7 +430,7 @@ def _finalize_after_villain_non_aggressive_action(
     by prune_service._continue_after_completed_prune().
     """
     del seed
-    _set_prune_gate_for_hero(hand, iters=iters)
+    _set_prune_gate_for_hero(hand, iters=iters, bucket_view_snapshot=bucket_view_snapshot)
 
 
 def _resolve_villain_turn(
@@ -437,6 +439,7 @@ def _resolve_villain_turn(
     seed: int,
     iters: int | None,
     can_raise: bool,
+    bucket_view_snapshot: dict | None = None,
     hero_action_type: ActionType | None = None,
     hero_amount: float | None = None,
     pot_before_action: float | None = None,
@@ -491,6 +494,7 @@ def _resolve_villain_turn(
             hand,
             seed=seed + 20,
             iters=iters,
+            bucket_view_snapshot=bucket_view_snapshot,
         )
         return
 
@@ -535,7 +539,7 @@ def _resolve_villain_turn(
             iters=iters,
         )
 
-        _set_prune_gate_for_hero(hand, iters=iters)
+        _set_prune_gate_for_hero(hand, iters=iters, bucket_view_snapshot=bucket_view_snapshot)
         return
 
     if decision.action == ActionType.CALL:
@@ -572,6 +576,7 @@ def _resolve_villain_turn(
             hand,
             seed=seed + 20,
             iters=iters,
+            bucket_view_snapshot=bucket_view_snapshot,
         )
         return
 
@@ -641,7 +646,7 @@ def _resolve_villain_turn(
             iters=iters,
         )
 
-        _set_prune_gate_for_hero(hand, iters=iters)
+        _set_prune_gate_for_hero(hand, iters=iters, bucket_view_snapshot=bucket_view_snapshot)
         return
 
     raise ValueError(f"Unsupported villain action: {decision.action}")
@@ -654,6 +659,7 @@ def apply_hero_action(
     amount: float | None = None,
     seed: int = 42,
     iters: int | None = None,
+    bucket_view_snapshot: dict | None = None,
 ) -> HandState:
     """
     Apply a hero action and continue the hand flow.
@@ -707,6 +713,7 @@ def apply_hero_action(
                 seed=seed + 1,
                 iters=iters,
                 can_raise=False,
+                bucket_view_snapshot=bucket_view_snapshot,
                 hero_action_type=ActionType.CHECK,
                 hero_amount=0.0,
                 pot_before_action=pot_before_action,
@@ -747,6 +754,7 @@ def apply_hero_action(
             seed=seed + 1,
             iters=iters,
             can_raise=True,
+            bucket_view_snapshot=bucket_view_snapshot,
             hero_action_type=ActionType.BET,
             hero_amount=amount,
             pot_before_action=pot_before_action,
@@ -834,6 +842,7 @@ def apply_hero_action(
             seed=seed + 1,
             iters=iters,
             can_raise=True,
+            bucket_view_snapshot=bucket_view_snapshot,
             hero_action_type=ActionType.RAISE,
             hero_amount=raise_to,
             pot_before_action=pot_before_action,

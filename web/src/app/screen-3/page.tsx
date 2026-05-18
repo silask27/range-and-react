@@ -209,7 +209,7 @@ const HERO_NAME = "Hero";
 // result metadata, but Train-mode clicks should not wait on heavy bucket
 // recomputes. Railway is noticeably slower than local here, so Screen 3 uses a
 // deliberately light Monte Carlo pass for responsive training clicks.
-const SCREEN3_ITERS = 32;
+const SCREEN3_ITERS = 8;
 const TIMEOUT_OVERLAY_MS = 2000;
 const VILLAIN_ACTION_REVEAL_MS = 3000;
 
@@ -329,18 +329,21 @@ function Screen3PageContent() {
     [hand, replayPayload, replayStepIndex],
   );
   const activeHand = replayHand ?? hand;
-  const activeResponseSelections = useMemo(
-    () => {
-      if (!currentReplayStep) return responseSelections;
-      const savedSelections = buildReplayResponseSelections(currentReplayStep);
-      const revealCount = getReplayResponseRevealCount(currentReplayStep);
-      if (revealCount == null) {
-        return savedSelections;
-      }
-      return limitReplayResponseSelectionsForStep(currentReplayStep, savedSelections, revealCount);
-    },
-    [currentReplayStep, responseSelections],
-  );
+  const activeResponseSelections = useMemo(() => {
+    if (isReplayMode && replayPayload) {
+      return getReplayVisibleResponseSelections(replayPayload, replayStepIndex);
+    }
+
+    if (
+      activeHand?.ui_gate === "must_fill_response_matrix" ||
+      activeHand?.ui_gate === "must_prune_range"
+    ) {
+      if (hasAnySelection(responseSelections)) return responseSelections;
+      return savedResponseSelectionsFromHand(activeHand);
+    }
+
+    return {};
+  }, [activeHand, isReplayMode, replayPayload, replayStepIndex, responseSelections]);
   const activeStableColumns = currentReplayStep ? [] : stableResponseColumns;
 
   const responseColumns = useMemo(
@@ -778,7 +781,11 @@ function Screen3PageContent() {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ hand_id: handId, iters: SCREEN3_ITERS }),
+      body: JSON.stringify({
+        hand_id: handId,
+        iters: SCREEN3_ITERS,
+        bucket_matrix_view: handRef.current?.bucket_matrix_view,
+      }),
     });
 
     if (!res.ok) {
@@ -850,6 +857,7 @@ function Screen3PageContent() {
         action,
         amount,
         iters: SCREEN3_ITERS,
+        bucket_matrix_view: handRef.current?.bucket_matrix_view,
       }),
     });
 
@@ -1007,9 +1015,22 @@ function Screen3PageContent() {
 
     setIsSavingMatrix(true);
     setError(null);
+    const previousHand = hand;
 
     try {
-      const previousHand = hand;
+      const rowOrder = displayedBucketRows.map((row) => row.bucket_name);
+      const optimisticHand: HandState = {
+        ...previousHand,
+        ui_gate: "hero_to_act",
+        response_matrix_saved: {
+          street: previousHand.street,
+          columns: responseColumns,
+          row_order: rowOrder,
+          selections: responseSelections,
+        },
+      };
+
+      setHand(optimisticHand);
 
       const updated = await saveResponseMatrixRequest(
         hand.hand_id,
@@ -1017,6 +1038,7 @@ function Screen3PageContent() {
       );
       await applyHandUpdateWithVillainPause(previousHand, updated);
     } catch (err) {
+      setHand(previousHand);
       setError(
         err instanceof Error ? err.message : "Failed to save response matrix.",
       );
@@ -1166,7 +1188,11 @@ function Screen3PageContent() {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ hand_id: hand.hand_id, iters: SCREEN3_ITERS }),
+      body: JSON.stringify({
+        hand_id: hand.hand_id,
+        iters: SCREEN3_ITERS,
+        bucket_matrix_view: hand.bucket_matrix_view,
+      }),
     });
 
     if (!res.ok) {
@@ -2977,25 +3003,19 @@ function buildReplayHandView(
     .filter((event): event is ActionEvent => Boolean(event));
   const currentEvent = step.kind === "action" ? actionEventFromReplayStep(step) : null;
   const isResponseStep = isReplayResponseStep(step);
-  const responseColumns = isResponseStep && Array.isArray(step.details?.columns)
-    ? step.details.columns.map(String)
-    : isResponseStep && typeof step.details?.column === "string"
-      ? [step.details.column]
-      : [];
-  const responseSelections = buildReplayResponseSelections(step);
-  const rawReplayBucketView = isPlainRecord(step.details?.bucket_matrix_view)
-    ? (step.details.bucket_matrix_view as BucketMatrixView)
-    : baseHand.bucket_matrix_view;
-  const replayBucketView = normalizeReplayBucketViewForStep(
-    step,
-    rawReplayBucketView,
-    responseSelections,
-  );
-  const currentPruneBucket = step.kind === "range_prune" && typeof step.details?.actual_bucket === "string"
+  const isPruneStep = isReplayPruneStep(step);
+  const responseColumns = getReplayColumnsForStep(replay, boundedIndex);
+  const responseSelections = getReplayVisibleResponseSelections(replay, boundedIndex);
+  const replayBucketView = getReplayBucketViewForStep(baseHand.bucket_matrix_view, replay, boundedIndex);
+  const currentPruneBucket = isPruneStep && typeof step.details?.actual_bucket === "string"
     ? step.details.actual_bucket
     : null;
   const currentPruneSubgroup = step.kind === "range_prune" && typeof step.details?.actual_subgroup === "string"
     ? String(step.details.actual_subgroup)
+    : null;
+  const shouldExposeSavedResponses = isResponseStep || isPruneStep;
+  const currentPruneUiRow = currentPruneBucket
+    ? replayBucketView.rows.find((row) => row.bucket_name === currentPruneBucket) ?? null
     : null;
 
   return {
@@ -3011,12 +3031,12 @@ function buildReplayHandView(
     current_actor: currentEvent?.actor ?? "hero",
     ui_gate: isResponseStep
       ? "must_fill_response_matrix"
-      : step.kind === "range_prune"
+      : isPruneStep
         ? "must_prune_range"
         : "hero_to_act",
     hand_over: boundedIndex === replay.steps.length - 1 && baseHand.hand_over,
     response_matrix_columns: responseColumns,
-    response_matrix_saved: responseColumns.length ? {
+    response_matrix_saved: responseColumns.length && shouldExposeSavedResponses ? {
       street,
       columns: responseColumns,
       row_order: Object.keys(responseSelections),
@@ -3027,9 +3047,115 @@ function buildReplayHandView(
     current_prune_bucket: currentPruneBucket,
     current_prune_row_original: currentPruneBucket ? {
       bucket_name: currentPruneBucket,
-      subgroups: currentPruneSubgroup ? [{ subgroup_name: currentPruneSubgroup, combo_count: 0 }] : [],
+      subgroups: currentPruneUiRow?.subgroups ?? (
+        currentPruneSubgroup ? [{ subgroup_name: currentPruneSubgroup, combo_count: 0 }] : []
+      ),
     } : null,
     current_prune_row_saved_version: null,
+  };
+}
+
+function getReplayBucketViewForStep(
+  fallbackView: BucketMatrixView,
+  replay: ReplayPayload,
+  stepIndex: number,
+): BucketMatrixView {
+  let view = cloneBucketMatrixView(fallbackView);
+  const boundedIndex = Math.max(0, Math.min(stepIndex, replay.steps.length - 1));
+
+  for (let index = 0; index <= boundedIndex; index += 1) {
+    const step = replay.steps[index];
+    if (isPlainRecord(step.details?.bucket_matrix_view)) {
+      view = cloneBucketMatrixView(step.details.bucket_matrix_view as BucketMatrixView);
+    }
+    const isCurrentRemovalStep = index === boundedIndex && step.kind === "range_prune";
+    if (step.kind === "range_prune" && !isCurrentRemovalStep) {
+      view = bucketViewAfterReplayPruneStep(view, step);
+    }
+  }
+
+  const currentStep = replay.steps[boundedIndex];
+  if (isReplayResponseStep(currentStep)) {
+    return normalizeReplayBucketViewForStep(
+      currentStep,
+      view,
+      getReplayVisibleResponseSelections(replay, boundedIndex),
+    );
+  }
+
+  return view;
+}
+
+function cloneBucketMatrixView(view: BucketMatrixView): BucketMatrixView {
+  return {
+    ...view,
+    row_order: [...(view.row_order ?? [])],
+    rows: (view.rows ?? []).map((row) => ({
+      ...row,
+      hands: row.hands ? row.hands.map((hand) => ({ ...hand })) : [],
+      subgroups: (row.subgroups ?? []).map((subgroup) => ({ ...subgroup })),
+    })),
+  };
+}
+
+function bucketViewAfterReplayPruneStep(
+  view: BucketMatrixView,
+  step: ReplayStep,
+): BucketMatrixView {
+  if (step.details?.replay_event_kind !== "prune_remove_subgroup") {
+    return view;
+  }
+
+  const bucketName = typeof step.details.actual_bucket === "string"
+    ? step.details.actual_bucket
+    : typeof step.details.bucket === "string"
+      ? step.details.bucket
+      : "";
+  const subgroupName = typeof step.details.actual_subgroup === "string"
+    ? step.details.actual_subgroup
+    : typeof step.details.subgroup === "string"
+      ? step.details.subgroup
+      : "";
+  if (!bucketName || !subgroupName) return view;
+
+  const totalLiveCombos = typeof step.details?.after_live_combos === "number"
+    ? step.details.after_live_combos
+    : Math.max(0, view.total_live_combos - (typeof step.details?.removed_combo_count === "number" ? step.details.removed_combo_count : 0));
+
+  const rows = view.rows.map((row) => {
+    if (row.bucket_name !== bucketName) {
+      return {
+        ...row,
+        bucket_percent: totalLiveCombos > 0
+          ? roundPercent((row.combo_count / totalLiveCombos) * 100)
+          : 0,
+      };
+    }
+
+    const removedFromSubgroups = row.subgroups.find((subgroup) => subgroup.subgroup_name === subgroupName)?.combo_count;
+    const removedComboCount = typeof step.details?.removed_combo_count === "number"
+      ? step.details.removed_combo_count
+      : removedFromSubgroups ?? 0;
+    const nextComboCount = Math.max(0, row.combo_count - removedComboCount);
+    const nextHands = (row.hands ?? []).filter((hand) => hand.subgroup_name !== subgroupName);
+    const nextSubgroups = row.subgroups.filter((subgroup) => subgroup.subgroup_name !== subgroupName);
+
+    return {
+      ...row,
+      combo_count: nextComboCount,
+      holdings_count: nextComboCount,
+      bucket_percent: totalLiveCombos > 0
+        ? roundPercent((nextComboCount / totalLiveCombos) * 100)
+        : 0,
+      hands: nextHands,
+      subgroups: nextSubgroups,
+    };
+  });
+
+  return {
+    ...view,
+    total_live_combos: totalLiveCombos,
+    rows,
   };
 }
 
@@ -3054,6 +3180,57 @@ function buildReplayResponseSelections(step: ReplayStep): Record<string, Record<
     out[raw.bucket] = { [column]: predicted };
   }
   return out;
+}
+
+function getReplayVisibleResponseSelections(
+  replay: ReplayPayload,
+  stepIndex: number,
+): Record<string, Record<string, string>> {
+  const boundedIndex = Math.max(0, Math.min(stepIndex, replay.steps.length - 1));
+  const step = replay.steps[boundedIndex];
+
+  if (isReplayResponseStep(step)) {
+    const savedSelections = buildReplayResponseSelections(step);
+    const revealCount = getReplayResponseRevealCount(step);
+    if (revealCount == null) return savedSelections;
+    return limitReplayResponseSelectionsForStep(step, savedSelections, revealCount);
+  }
+
+  if (!isReplayPruneStep(step)) return {};
+
+  const priorResponseStep = findPriorReplayResponseStep(replay, boundedIndex, step.street);
+  return priorResponseStep ? buildReplayResponseSelections(priorResponseStep) : {};
+}
+
+function getReplayColumnsForStep(replay: ReplayPayload, stepIndex: number): string[] {
+  const boundedIndex = Math.max(0, Math.min(stepIndex, replay.steps.length - 1));
+  const step = replay.steps[boundedIndex];
+  const responseStep = isReplayResponseStep(step)
+    ? step
+    : findPriorReplayResponseStep(replay, boundedIndex, step.street);
+
+  if (!responseStep) return [];
+  if (Array.isArray(responseStep.details?.columns)) {
+    return responseStep.details.columns.map(String);
+  }
+  if (typeof responseStep.details?.column === "string") {
+    return [responseStep.details.column];
+  }
+  return [];
+}
+
+function findPriorReplayResponseStep(
+  replay: ReplayPayload,
+  beforeIndex: number,
+  street: ReplayStep["street"],
+): ReplayStep | null {
+  for (let index = beforeIndex; index >= 0; index -= 1) {
+    const candidate = replay.steps[index];
+    if (candidate.street !== street) continue;
+    if (isReplayResponseStep(candidate)) return candidate;
+    if (candidate.kind === "street_start") break;
+  }
+  return null;
 }
 
 function normalizeReplayBucketViewForStep(
@@ -3114,6 +3291,10 @@ function isReplayResponseStep(step: ReplayStep | null | undefined): boolean {
   return step?.kind === "response_matrix" || step?.kind === "response_matrix_cell";
 }
 
+function isReplayPruneStep(step: ReplayStep | null | undefined): boolean {
+  return step?.kind === "range_prune" || step?.kind === "range_prune_start";
+}
+
 function getReplayResponseRevealCount(step: ReplayStep): number | null {
   if (!isReplayResponseStep(step)) return null;
   const raw = step.details?.reveal_count;
@@ -3130,7 +3311,35 @@ function expandReplayPayloadSteps(payload: ReplayPayload): ReplayPayload {
 
 function expandReplaySteps(steps: ReplayStep[]): ReplayStep[] {
   const expanded: ReplayStep[] = [];
+  const insertedPruneStarts = new Set<string>();
   for (const step of steps) {
+    if (step.kind === "range_prune" && step.details?.replay_event_kind === "prune_remove_subgroup") {
+      const bucket = typeof step.details.actual_bucket === "string"
+        ? step.details.actual_bucket
+        : typeof step.details.bucket === "string"
+          ? step.details.bucket
+          : "";
+      const historyCount = typeof step.details.history_event_count === "number"
+        ? step.details.history_event_count
+        : String(step.details.history_event_count ?? "");
+      const key = `${step.street}:${historyCount}:${bucket}`;
+      if (bucket && !insertedPruneStarts.has(key)) {
+        insertedPruneStarts.add(key);
+        expanded.push({
+          ...step,
+          kind: "range_prune_start",
+          title: `${bucket} range prune`,
+          summary: `Review ${bucket} before removing subgroups.`,
+          details: {
+            ...(step.details ?? {}),
+            replay_event_kind: "prune_start",
+            actual_bucket: bucket,
+            actual_subgroup: "",
+          },
+        });
+      }
+    }
+
     if (step.kind !== "response_matrix") {
       expanded.push(step);
       continue;
@@ -3306,6 +3515,23 @@ function mergeSelectionsWithShape(
 
 function hasAnySelection(selections: Record<string, Record<string, string>>): boolean {
   return Object.values(selections).some((row) => Object.values(row).some(Boolean));
+}
+
+function savedResponseSelectionsFromHand(
+  hand: HandState | null,
+): Record<string, Record<string, string>> {
+  if (
+    hand?.response_matrix_saved &&
+    "selections" in hand.response_matrix_saved &&
+    hand.response_matrix_saved.selections
+  ) {
+    return hand.response_matrix_saved.selections as Record<string, Record<string, string>>;
+  }
+  return {};
+}
+
+function roundPercent(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
 function getResponseNodeSignature(hand: HandState, columns: string[]): string {
@@ -3698,6 +3924,14 @@ function replayStepDetailLabel(step: ReplayStep): string {
     if (bucket && column && value) {
       return `${bucket}: ${COLUMN_LABELS[column] ?? titleCase(column)} = ${value}`;
     }
+  }
+  if (step.kind === "range_prune_start") {
+    const bucket = typeof step.details?.actual_bucket === "string"
+      ? step.details.actual_bucket
+      : typeof step.details?.bucket === "string"
+        ? step.details.bucket
+        : "";
+    if (bucket) return `Review ${bucket} before pruning`;
   }
   if (step.kind === "range_prune") {
     const subgroup = typeof step.details?.actual_subgroup === "string"

@@ -82,6 +82,42 @@ def _serialize_hand_public(
     return payload
 
 
+def _live_combo_count(hand: HandState) -> int:
+    return sum(len(combos) for combos in hand.villain_range_combos_live.values())
+
+
+def _valid_bucket_matrix_override(
+    hand: HandState,
+    bucket_matrix_view: object,
+    *,
+    previous_board: list[str] | None = None,
+) -> dict | None:
+    if not isinstance(bucket_matrix_view, dict):
+        return None
+    if previous_board is not None and list(previous_board) != list(hand.board):
+        return None
+
+    total_live_combos = bucket_matrix_view.get("total_live_combos")
+    if total_live_combos != _live_combo_count(hand):
+        return None
+
+    rows = bucket_matrix_view.get("rows")
+    if not isinstance(rows, list):
+        return None
+    row_combo_total = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            return None
+        combo_count = row.get("combo_count")
+        if not isinstance(combo_count, int):
+            return None
+        row_combo_total += combo_count
+    if row_combo_total != total_live_combos:
+        return None
+
+    return bucket_matrix_view
+
+
 @router.post("/save")
 def save_response_matrix_route(
     payload: dict = Body(...),
@@ -122,5 +158,9 @@ def save_response_matrix_route(
     return _serialize_hand_public(
         hand,
         iters=iters,
-        bucket_matrix_view_override=bucket_matrix_view if isinstance(bucket_matrix_view, dict) else None,
+        bucket_matrix_view_override=_valid_bucket_matrix_override(
+            hand,
+            bucket_matrix_view,
+            previous_board=list(existing.board),
+        ),
     )

@@ -48,10 +48,11 @@ def _serialize_hand_public(
     hand: HandState,
     *,
     iters: int | None = None,
+    bucket_matrix_view_override: dict | None = None,
 ) -> dict:
     payload = asdict(hand)
 
-    bucket_matrix_view = build_bucket_matrix_view(
+    bucket_matrix_view = bucket_matrix_view_override or build_bucket_matrix_view(
         villain_range_combos_live=hand.villain_range_combos_live,
         board=hand.board,
         hero_hand=hand.hero_hand,
@@ -81,6 +82,42 @@ def _serialize_hand_public(
     return payload
 
 
+def _live_combo_count(hand: HandState) -> int:
+    return sum(len(combos) for combos in hand.villain_range_combos_live.values())
+
+
+def _valid_bucket_matrix_override(
+    hand: HandState,
+    bucket_matrix_view: object,
+    *,
+    previous_board: list[str] | None = None,
+) -> dict | None:
+    if not isinstance(bucket_matrix_view, dict):
+        return None
+    if previous_board is not None and list(previous_board) != list(hand.board):
+        return None
+
+    total_live_combos = bucket_matrix_view.get("total_live_combos")
+    if total_live_combos != _live_combo_count(hand):
+        return None
+
+    rows = bucket_matrix_view.get("rows")
+    if not isinstance(rows, list):
+        return None
+    row_combo_total = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            return None
+        combo_count = row.get("combo_count")
+        if not isinstance(combo_count, int):
+            return None
+        row_combo_total += combo_count
+    if row_combo_total != total_live_combos:
+        return None
+
+    return bucket_matrix_view
+
+
 @router.post("/hero")
 def apply_hero_action_route(
     payload: dict = Body(...),
@@ -92,6 +129,7 @@ def apply_hero_action_route(
     raw_iters = payload.get("iters")
     iters = int(raw_iters) if raw_iters is not None else None
     seed = int(payload.get("seed", 42))
+    bucket_matrix_view = payload.get("bucket_matrix_view")
 
     if not hand_id:
         raise HTTPException(status_code=400, detail="hand_id is required")
@@ -101,14 +139,27 @@ def apply_hero_action_route(
     try:
         existing = get_hand(hand_id)
         ensure_can_access_owner_resource(existing.user_id, current_user)
+        bucket_matrix_view_for_prune = _valid_bucket_matrix_override(
+            existing,
+            bucket_matrix_view,
+        )
         hand = apply_hero_action(
             hand_id=hand_id,
             action=action,
             amount=amount,
             seed=seed,
             iters=iters,
+            bucket_view_snapshot=bucket_matrix_view_for_prune,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return _serialize_hand_public(hand, iters=iters)
+    return _serialize_hand_public(
+        hand,
+        iters=iters,
+        bucket_matrix_view_override=_valid_bucket_matrix_override(
+            hand,
+            bucket_matrix_view,
+            previous_board=list(existing.board),
+        ),
+    )
