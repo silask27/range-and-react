@@ -184,7 +184,6 @@ def _set_prune_gate_for_hero(
     hand.current_actor = Player.HERO
     hand.ui_gate = UIGate.MUST_PRUNE_RANGE
     hand.response_matrix_columns = _response_columns_for_current_hero_node(hand)
-    _clear_response_matrix_node_state(hand)
     _clear_prune_state(hand)
     initialize_prune_state(hand, iters=iters)
 

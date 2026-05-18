@@ -114,7 +114,6 @@ def _set_prune_gate_for_hero(
     hand.current_actor = Player.HERO
     hand.ui_gate = UIGate.MUST_PRUNE_RANGE
     hand.response_matrix_columns = _response_columns_for_current_hero_node(hand)
-    _clear_response_matrix_node_state(hand)
     _clear_prune_state(hand)
     initialize_prune_state(hand, iters=iters)
 
@@ -233,6 +232,7 @@ def _apply_initial_villain_check(
     hand: HandState,
     *,
     note: str,
+    iters: int | None,
 ) -> None:
     hand.history.append(
         ActionEvent(
@@ -244,7 +244,7 @@ def _apply_initial_villain_check(
             forced=False,
         )
     )
-    _set_hero_response_matrix_gate(hand)
+    _set_prune_gate_for_hero(hand, iters=iters)
 
 
 def _apply_initial_villain_bet(
@@ -316,10 +316,9 @@ def start_hand(
     7. Set the appropriate UI gate and response columns
 
     Important Screen 3 behavior:
-    - when initial villain action is BET, the returned hand is already fully
-      prune-ready (rows initialized) so the frontend can wait for the villain
-      "thinking" pause and then open straight into pruning.
-    - when initial villain action is CHECK, hero goes directly to the response matrix.
+    - when villain acts first, the returned hand is already fully prune-ready
+      (rows initialized) so the frontend can wait for the villain "thinking"
+      pause and then open straight into pruning after any non-fold villain action.
     - no extra follow-up call is needed just to initialize prune state.
 
     Iteration rule:
@@ -421,7 +420,7 @@ def start_hand(
         note = _decision_note(decision)
 
         if decision.action == ActionType.CHECK:
-            _apply_initial_villain_check(hand, note=note)
+            _apply_initial_villain_check(hand, note=note, iters=iters)
 
         elif decision.action == ActionType.BET:
             _apply_initial_villain_bet(

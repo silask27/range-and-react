@@ -336,7 +336,8 @@ function Screen3PageContent() {
 
     if (
       activeHand?.ui_gate === "must_fill_response_matrix" ||
-      activeHand?.ui_gate === "must_prune_range"
+      activeHand?.ui_gate === "must_prune_range" ||
+      activeHand?.ui_gate === "hero_to_act"
     ) {
       if (hasAnySelection(responseSelections)) return responseSelections;
       return savedResponseSelectionsFromHand(activeHand);
@@ -349,6 +350,10 @@ function Screen3PageContent() {
   const responseColumns = useMemo(
     () => resolveResponseColumns(activeHand, activeStableColumns),
     [activeHand, activeStableColumns],
+  );
+  const displayResponseColumns = useMemo(
+    () => resolveDisplayResponseColumns(activeHand, responseColumns, activeResponseSelections),
+    [activeHand, responseColumns, activeResponseSelections],
   );
 
   const displayedBucketRows = useMemo(() => {
@@ -1175,39 +1180,56 @@ function Screen3PageContent() {
   }
 
   async function handlePruneSaveRow() {
-  if (!hand) return;
+    if (!hand) return;
 
-  setIsPruneBusy(true);
-  setError(null);
+    setIsPruneBusy(true);
+    setError(null);
 
-  try {
-    const previousHand = hand;
+    try {
+      const previousHand = hand;
 
-    const res = await apiFetch(`${API_BASE}/prune/save-row`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        hand_id: hand.hand_id,
-        iters: SCREEN3_ITERS,
-        bucket_matrix_view: hand.bucket_matrix_view,
-      }),
-    });
+      const res = await apiFetch(`${API_BASE}/prune/save-row`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          hand_id: hand.hand_id,
+          iters: SCREEN3_ITERS,
+          bucket_matrix_view: hand.bucket_matrix_view,
+        }),
+      });
 
-    if (!res.ok) {
-      const detail = await safeReadError(res);
-      throw new Error(detail || `Failed to save prune row (${res.status})`);
+      if (!res.ok) {
+        const detail = await safeReadError(res);
+        throw new Error(detail || `Failed to save prune row (${res.status})`);
+      }
+
+      const updated = (await res.json()) as HandState;
+      await applyHandUpdateWithVillainPause(previousHand, updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save prune row.");
+    } finally {
+      setIsPruneBusy(false);
     }
-
-    const updated = (await res.json()) as HandState;
-    await applyHandUpdateWithVillainPause(previousHand, updated);
-  } catch (err) {
-    setError(err instanceof Error ? err.message : "Failed to save prune row.");
-  } finally {
-    setIsPruneBusy(false);
   }
-}
+
+  async function handlePruneNoChanges() {
+    if (!hand) return;
+
+    setIsPruneBusy(true);
+    setError(null);
+
+    try {
+      const previousHand = hand;
+      const updated = await saveFullPruneStep(hand.hand_id);
+      await applyHandUpdateWithVillainPause(previousHand, updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save prune step.");
+    } finally {
+      setIsPruneBusy(false);
+    }
+  }
 
   async function handleReveal() {
     if (!hand) return;
@@ -1325,12 +1347,12 @@ function Screen3PageContent() {
                   <>
                     <div
                       className={`bucket-row-header columns-${Math.max(
-                        responseColumns.length,
+                        displayResponseColumns.length,
                         1,
                       )}`}
                     >
                       <div className="bucket-row-header-title">Bucket</div>
-                      {responseColumns.map((column) => (
+                      {displayResponseColumns.map((column) => (
                         <div key={column} className="bucket-row-header-cell">
                           {COLUMN_LABELS[column] ?? column}
                         </div>
@@ -1360,7 +1382,7 @@ function Screen3PageContent() {
                       >
                         <div
                           className={`bucket-row-main ${
-                            responseColumns.length === 2 ? "two-actions" : ""
+                            displayResponseColumns.length === 2 ? "two-actions" : ""
                           }`}
                         >
                           <div className="bucket-meta">
@@ -1380,13 +1402,14 @@ function Screen3PageContent() {
                             </div>
                           </div>
 
-                          {responseColumns.map((column) => {
+                          {displayResponseColumns.map((column) => {
                             const selected =
                               activeResponseSelections[row.bucket_name]?.[column] ?? "";
-                            const options = getResponseOptionsForColumn(
+                            const options = getResponseOptionsForDisplay(
                               column,
                               activeHand,
                               scenario,
+                              activeResponseSelections,
                             );
 
                             return (
@@ -1475,8 +1498,16 @@ function Screen3PageContent() {
                               <button
                                 type="button"
                                 className="btn btn-ghost"
+                                onClick={() => void handlePruneNoChanges()}
+                                disabled={isReplayMode || isPruneBusy || isTimeoutTransitioning}
+                              >
+                                No Changes
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-ghost"
                                 onClick={() => void handlePruneRevert()}
-                                disabled={isPruneBusy || isTimeoutTransitioning}
+                                disabled={isReplayMode || isPruneBusy || isTimeoutTransitioning}
                               >
                                 Revert
                               </button>
@@ -1484,7 +1515,7 @@ function Screen3PageContent() {
                                 type="button"
                                 className="btn btn-primary"
                                 onClick={() => void handlePruneSaveRow()}
-                                disabled={isPruneBusy || isTimeoutTransitioning}
+                                disabled={isReplayMode || isPruneBusy || isTimeoutTransitioning}
                               >
                                 Save Row
                               </button>
@@ -3075,6 +3106,11 @@ function getReplayBucketViewForStep(
   }
 
   const currentStep = replay.steps[boundedIndex];
+  if (currentStep.kind === "street_start") {
+    const streetStartView = findReplayStreetStartBucketView(replay, boundedIndex);
+    if (streetStartView) return cloneBucketMatrixView(streetStartView);
+  }
+
   if (isReplayResponseStep(currentStep)) {
     return normalizeReplayBucketViewForStep(
       currentStep,
@@ -3084,6 +3120,26 @@ function getReplayBucketViewForStep(
   }
 
   return view;
+}
+
+function findReplayStreetStartBucketView(
+  replay: ReplayPayload,
+  streetStartIndex: number,
+): BucketMatrixView | null {
+  const streetStartStep = replay.steps[streetStartIndex];
+  const street = streetStartStep?.street;
+  if (!street || street === "preflop") return null;
+
+  for (let index = streetStartIndex; index < replay.steps.length; index += 1) {
+    const step = replay.steps[index];
+    if (index > streetStartIndex && step.kind === "street_start") break;
+    if (step.street !== street) continue;
+    if (isPlainRecord(step.details?.bucket_matrix_view)) {
+      return step.details.bucket_matrix_view as BucketMatrixView;
+    }
+  }
+
+  return null;
 }
 
 function cloneBucketMatrixView(view: BucketMatrixView): BucketMatrixView {
@@ -3563,6 +3619,37 @@ function getSavedResponseColumns(hand: HandState | null): string[] {
   return [];
 }
 
+function getSelectionColumns(
+  selections: Record<string, Record<string, string>>,
+): string[] {
+  const columns: string[] = [];
+  const seen = new Set<string>();
+  for (const row of Object.values(selections)) {
+    for (const column of Object.keys(row)) {
+      if (seen.has(column)) continue;
+      seen.add(column);
+      columns.push(column);
+    }
+  }
+  return columns;
+}
+
+function resolveDisplayResponseColumns(
+  hand: HandState | null,
+  resolvedColumns: string[],
+  selections: Record<string, Record<string, string>>,
+): string[] {
+  if (hand?.ui_gate !== "must_prune_range") return resolvedColumns;
+
+  const selectedColumns = getSelectionColumns(selections);
+  if (selectedColumns.length) return selectedColumns;
+
+  const savedColumns = getSavedResponseColumns(hand);
+  if (savedColumns.length) return savedColumns;
+
+  return resolvedColumns;
+}
+
 function inferResponseColumnsFromState(hand: HandState | null): string[] {
   if (!hand) return [];
   const savedColumns = getSavedResponseColumns(hand);
@@ -3605,7 +3692,7 @@ function areSelectionsComplete(
 }
 
 function getDisplayedBucketRows(hand: HandState): BucketRow[] {
-  const rows = [...hand.bucket_matrix_view.rows];
+  const rows = hand.bucket_matrix_view.rows.filter((row) => row.combo_count > 0);
 
   const rowsByPercent = [...rows].sort((a, b) => {
     if (b.bucket_percent !== a.bucket_percent) {
@@ -4063,6 +4150,32 @@ function getResponseOptionsForColumn(
   return RESPONSE_OPTIONS[column] ?? [];
 }
 
+function getResponseOptionsForDisplay(
+  column: string,
+  hand: HandState,
+  scenario: Scenario,
+  selections: Record<string, Record<string, string>>,
+): Array<{ value: string; label: string; semantic: string }> {
+  if (
+    hand.ui_gate === "must_prune_range" &&
+    columnUsesPassiveAggressiveValues(column, selections)
+  ) {
+    return RESPONSE_OPTIONS.call;
+  }
+
+  return getResponseOptionsForColumn(column, hand, scenario);
+}
+
+function columnUsesPassiveAggressiveValues(
+  column: string,
+  selections: Record<string, Record<string, string>>,
+): boolean {
+  return Object.values(selections).some((row) => {
+    const value = row[column];
+    return value === "P" || value === "A";
+  });
+}
+
 function getLatestVillainEvent(hand: HandState | null): ActionEvent | null {
   if (!hand) return null;
   const villainEvents = hand.history.events.filter(
@@ -4132,8 +4245,6 @@ function buildImmediateHeroActionPreview(
   preview.current_prune_bucket = null;
   preview.current_prune_row_saved_version = null;
   preview.current_prune_row_original = null;
-  preview.response_matrix_columns = [];
-  preview.response_matrix_saved = {};
 
   if (action === "bet" && eventAmount > 0) {
     const previousHeroContrib = round2(hand.betting_round.hero_contrib ?? 0);
