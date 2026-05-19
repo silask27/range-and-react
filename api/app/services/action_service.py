@@ -16,6 +16,7 @@ from api.app.models.enums import ActionType, Player, ResponseColumnType, Street,
 from api.app.models.state import HandState
 from api.app.models.villain_profile import DecisionNode
 from api.app.services.prune_service import initialize_prune_state
+from api.app.services.response_matrix_prefill import prepare_response_matrix_for_new_node
 from api.app.services.scoring_service import record_response_matrix_evaluation
 from api.app.storage.memory_store import store
 
@@ -217,14 +218,18 @@ def _clear_prune_state(hand: HandState) -> None:
     hand.prune_row_saved_versions = {}
 
 
-def _set_hero_response_matrix_gate(hand: HandState) -> None:
+def _set_hero_response_matrix_gate(
+    hand: HandState,
+    *,
+    iters: int | None = None,
+) -> None:
     """
     Move the hand to the hero-side response-matrix step.
     """
     hand.current_actor = Player.HERO
     hand.ui_gate = UIGate.MUST_FILL_RESPONSE_MATRIX
     hand.response_matrix_columns = _response_columns_for_current_hero_node(hand)
-    _clear_response_matrix_node_state(hand)
+    prepare_response_matrix_for_new_node(hand, iters=iters)
     _clear_prune_state(hand)
 
 
@@ -391,13 +396,12 @@ def _advance_street_or_end(
 
     hand.betting_round.reset_for_new_street()
     hand.current_aggressor = previous_street_aggressor
-    _clear_response_matrix_node_state(hand)
     _clear_prune_state(hand)
 
     first_actor = scenario.first_to_act_postflop
 
     if first_actor == Player.HERO:
-        _set_hero_response_matrix_gate(hand)
+        _set_hero_response_matrix_gate(hand, iters=iters)
         return
 
     _resolve_villain_turn(

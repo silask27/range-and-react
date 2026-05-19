@@ -16,6 +16,7 @@ from api.app.models.state import HandState, PruneBucketSnapshot
 from api.app.models.villain_profile import DecisionNode
 from api.app.storage.memory_store import store
 from api.app.services.scoring_service import record_prune_evaluation
+from api.app.services.response_matrix_prefill import prepare_response_matrix_for_new_node
 
 
 AGGRESSIVE_ACTIONS = {ActionType.BET, ActionType.RAISE}
@@ -151,11 +152,15 @@ def _clear_prune_state(hand: HandState) -> None:
 
 
 
-def _set_hero_response_matrix_gate(hand: HandState) -> None:
+def _set_hero_response_matrix_gate(
+    hand: HandState,
+    *,
+    iters: int | None = None,
+) -> None:
     hand.current_actor = Player.HERO
     hand.ui_gate = UIGate.MUST_FILL_RESPONSE_MATRIX
     hand.response_matrix_columns = _response_columns_for_current_hero_node(hand)
-    _clear_response_matrix_node_state(hand)
+    prepare_response_matrix_for_new_node(hand, iters=iters)
     _clear_prune_state(hand)
 
 
@@ -408,7 +413,6 @@ def _advance_to_next_street(
     hand.street = next_street
     hand.betting_round.reset_for_new_street()
     hand.current_aggressor = previous_street_aggressor
-    _clear_response_matrix_node_state(hand)
     _clear_prune_state(hand)
 
 
@@ -429,7 +433,7 @@ def _resolve_street_start_after_advance(
     first_actor = scenario.first_to_act_postflop
 
     if first_actor == Player.HERO:
-        _set_hero_response_matrix_gate(hand)
+        _set_hero_response_matrix_gate(hand, iters=iters)
         return
 
     decision = _choose_villain_action_for_hand(
@@ -519,7 +523,7 @@ def _continue_after_completed_prune(
     _clear_prune_state(hand)
 
     if latest_villain_event is None:
-        _set_hero_response_matrix_gate(hand)
+        _set_hero_response_matrix_gate(hand, iters=iters)
         return
 
     if latest_villain_event.action == ActionType.FOLD:
@@ -527,7 +531,7 @@ def _continue_after_completed_prune(
         return
 
     if latest_villain_event.action in {ActionType.BET, ActionType.RAISE}:
-        _set_hero_response_matrix_gate(hand)
+        _set_hero_response_matrix_gate(hand, iters=iters)
         return
 
     if latest_villain_event.action == ActionType.CALL:
@@ -549,10 +553,10 @@ def _continue_after_completed_prune(
             _resolve_street_start_after_advance(hand, iters=iters)
             return
 
-        _set_hero_response_matrix_gate(hand)
+        _set_hero_response_matrix_gate(hand, iters=iters)
         return
 
-    _set_hero_response_matrix_gate(hand)
+    _set_hero_response_matrix_gate(hand, iters=iters)
 
 
 

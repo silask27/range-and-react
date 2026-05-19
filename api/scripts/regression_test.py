@@ -18,6 +18,8 @@ from api.app.models.betting import BettingRoundState
 from api.app.models.enums import Player, Street, UIGate
 from api.app.models.state import HandState, SessionState
 from api.app.services.action_service import apply_hero_action
+from api.app.services.prune_service import _advance_to_next_street as _advance_to_next_street_after_prune
+from api.app.services.response_matrix_prefill import prepare_response_matrix_for_new_node
 from api.app.storage.db import get_connection, init_db
 from api.app.storage.memory_store import store
 
@@ -289,6 +291,90 @@ class RegressionTestCase(unittest.TestCase):
 
         self.assertTrue(updated.hand_over)
         self.assertEqual(updated.ui_gate, UIGate.HAND_OVER)
+
+    def test_street_advance_keeps_previous_response_matrix_for_prune_display(self) -> None:
+        saved_matrix = {
+            "street": "flop",
+            "columns": ["check", "bet_small", "bet_big"],
+            "row_order": ["SDV", "Draw", "Value"],
+            "selections": {
+                "SDV": {"check": "P", "bet_small": "C", "bet_big": "F"},
+                "Draw": {"check": "P", "bet_small": "C", "bet_big": "C"},
+                "Value": {"check": "A", "bet_small": "C", "bet_big": "C"},
+            },
+            "complete": True,
+            "allow_partial": False,
+            "save_reason": "manual",
+        }
+        hand = HandState(
+            hand_id="preserve-matrix-advance-hand",
+            session_id="preserve-matrix-advance-session",
+            user_id=self.owner_user_id,
+            scenario_id="srp_ip_btn_vs_bb",
+            villain_profile_id="tag",
+            pot=20.0,
+            hero_stack=100.0,
+            villain_stack=100.0,
+            hero_hand=("Ah", "Kd"),
+            villain_hand=("Qs", "Qd"),
+            board=["2h", "4d", "Qh"],
+            street=Street.FLOP,
+            betting_round=BettingRoundState(),
+            hero_tokens_saved=["AA", "KK", "QQ", "AKs", "AKo"],
+            villain_range_combos_live={"QQ": [["Qs", "Qd"]]},
+            current_actor=Player.HERO,
+            ui_gate=UIGate.MUST_PRUNE_RANGE,
+            response_matrix_columns=["check", "bet_small", "bet_big"],
+            response_matrix_saved=saved_matrix,
+        )
+
+        _advance_to_next_street_after_prune(hand)
+
+        self.assertEqual(hand.street, Street.TURN)
+        self.assertEqual(hand.response_matrix_saved, saved_matrix)
+
+    def test_river_air_prefills_from_turn_draw_when_air_is_new(self) -> None:
+        hand = HandState(
+            hand_id="river-air-prefill-hand",
+            session_id="river-air-prefill-session",
+            user_id=self.owner_user_id,
+            scenario_id="srp_ip_btn_vs_bb",
+            villain_profile_id="tag",
+            pot=20.0,
+            hero_stack=100.0,
+            villain_stack=100.0,
+            hero_hand=("As", "Kh"),
+            villain_hand=("Qd", "Qs"),
+            board=["8c", "7c", "6s", "2d", "Ah"],
+            street=Street.RIVER,
+            betting_round=BettingRoundState(),
+            hero_tokens_saved=["AA", "KK", "QQ", "AKs", "AKo"],
+            villain_range_combos_live={"KJs": [["Kc", "Jc"]]},
+            current_actor=Player.HERO,
+            ui_gate=UIGate.MUST_FILL_RESPONSE_MATRIX,
+            response_matrix_columns=["check", "bet_small", "bet_big"],
+            response_matrix_saved={
+                "street": "turn",
+                "columns": ["check", "bet_small", "bet_big"],
+                "row_order": ["Draw", "Value"],
+                "selections": {
+                    "Draw": {"check": "P", "bet_small": "C", "bet_big": "C"},
+                    "Value": {"check": "A", "bet_small": "C", "bet_big": "C"},
+                },
+                "complete": True,
+                "allow_partial": False,
+                "save_reason": "manual",
+            },
+        )
+
+        prepare_response_matrix_for_new_node(hand, iters=10)
+
+        self.assertEqual(hand.response_matrix_saved["street"], "river")
+        self.assertEqual(
+            hand.response_matrix_saved["selections"]["Air"],
+            {"check": "P", "bet_small": "C", "bet_big": "C"},
+        )
+        self.assertFalse(hand.response_matrix_saved["complete"])
 
     def test_member_can_send_flagged_hand_to_coach_replay_queue(self) -> None:
         session = SessionState(
