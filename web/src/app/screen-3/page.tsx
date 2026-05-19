@@ -806,6 +806,18 @@ function Screen3PageContent() {
     selections: Record<string, Record<string, string>>,
     allowPartial = false,
   ): Promise<HandState> {
+    const rowOrder = displayedBucketRows.map((row) => row.bucket_name);
+    const normalizedSelections = filterSelectionsForRowsAndColumns(
+      selections,
+      rowOrder,
+      responseColumns,
+    );
+    const visibleRows = new Set(rowOrder);
+    const visibleColumns = new Set(responseColumns);
+    const normalizedFillSequence = responseFillSequence.filter(
+      (item) => visibleRows.has(item.bucket) && visibleColumns.has(item.column),
+    );
+
     const res = await apiFetch(`${API_BASE}/response-matrix/save`, {
       method: "POST",
       headers: {
@@ -814,9 +826,9 @@ function Screen3PageContent() {
       body: JSON.stringify({
         hand_id: handId,
         iters: SCREEN3_ITERS,
-        selections,
-        row_order: displayedBucketRows.map((row) => row.bucket_name),
-        fill_sequence: responseFillSequence,
+        selections: normalizedSelections,
+        row_order: rowOrder,
+        fill_sequence: normalizedFillSequence,
         bucket_matrix_view: handRef.current?.bucket_matrix_view,
         allow_partial: allowPartial,
         save_reason: allowPartial ? "timer_expired" : "manual",
@@ -1024,6 +1036,11 @@ function Screen3PageContent() {
 
     try {
       const rowOrder = displayedBucketRows.map((row) => row.bucket_name);
+      const normalizedSelections = filterSelectionsForRowsAndColumns(
+        responseSelections,
+        rowOrder,
+        responseColumns,
+      );
       const optimisticHand: HandState = {
         ...previousHand,
         ui_gate: "hero_to_act",
@@ -1031,7 +1048,7 @@ function Screen3PageContent() {
           street: previousHand.street,
           columns: responseColumns,
           row_order: rowOrder,
-          selections: responseSelections,
+          selections: normalizedSelections,
         },
       };
 
@@ -1039,7 +1056,7 @@ function Screen3PageContent() {
 
       const updated = await saveResponseMatrixRequest(
         hand.hand_id,
-        responseSelections,
+        normalizedSelections,
       );
       await applyHandUpdateWithVillainPause(previousHand, updated);
     } catch (err) {
@@ -1498,14 +1515,6 @@ function Screen3PageContent() {
                               <button
                                 type="button"
                                 className="btn btn-ghost"
-                                onClick={() => void handlePruneNoChanges()}
-                                disabled={isReplayMode || isPruneBusy || isTimeoutTransitioning}
-                              >
-                                No Changes
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-ghost"
                                 onClick={() => void handlePruneRevert()}
                                 disabled={isReplayMode || isPruneBusy || isTimeoutTransitioning}
                               >
@@ -1545,6 +1554,17 @@ function Screen3PageContent() {
                       }
                     >
                       {isSavingMatrix ? "Saving..." : "Save Response Matrix"}
+                    </button>
+                  ) : null}
+
+                  {activeHand.ui_gate === "must_prune_range" && !activeHand.hand_over && !isReplayMode ? (
+                    <button
+                      className="btn btn-ghost"
+                      type="button"
+                      onClick={() => void handlePruneNoChanges()}
+                      disabled={isPruneBusy || isVillainThinking || isTimeoutTransitioning}
+                    >
+                      {isPruneBusy ? "Saving..." : "No Changes"}
                     </button>
                   ) : null}
 
@@ -2985,7 +3005,9 @@ function initializeSelectionsFromHand(
   existingSelections?: Record<string, Record<string, string>>,
   allowPartialExisting = false,
 ): Record<string, Record<string, string>> {
-  const rows = hand.bucket_matrix_view.rows.map((row) => row.bucket_name);
+  const rows = hand.bucket_matrix_view.rows
+    .filter((row) => row.combo_count > 0)
+    .map((row) => row.bucket_name);
 
   const blankSelections: Record<string, Record<string, string>> = {};
   for (const rowName of rows) {
@@ -3550,6 +3572,22 @@ function selectionsMatchShape(
     const savedCols = Object.keys(selections[row] ?? {});
     return savedCols.length === columns.length && columns.every((column) => column in (selections[row] ?? {}));
   });
+}
+
+
+function filterSelectionsForRowsAndColumns(
+  selections: Record<string, Record<string, string>>,
+  rows: string[],
+  columns: string[],
+): Record<string, Record<string, string>> {
+  const filtered: Record<string, Record<string, string>> = {};
+  for (const row of rows) {
+    filtered[row] = {};
+    for (const column of columns) {
+      filtered[row][column] = selections[row]?.[column] ?? "";
+    }
+  }
+  return filtered;
 }
 
 
