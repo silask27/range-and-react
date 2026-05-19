@@ -358,8 +358,8 @@ function Screen3PageContent() {
 
   const displayedBucketRows = useMemo(() => {
     if (!activeHand) return [];
-    return getDisplayedBucketRows(activeHand);
-  }, [activeHand]);
+    return getDisplayedBucketRows(activeHand, isReplayMode);
+  }, [activeHand, isReplayMode]);
 
   const currentPruneBucket = useMemo(() => {
     if (!activeHand) return null;
@@ -392,11 +392,12 @@ function Screen3PageContent() {
   const canSaveMatrix =
     !isReplayMode &&
     activeHand?.ui_gate === "must_fill_response_matrix" &&
-    areSelectionsComplete(
-      displayedBucketRows,
-      responseColumns,
-      activeResponseSelections,
-    );
+    (displayedBucketRows.length === 0 ||
+      areSelectionsComplete(
+        displayedBucketRows,
+        responseColumns,
+        activeResponseSelections,
+      ));
 
   const currentStep = getCurrentStepKey(activeHand?.ui_gate, activeHand?.hand_over, isVillainThinking);
   const gateLabel = isVillainThinking
@@ -3066,7 +3067,7 @@ function buildReplayHandView(
   const currentPruneSubgroup = step.kind === "range_prune" && typeof step.details?.actual_subgroup === "string"
     ? String(step.details.actual_subgroup)
     : null;
-  const shouldExposeSavedResponses = isResponseStep || isPruneStep;
+  const shouldExposeSavedResponses = responseColumns.length > 0 && hasAnySelection(responseSelections);
   const currentPruneUiRow = currentPruneBucket
     ? replayBucketView.rows.find((row) => row.bucket_name === currentPruneBucket) ?? null
     : null;
@@ -3089,7 +3090,7 @@ function buildReplayHandView(
         : "hero_to_act",
     hand_over: boundedIndex === replay.steps.length - 1 && baseHand.hand_over,
     response_matrix_columns: responseColumns,
-    response_matrix_saved: responseColumns.length && shouldExposeSavedResponses ? {
+    response_matrix_saved: shouldExposeSavedResponses ? {
       street,
       columns: responseColumns,
       row_order: Object.keys(responseSelections),
@@ -3273,8 +3274,6 @@ function getReplayVisibleResponseSelections(
     if (revealCount == null) return savedSelections;
     return limitReplayResponseSelectionsForStep(step, savedSelections, revealCount);
   }
-
-  if (!isReplayPruneStep(step)) return {};
 
   const priorResponseStep = findPriorReplayResponseStep(replay, boundedIndex, step.street);
   return priorResponseStep ? buildReplayResponseSelections(priorResponseStep) : {};
@@ -3729,7 +3728,7 @@ function areSelectionsComplete(
   );
 }
 
-function getDisplayedBucketRows(hand: HandState): BucketRow[] {
+function getDisplayedBucketRows(hand: HandState, forcePercentOrder = false): BucketRow[] {
   const rows = hand.bucket_matrix_view.rows.filter((row) => row.combo_count > 0);
 
   const rowsByPercent = [...rows].sort((a, b) => {
@@ -3741,6 +3740,8 @@ function getDisplayedBucketRows(hand: HandState): BucketRow[] {
     }
     return a.bucket_name.localeCompare(b.bucket_name);
   });
+
+  if (forcePercentOrder) return rowsByPercent;
 
   if (hand.ui_gate !== "must_prune_range" || hand.prune_row_order.length === 0) {
     if (
