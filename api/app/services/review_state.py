@@ -33,6 +33,10 @@ def review_state_from_metadata(metadata: dict[str, Any] | None) -> dict[str, Any
         "flagged_by_user_id": raw.get("flagged_by_user_id"),
         "sent_at": raw.get("sent_at"),
         "sent_by_user_id": raw.get("sent_by_user_id"),
+        "member_note": str(raw.get("member_note") or ""),
+        "coach_note": str(raw.get("coach_note") or ""),
+        "reviewed_at": raw.get("reviewed_at"),
+        "reviewed_by_user_id": raw.get("reviewed_by_user_id"),
         "organization_ids": clean_ids(raw.get("organization_ids")),
         "coach_recipient_user_ids": clean_ids(raw.get("coach_recipient_user_ids")),
     }

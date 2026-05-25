@@ -268,6 +268,35 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     'CREATE INDEX IF NOT EXISTS idx_org_memberships_org_id ON organization_memberships(organization_id)',
     'CREATE INDEX IF NOT EXISTS idx_org_memberships_user_id ON organization_memberships(user_id)',
     '''
+    CREATE TABLE IF NOT EXISTS cohorts (
+        cohort_id TEXT PRIMARY KEY,
+        organization_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        created_by_user_id TEXT,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(organization_id) REFERENCES organizations(organization_id) ON DELETE CASCADE,
+        FOREIGN KEY(created_by_user_id) REFERENCES users(user_id) ON DELETE SET NULL
+    )
+    ''',
+    'CREATE INDEX IF NOT EXISTS idx_cohorts_org_status ON cohorts(organization_id, status)',
+    '''
+    CREATE TABLE IF NOT EXISTS cohort_memberships (
+        cohort_membership_id TEXT PRIMARY KEY,
+        cohort_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(cohort_id, user_id),
+        FOREIGN KEY(cohort_id) REFERENCES cohorts(cohort_id) ON DELETE CASCADE,
+        FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
+    )
+    ''',
+    'CREATE INDEX IF NOT EXISTS idx_cohort_memberships_cohort_id ON cohort_memberships(cohort_id)',
+    'CREATE INDEX IF NOT EXISTS idx_cohort_memberships_user_id ON cohort_memberships(user_id)',
+    '''
     CREATE TABLE IF NOT EXISTS signup_invites (
         invite_id TEXT PRIMARY KEY,
         invite_code TEXT NOT NULL UNIQUE,

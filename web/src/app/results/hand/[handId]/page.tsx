@@ -34,6 +34,10 @@ type DebriefPayload = {
     flagged: boolean;
     sent_to_coaches: boolean;
     status: string;
+    member_note?: string | null;
+    coach_note?: string | null;
+    reviewed_at?: string | null;
+    reviewed_by_user_id?: string | null;
   };
   prune_evaluations: Array<{
     street: string;
@@ -107,6 +111,9 @@ export default function HandDebriefPage() {
   const { user, isAuthLoading, authError } = useRequireAuth();
   const [payload, setPayload] = useState<DebriefPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reviewDraft, setReviewDraft] = useState({ member_note: "", coach_note: "" });
+  const [reviewMessage, setReviewMessage] = useState<string | null>(null);
+  const [isSavingReview, setIsSavingReview] = useState(false);
 
   useEffect(() => {
     if (!user || !handId) return;
@@ -125,6 +132,14 @@ export default function HandDebriefPage() {
     return () => { cancelled = true; };
   }, [user, handId]);
 
+  useEffect(() => {
+    setReviewDraft({
+      member_note: payload?.review?.member_note ?? "",
+      coach_note: payload?.review?.coach_note ?? "",
+    });
+    setReviewMessage(null);
+  }, [payload?.hand_id, payload?.review?.member_note, payload?.review?.coach_note]);
+
   const rangeTakeaway = useMemo(() => {
     if (!payload) return null;
     return summarizePruning(payload.prune_evaluations);
@@ -134,6 +149,35 @@ export default function HandDebriefPage() {
     if (!payload) return null;
     return summarizeResponses(payload.response_evaluations);
   }, [payload]);
+
+  const canCoachReview = user?.role === "owner" || user?.role === "admin" || user?.role === "coach";
+  const replayHref = payload
+    ? `/screen-1?session_id=${encodeURIComponent(payload.session_id)}&hand_id=${encodeURIComponent(payload.hand_id)}&replay=1`
+    : "#";
+
+  async function saveReviewNote(markReviewed = false) {
+    if (!payload) return;
+    setIsSavingReview(true);
+    setReviewMessage(null);
+    try {
+      const body = canCoachReview
+        ? { coach_note: reviewDraft.coach_note, mark_reviewed: markReviewed }
+        : { member_note: reviewDraft.member_note };
+      const res = await apiFetch(`${API_BASE}/results/hand/${encodeURIComponent(payload.hand_id)}/review`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to save review note.");
+      setPayload((current) => current ? { ...current, review: data.review } : current);
+      setReviewMessage(markReviewed ? "Marked reviewed." : "Review note saved.");
+    } catch (err) {
+      setReviewMessage(err instanceof Error ? err.message : "Unable to save review note.");
+    } finally {
+      setIsSavingReview(false);
+    }
+  }
 
   return (
     <AppShell
@@ -187,6 +231,62 @@ export default function HandDebriefPage() {
               <InfoChip label="Board" value={payload.board.join(" ")} />
             </div>
           </section>
+
+          {payload.review?.flagged ? (
+            <section style={reviewPanelStyle}>
+              <div style={sectionHeaderStyle}>
+                <div>
+                  <div style={eyebrowStyle}>Coach review</div>
+                  <h2 style={sectionTitleStyle}>Replay discussion</h2>
+                  <div style={sectionHeadlineStyle}>
+                    Use this space to prep or capture the coaching note that goes with the hand replay.
+                  </div>
+                </div>
+                <Link href={replayHref} style={secondaryLinkStyle}>Open replay</Link>
+              </div>
+              <div style={reviewGridStyle}>
+                <label style={reviewFieldStyle}>
+                  <span style={reviewLabelStyle}>Member note</span>
+                  <textarea
+                    value={reviewDraft.member_note}
+                    onChange={(event) => setReviewDraft((current) => ({ ...current, member_note: event.target.value }))}
+                    disabled={canCoachReview}
+                    rows={5}
+                    placeholder="No member note yet."
+                    style={reviewTextAreaStyle}
+                  />
+                </label>
+                <label style={reviewFieldStyle}>
+                  <span style={reviewLabelStyle}>Coach comment</span>
+                  <textarea
+                    value={reviewDraft.coach_note}
+                    onChange={(event) => setReviewDraft((current) => ({ ...current, coach_note: event.target.value }))}
+                    disabled={!canCoachReview}
+                    rows={5}
+                    placeholder={canCoachReview ? "Add the coaching point to discuss during replay." : "No coach comment yet."}
+                    style={reviewTextAreaStyle}
+                  />
+                </label>
+              </div>
+              <div style={reviewFooterStyle}>
+                <div style={rowMetaStyle}>
+                  Status: {payload.review.status || "flagged"}
+                  {payload.review.reviewed_at ? ` · Reviewed ${formatDate(payload.review.reviewed_at)}` : ""}
+                </div>
+                <div style={reviewActionsStyle}>
+                  <button type="button" onClick={() => void saveReviewNote(false)} disabled={isSavingReview} style={secondaryButtonStyle}>
+                    {isSavingReview ? "Saving..." : "Save note"}
+                  </button>
+                  {canCoachReview ? (
+                    <button type="button" onClick={() => void saveReviewNote(true)} disabled={isSavingReview} style={primaryButtonStyle}>
+                      Mark reviewed
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+              {reviewMessage ? <div style={reviewMessage.startsWith("Unable") ? errorStyle : emptyStyle}>{reviewMessage}</div> : null}
+            </section>
+          ) : null}
 
           <section style={twoColumnStyle}>
             <MetricSection
@@ -245,7 +345,7 @@ export default function HandDebriefPage() {
                   <h2 style={sectionTitleStyle}>Street-by-street sequence</h2>
                 </div>
                 {payload.review?.flagged ? (
-                  <Link href={`/screen-1?session_id=${encodeURIComponent(payload.session_id)}&hand_id=${encodeURIComponent(payload.hand_id)}&replay=1`} style={secondaryLinkStyle}>Replay hand</Link>
+                  <Link href={replayHref} style={secondaryLinkStyle}>Open replay</Link>
                 ) : null}
               </div>
               <div style={historyListStyle}>
@@ -400,6 +500,12 @@ function formatAmount(value: number) {
   return `${Number(value.toFixed(2)).toString()}bb`;
 }
 
+function formatDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
 function capitalize(value: string) {
   if (!value) return value;
   return value.slice(0, 1).toUpperCase() + value.slice(1);
@@ -413,6 +519,13 @@ const truthPanelStyle: CSSProperties = { display: "grid", gridTemplateColumns: "
 const truthGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 };
 const truthHeadlineStyle: CSSProperties = { marginTop: 10, fontSize: 30, lineHeight: 1.08, fontWeight: 900, letterSpacing: "-0.04em", color: PALETTE.cream };
 const truthMetaStyle: CSSProperties = { marginTop: 8, color: PALETTE.muted, fontSize: 14 };
+const reviewPanelStyle: CSSProperties = { borderTop: "1px solid var(--line-soft)", paddingTop: 18, display: "grid", gap: 14 };
+const reviewGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))", gap: 14 };
+const reviewFieldStyle: CSSProperties = { display: "grid", gap: 8 };
+const reviewLabelStyle: CSSProperties = { color: PALETTE.soft, fontSize: 12, textTransform: "uppercase", letterSpacing: 1.05, fontWeight: 900 };
+const reviewTextAreaStyle: CSSProperties = { width: "100%", minHeight: 118, resize: "vertical", borderRadius: 14, border: "1px solid var(--line)", background: "var(--surface-fill-strong)", color: PALETTE.cream, padding: "12px 14px", font: "inherit", lineHeight: 1.45 };
+const reviewFooterStyle: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" };
+const reviewActionsStyle: CSSProperties = { display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" };
 const sectionHeaderStyle: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", marginBottom: 16 };
 const eyebrowStyle: CSSProperties = { color: PALETTE.coral, fontSize: 12, textTransform: "uppercase", letterSpacing: 1.3, fontWeight: 900 };
 const sectionTitleStyle: CSSProperties = { margin: 0, fontSize: 25, lineHeight: 1.08, letterSpacing: "-0.035em", color: PALETTE.cream };
@@ -442,5 +555,7 @@ const historyListStyle: CSSProperties = { display: "grid", gap: 10 };
 const historyRowStyle: CSSProperties = { display: "grid", gridTemplateColumns: "76px minmax(0, 1fr)", gap: 12, padding: "13px 0", borderTop: "1px solid var(--line-soft)" };
 const historyStreetStyle: CSSProperties = { color: PALETTE.coral, fontSize: 12, fontWeight: 900, textTransform: "uppercase", letterSpacing: 1 };
 const secondaryLinkStyle: CSSProperties = { padding: "10px 14px", borderRadius: 999, border: "1px solid var(--line)", background: "var(--surface-fill-strong)", color: PALETTE.cream, textDecoration: "none", fontWeight: 800, fontSize: 14, whiteSpace: "nowrap" };
+const secondaryButtonStyle: CSSProperties = { padding: "10px 14px", borderRadius: 999, border: "1px solid var(--line)", background: "var(--surface-fill-strong)", color: PALETTE.cream, fontWeight: 800, fontSize: 14, cursor: "pointer" };
+const primaryButtonStyle: CSSProperties = { padding: "10px 14px", borderRadius: 999, border: `1px solid ${PALETTE.coral}`, background: PALETTE.coral, color: PALETTE.cream, fontWeight: 850, fontSize: 14, cursor: "pointer" };
 const errorStyle: CSSProperties = { color: "var(--accent)", fontWeight: 700 };
 const emptyStyle: CSSProperties = { color: PALETTE.soft, fontSize: 14, lineHeight: 1.6 };

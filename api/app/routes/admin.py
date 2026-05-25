@@ -14,10 +14,19 @@ from api.app.services.access_service import (
     resolve_default_organization_id_for_user,
     shared_organization_ids,
 )
+from api.app.services.accountability_service import build_weekly_accountability_digest
 from api.app.services.analytics_service import get_admin_analytics, invalidate_admin_analytics, invalidate_dashboard_overview
 from api.app.services.assignment_service import count_assignments_with_progress, create_assignment, list_assignments_with_progress, summarize_assignments
 from api.app.services.audit_service import count_audit_logs, list_audit_logs, log_audit_event
-from api.app.services.email_service import build_signup_invite_url, email_delivery_enabled, send_signup_invite_email
+from api.app.services.cohort_service import (
+    add_cohort_members,
+    create_assignments_for_cohort,
+    create_cohort,
+    get_cohort,
+    list_cohort_members,
+    list_cohorts,
+)
+from api.app.services.email_service import build_signup_invite_url, email_delivery_enabled, send_accountability_digest_email, send_signup_invite_email
 from api.app.services.auth_service import (
     count_users,
     count_users_by_role,
@@ -158,6 +167,47 @@ def admin_overview_route(background_tasks: BackgroundTasks, current_user: UserAc
             for item in analytics.get('users_needing_attention', [])[:12]
         ],
         'analytics_cache': analytics.get('_cache'),
+    }
+
+
+@router.get('/accountability-digest')
+def admin_accountability_digest_route(
+    current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH)),
+    days: int = Query(7, ge=1, le=31),
+) -> dict:
+    org_scope, user_scope = _scope(current_user)
+    return {
+        'digest': build_weekly_accountability_digest(
+            visible_user_ids=user_scope,
+            visible_organization_ids=org_scope,
+            days=days,
+        )
+    }
+
+
+@router.post('/accountability-digest/send')
+def admin_send_accountability_digest_route(
+    background_tasks: BackgroundTasks,
+    payload: dict | None = Body(default=None),
+    current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH)),
+) -> dict:
+    org_scope, user_scope = _scope(current_user)
+    days = int((payload or {}).get('days') or 7)
+    digest = build_weekly_accountability_digest(
+        visible_user_ids=user_scope,
+        visible_organization_ids=org_scope,
+        days=days,
+    )
+    background_tasks.add_task(
+        send_accountability_digest_email,
+        email=current_user.email,
+        display_name=current_user.display_name or current_user.email,
+        digest=digest,
+    )
+    return {
+        'queued': email_delivery_enabled(),
+        'recipient_count': 1,
+        'digest': digest,
     }
 
 
@@ -403,6 +453,97 @@ def admin_assignments_route(
             'total': count_assignments_with_progress(status=status, search=search, organization_ids=org_scope, target_user_ids=user_scope),
         },
     }
+
+
+@router.get('/cohorts')
+def admin_cohorts_route(current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> dict:
+    org_scope, _ = _scope(current_user)
+    return {'cohorts': list_cohorts(organization_ids=org_scope)}
+
+
+@router.post('/cohorts')
+def admin_create_cohort_route(payload: dict = Body(...), current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> dict:
+    organization_id = _resolve_invite_org(current_user, (str(payload.get('organization_id') or '').strip() or None))
+    if not organization_id:
+        raise HTTPException(status_code=400, detail='organization_id is required')
+    try:
+        cohort = create_cohort(
+            organization_id=organization_id,
+            name=str(payload.get('name') or '').strip(),
+            description=payload.get('description'),
+            created_by_user_id=current_user.user_id,
+            metadata=payload.get('metadata') if isinstance(payload.get('metadata'), dict) else None,
+        )
+        raw_user_ids = payload.get('user_ids')
+        if isinstance(raw_user_ids, list) and raw_user_ids:
+            user_ids = [str(value) for value in raw_user_ids]
+            for user_id in user_ids:
+                ensure_user_access(current_user, user_id)
+            add_cohort_members(cohort_id=cohort['cohort_id'], user_ids=user_ids)
+            cohort = get_cohort(cohort['cohort_id']) or cohort
+        log_audit_event(action_type='cohort_created', actor=current_user, organization_id=organization_id, metadata={'cohort_id': cohort['cohort_id'], 'name': cohort['name']})
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {'cohort': cohort}
+
+
+@router.get('/cohorts/{cohort_id}/members')
+def admin_cohort_members_route(cohort_id: str, current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> dict:
+    cohort = get_cohort(cohort_id)
+    if cohort is None:
+        raise HTTPException(status_code=404, detail='Cohort not found')
+    ensure_organization_access(current_user, cohort['organization_id'])
+    try:
+        members = list_cohort_members(cohort_id=cohort_id, active_only=False)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {'cohort': cohort, 'members': members}
+
+
+@router.post('/cohorts/{cohort_id}/members')
+def admin_add_cohort_members_route(cohort_id: str, payload: dict = Body(...), current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> dict:
+    cohort = get_cohort(cohort_id)
+    if cohort is None:
+        raise HTTPException(status_code=404, detail='Cohort not found')
+    ensure_organization_access(current_user, cohort['organization_id'])
+    raw_user_ids = payload.get('user_ids')
+    user_ids = [str(value) for value in raw_user_ids] if isinstance(raw_user_ids, list) else ([str(payload.get('user_id'))] if payload.get('user_id') else [])
+    for user_id in user_ids:
+        ensure_user_access(current_user, user_id)
+    try:
+        result = add_cohort_members(cohort_id=cohort_id, user_ids=user_ids)
+        log_audit_event(action_type='cohort_members_added', actor=current_user, organization_id=cohort['organization_id'], metadata={'cohort_id': cohort_id, 'added_count': len(result['added_user_ids'])})
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result
+
+
+@router.post('/cohorts/{cohort_id}/assignments')
+def admin_create_cohort_assignment_route(cohort_id: str, payload: dict = Body(...), current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> dict:
+    cohort = get_cohort(cohort_id)
+    if cohort is None:
+        raise HTTPException(status_code=404, detail='Cohort not found')
+    ensure_organization_access(current_user, cohort['organization_id'])
+    try:
+        result = create_assignments_for_cohort(
+            cohort_id=cohort_id,
+            created_by=current_user,
+            title=str(payload.get('title') or '').strip(),
+            description=payload.get('description'),
+            scenario_id=(str(payload.get('scenario_id')).strip() or None) if payload.get('scenario_id') not in {None, ''} else None,
+            villain_profile_id=(str(payload.get('villain_profile_id')).strip() or None) if payload.get('villain_profile_id') not in {None, ''} else None,
+            repetition_target=int(payload.get('repetition_target') or 0),
+            minimum_overall_score=float(payload['minimum_overall_score']) if payload.get('minimum_overall_score') not in {None, ''} else None,
+            due_at=(str(payload.get('due_at')).strip() or None) if payload.get('due_at') is not None else None,
+        )
+        log_audit_event(action_type='cohort_assignment_created', actor=current_user, organization_id=cohort['organization_id'], metadata={'cohort_id': cohort_id, 'created_count': result['created_count'], 'title': payload.get('title')})
+        for assignment in result.get('assignments') or []:
+            invalidate_dashboard_overview(user_id=assignment['target_user_id'])
+        org_scope, user_scope = _scope(current_user)
+        invalidate_admin_analytics(visible_user_ids=user_scope, visible_organization_ids=org_scope)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result
 
 
 @router.post('/assignments')

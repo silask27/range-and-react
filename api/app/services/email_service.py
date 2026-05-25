@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import asdict, dataclass
+from html import escape
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -233,3 +234,65 @@ def send_welcome_email(
             "html": html,
         }
     )
+
+
+def send_accountability_digest_email(*, email: str, digest: dict[str, Any], display_name: str | None = None) -> EmailDeliveryResult:
+    first_name = escape((display_name or "coach").strip() or "coach")
+    summary = digest.get("summary", {}) if isinstance(digest, dict) else {}
+    period = digest.get("period", {}) if isinstance(digest, dict) else {}
+
+    def stat(label: str, key: str) -> str:
+        return f"<li><strong>{escape(label)}:</strong> {escape(str(summary.get(key, 0)))}</li>"
+
+    def rows(items: list[dict[str, Any]], *, empty: str, formatter) -> str:
+        if not items:
+            return f"<p>{escape(empty)}</p>"
+        return "<ul>" + "".join(f"<li>{formatter(item)}</li>" for item in items[:5]) + "</ul>"
+
+    weakest_members = rows(
+        digest.get("weakest_members") or [],
+        empty="No scored member hands in this period.",
+        formatter=lambda item: f"{escape(str(item.get('display_name') or item.get('email') or 'Member'))}: {escape(str(item.get('avg_overall_score') or 'unscored'))} over {escape(str(item.get('hands') or 0))} hands",
+    )
+    missed_members = rows(
+        digest.get("missed_members") or [],
+        empty="Every active member trained during this period.",
+        formatter=lambda item: escape(str(item.get("display_name") or item.get("email") or "Member")),
+    )
+    weak_spots = rows(
+        digest.get("weak_spots") or [],
+        empty="Not enough completed hands to identify weak spots.",
+        formatter=lambda item: f"{escape(str(item.get('label') or 'Spot'))}: {escape(str(item.get('avg_overall_score') or 'unscored'))} across {escape(str(item.get('hands') or 0))} hands",
+    )
+    overdue = rows(
+        digest.get("overdue_assignments") or [],
+        empty="No overdue assignments.",
+        formatter=lambda item: f"{escape(str(item.get('title') or 'Assignment'))}: {escape(str((item.get('progress') or {}).get('progress_count', 0)))} / {escape(str((item.get('progress') or {}).get('repetition_target', item.get('repetition_target', 0))))} reps",
+    )
+
+    subject = "Weekly Range & React accountability digest"
+    html = f"""
+    <div style=\"font-family:Inter,Arial,sans-serif;line-height:1.6;color:#141210\">
+      <p>Hi {first_name},</p>
+      <p>Here is the Range &amp; React accountability snapshot for the last {escape(str(period.get('days', 7)))} days.</p>
+      <ul>
+        {stat("Active members", "active_members")}
+        {stat("Members trained", "members_trained")}
+        {stat("Members missed", "members_missed")}
+        {stat("Completed hands", "completed_hands")}
+        {stat("Active assignments", "active_assignments")}
+        {stat("Overdue assignments", "overdue_assignments")}
+      </ul>
+      <h3>Members needing attention</h3>
+      {weakest_members}
+      <h3>Members who did not train</h3>
+      {missed_members}
+      <h3>Weakest current spots</h3>
+      {weak_spots}
+      <h3>Overdue assignments</h3>
+      {overdue}
+      <p><a href=\"{settings.frontend_url.rstrip('/')}/admin\" style=\"display:inline-block;padding:12px 18px;background:#E57257;color:#fff;text-decoration:none;border-radius:10px;font-weight:700\">Open coach dashboard</a></p>
+      <p style=\"color:#5f5a52\">Support: {settings.support_email}</p>
+    </div>
+    """
+    return _post_resend({"to": [email], "subject": subject, "html": html})

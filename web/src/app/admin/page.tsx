@@ -57,9 +57,26 @@ type AnalyticsPayload = {
   };
 };
 
+type AccountabilityDigest = {
+  period: { days: number; from: string; to: string };
+  summary: {
+    active_members: number;
+    members_trained: number;
+    members_missed: number;
+    completed_hands: number;
+    active_assignments: number;
+    overdue_assignments: number;
+  };
+  missed_members: Array<{ user_id: string; display_name: string; email: string; hands: number }>;
+  weakest_members: Array<{ user_id: string; display_name: string; email: string; hands: number; avg_overall_score: number | null }>;
+  weak_spots: Array<{ label: string; hands: number; avg_overall_score: number | null; avg_ranging_score: number | null; avg_response_score: number | null }>;
+  overdue_assignments: Array<{ assignment_id: string; title: string; target_user_id: string; progress?: { progress_count: number; repetition_target: number } }>;
+};
+
 type AuditEntry = { audit_log_id: string; action_type: string; created_at: string; target_user_id: string | null };
 type OrganizationEntry = { organization_id: string; name: string; slug: string; external_provider: string | null; members: Array<{ user_id: string; display_name: string | null; email: string; membership_role: string }> };
 type InviteEntry = { invite_id: string; invite_code: string; email: string | null; role: string; organization_id: string | null; membership_role: string; expires_at: string | null; consumed_at: string | null; status: string; invite_url?: string; email_delivery?: { status?: string; detail?: string | null } | null };
+type CohortEntry = { cohort_id: string; organization_id: string; name: string; description: string | null; status: string; member_count: number };
 type TabKey = "analytics" | "assignments" | "members";
 
 const PALETTE = { cream: "#F0EBE0", coral: "#E76F51", green: "#6A9E72", muted: "rgba(240,235,224,0.45)", soft: "rgba(240,235,224,0.08)" };
@@ -121,13 +138,16 @@ export default function AdminPage() {
   const [villains, setVillains] = useState<Option[]>([]);
   const [scenarios, setScenarios] = useState<Option[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsPayload | null>(null);
+  const [digest, setDigest] = useState<AccountabilityDigest | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([]);
   const [organizations, setOrganizations] = useState<OrganizationEntry[]>([]);
   const [invites, setInvites] = useState<InviteEntry[]>([]);
+  const [cohorts, setCohorts] = useState<CohortEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("analytics");
-  const [createState, setCreateState] = useState({ target_user_id: "", title: "", description: "", scenario_id: "", villain_profile_id: "", repetition_target: 20, minimum_overall_score: "", due_at: "" });
+  const [createState, setCreateState] = useState({ target_type: "member", target_user_id: "", cohort_id: "", title: "", description: "", scenario_id: "", villain_profile_id: "", repetition_target: 20, minimum_overall_score: "", due_at: "" });
+  const [cohortState, setCohortState] = useState({ name: "", description: "", organization_id: "", member_user_ids: [] as string[] });
   const [externalState, setExternalState] = useState({ user_id: "", provider: "", external_user_id: "", external_email: "" });
   const [orgState, setOrgState] = useState({ name: "", slug: "", external_provider: "", external_org_id: "" });
   const [orgMemberState, setOrgMemberState] = useState({ organization_id: "", user_id: "", membership_role: "member" });
@@ -265,32 +285,38 @@ export default function AdminPage() {
   }
 
   async function loadAll() {
-    const [usersData, assignmentsData, villainsRes, scenariosRes, analyticsRes, auditsData, orgsRes, invitesRes] = await Promise.all([
+    const [usersData, assignmentsData, villainsRes, scenariosRes, analyticsRes, digestRes, auditsData, orgsRes, invitesRes, cohortsRes] = await Promise.all([
       loadPagedCollection<UserEntry>("/admin/users", "users"),
       loadPagedCollection<AssignmentEntry>("/admin/assignments", "assignments"),
       apiFetch(`${API_BASE}/villains`, { cache: "no-store" }),
       apiFetch(`${API_BASE}/scenarios`, { cache: "no-store" }),
       apiFetch(`${API_BASE}/admin/analytics`, { cache: "no-store" }),
+      apiFetch(`${API_BASE}/admin/accountability-digest`, { cache: "no-store" }),
       loadPagedCollection<AuditEntry>("/admin/audit-logs", "audit_logs", 1000),
       apiFetch(`${API_BASE}/admin/organizations`, { cache: "no-store" }),
       apiFetch(`${API_BASE}/admin/signup-invites?limit=${ADMIN_COLLECTION_CAP}`, { cache: "no-store" }),
+      apiFetch(`${API_BASE}/admin/cohorts`, { cache: "no-store" }),
     ]);
-    const [villainsData, scenariosData, analyticsData, orgsData, invitesData] = await Promise.all([
-      villainsRes.json(), scenariosRes.json(), analyticsRes.json(), orgsRes.json(), invitesRes.json(),
+    const [villainsData, scenariosData, analyticsData, digestData, orgsData, invitesData, cohortsData] = await Promise.all([
+      villainsRes.json(), scenariosRes.json(), analyticsRes.json(), digestRes.json(), orgsRes.json(), invitesRes.json(), cohortsRes.json(),
     ]);
     if (!villainsRes.ok) throw new Error(typeof villainsData.detail === "string" ? villainsData.detail : "Unable to load villains.");
     if (!scenariosRes.ok) throw new Error(typeof scenariosData.detail === "string" ? scenariosData.detail : "Unable to load scenarios.");
     if (!analyticsRes.ok) throw new Error(typeof analyticsData.detail === "string" ? analyticsData.detail : "Unable to load analytics.");
+    if (!digestRes.ok) throw new Error(typeof digestData.detail === "string" ? digestData.detail : "Unable to load accountability digest.");
     if (!orgsRes.ok) throw new Error(typeof orgsData.detail === "string" ? orgsData.detail : "Unable to load organizations.");
     if (!invitesRes.ok) throw new Error(typeof invitesData.detail === "string" ? invitesData.detail : "Unable to load invites.");
+    if (!cohortsRes.ok) throw new Error(typeof cohortsData.detail === "string" ? cohortsData.detail : "Unable to load cohorts.");
     setUsers(usersData);
     setAssignments(assignmentsData);
     setVillains((villainsData as Array<{ id: string; display_name: string }>).map((item) => ({ id: item.id, display_name: item.display_name })));
     setScenarios((scenariosData as Array<{ id: string; display_name: string }>).map((item) => ({ id: item.id, display_name: item.display_name })));
     setAnalytics(analyticsData as AnalyticsPayload);
+    setDigest((digestData as { digest: AccountabilityDigest }).digest);
     setAuditLogs(auditsData);
     setOrganizations((orgsData as { organizations: OrganizationEntry[] }).organizations);
     setInvites((invitesData as { invites: InviteEntry[] }).invites);
+    setCohorts((cohortsData as { cohorts: CohortEntry[] }).cohorts);
   }
 
   useEffect(() => {
@@ -306,14 +332,52 @@ export default function AdminPage() {
     event.preventDefault();
     setError(null); setNotice(null);
     try {
-      const res = await apiFetch(`${API_BASE}/admin/assignments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(createState) });
+      const payload = {
+        title: createState.title,
+        description: createState.description,
+        scenario_id: createState.scenario_id,
+        villain_profile_id: createState.villain_profile_id,
+        repetition_target: createState.repetition_target,
+        minimum_overall_score: createState.minimum_overall_score,
+        due_at: createState.due_at,
+        target_user_id: createState.target_user_id,
+      };
+      const endpoint = createState.target_type === "cohort"
+        ? `${API_BASE}/admin/cohorts/${encodeURIComponent(createState.cohort_id)}/assignments`
+        : `${API_BASE}/admin/assignments`;
+      const res = await apiFetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await res.json();
       if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to create assignment.");
-      setCreateState({ target_user_id: "", title: "", description: "", scenario_id: "", villain_profile_id: "", repetition_target: 20, minimum_overall_score: "", due_at: "" });
-      setNotice("Assignment created.");
+      setCreateState({ target_type: "member", target_user_id: "", cohort_id: "", title: "", description: "", scenario_id: "", villain_profile_id: "", repetition_target: 20, minimum_overall_score: "", due_at: "" });
+      const createdCount = Number((data as { created_count?: number }).created_count ?? 1);
+      setNotice(createState.target_type === "cohort" ? `Created ${createdCount} assignment${createdCount === 1 ? "" : "s"} for that cohort.` : "Assignment created.");
       await loadAll();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to create assignment.");
+    }
+  }
+
+  async function handleCreateCohort(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null); setNotice(null);
+    try {
+      const res = await apiFetch(`${API_BASE}/admin/cohorts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: cohortState.name,
+          description: cohortState.description || undefined,
+          organization_id: cohortState.organization_id || undefined,
+          user_ids: cohortState.member_user_ids,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to create cohort.");
+      setCohortState({ name: "", description: "", organization_id: "", member_user_ids: [] });
+      setNotice("Cohort created.");
+      await loadAll();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create cohort.");
     }
   }
 
@@ -404,6 +468,50 @@ export default function AdminPage() {
       await loadAll();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to create bulk invites.");
+    }
+  }
+
+  function handleDownloadRosterTemplate() {
+    const csv = "email,display_name\nmember1@example.com,Demo Member 1\nmember2@example.com,Demo Member 2\n";
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "range-and-react-roster-template.csv";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleRosterCsvUpload(file: File | null) {
+    if (!file) return;
+    setError(null);
+    setNotice(null);
+    const text = await file.text();
+    const emails = extractEmailsFromCsv(text);
+    if (!emails.length) {
+      setError("No valid emails were found in that CSV.");
+      return;
+    }
+    setBulkInviteState((current) => ({ ...current, emails: emails.join("\n") }));
+    setNotice(`Loaded ${emails.length} email${emails.length === 1 ? "" : "s"} from the roster CSV.`);
+  }
+
+  async function handleSendDigest() {
+    setError(null); setNotice(null);
+    try {
+      const res = await apiFetch(`${API_BASE}/admin/accountability-digest/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days: 7 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to send digest.");
+      setNotice((data as { queued?: boolean }).queued === false ? "Digest preview refreshed. Email delivery is not configured in this environment." : "Accountability digest queued for your email.");
+      if ((data as { digest?: AccountabilityDigest }).digest) setDigest((data as { digest: AccountabilityDigest }).digest);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to send digest.");
     }
   }
 
@@ -547,6 +655,21 @@ export default function AdminPage() {
                     <InsightCard tone="green" title="Action-read strength" copy={analytics.insight_drivers.response.high} />
                   </div>
                 </section>
+                <section style={panelStyle}>
+                  <SectionHeader eyebrow="Accountability" title="Weekly coach digest" />
+                  {digest ? (
+                    <div style={stackStyle}>
+                      <div style={digestStatGridStyle}>
+                        <DigestStat label="Trained" value={`${digest.summary.members_trained}/${digest.summary.active_members}`} />
+                        <DigestStat label="Hands" value={digest.summary.completed_hands} />
+                        <DigestStat label="Missed" value={digest.summary.members_missed} />
+                        <DigestStat label="Overdue" value={digest.summary.overdue_assignments} />
+                      </div>
+                      <div style={helperCopyStyle}>Email includes the member attention list, no-training list, weakest current spots, and overdue assignments for the last seven days.</div>
+                      <button type="button" onClick={() => void handleSendDigest()} style={secondaryButtonStyle}>Email digest to me</button>
+                    </div>
+                  ) : <EmptyState copy="No digest preview available yet." />}
+                </section>
               </div>
             </section>
           ) : null}
@@ -556,10 +679,23 @@ export default function AdminPage() {
               <section style={assignmentPanelStyle}>
                 <SectionHeader eyebrow="Create" title="Assign the next reps" />
                 <form onSubmit={handleCreateAssignment} style={formGridStyle}>
-                  <label style={labelStyle}>Member<select value={createState.target_user_id} onChange={(event) => setCreateState((current) => ({ ...current, target_user_id: event.target.value }))} style={inputStyle} required>
-                    <option value="">Select member</option>
-                    {users.filter((entry) => entry.role === "member").map((entry) => <option key={entry.user_id} value={entry.user_id}>{entry.display_name || entry.email}</option>)}
-                  </select></label>
+                  <div style={twoColStyle}>
+                    <label style={labelStyle}>Assignment target<select value={createState.target_type} onChange={(event) => setCreateState((current) => ({ ...current, target_type: event.target.value, target_user_id: "", cohort_id: "" }))} style={inputStyle}>
+                      <option value="member">Single member</option>
+                      <option value="cohort">Cohort</option>
+                    </select></label>
+                    {createState.target_type === "cohort" ? (
+                      <label style={labelStyle}>Cohort<select value={createState.cohort_id} onChange={(event) => setCreateState((current) => ({ ...current, cohort_id: event.target.value }))} style={inputStyle} required>
+                        <option value="">Select cohort</option>
+                        {cohorts.map((cohort) => <option key={cohort.cohort_id} value={cohort.cohort_id}>{cohort.name} ({cohort.member_count})</option>)}
+                      </select></label>
+                    ) : (
+                      <label style={labelStyle}>Member<select value={createState.target_user_id} onChange={(event) => setCreateState((current) => ({ ...current, target_user_id: event.target.value }))} style={inputStyle} required>
+                        <option value="">Select member</option>
+                        {users.filter((entry) => entry.role === "member").map((entry) => <option key={entry.user_id} value={entry.user_id}>{entry.display_name || entry.email}</option>)}
+                      </select></label>
+                    )}
+                  </div>
                   <label style={labelStyle}><span style={labelTitleStyle}>Title <span style={requiredStyle}>*</span></span><input value={createState.title} onChange={(event) => setCreateState((current) => ({ ...current, title: event.target.value }))} style={inputStyle} placeholder="Ex. 25 reps of 3Bet IP vs Tom" required /></label>
                   <label style={labelStyle}>Description<textarea value={createState.description} onChange={(event) => setCreateState((current) => ({ ...current, description: event.target.value }))} style={{ ...inputStyle, minHeight: 92 }} placeholder="Optional assignment note" /></label>
                   <div style={twoColStyle}>
@@ -571,7 +707,7 @@ export default function AdminPage() {
                     <label style={labelStyle}>Min score<input type="number" min={0} max={100} value={createState.minimum_overall_score} onChange={(event) => setCreateState((current) => ({ ...current, minimum_overall_score: event.target.value }))} style={inputStyle} placeholder="Optional" /></label>
                     <label style={labelStyle}>Due date<input type="date" value={createState.due_at} onChange={(event) => setCreateState((current) => ({ ...current, due_at: event.target.value }))} style={inputStyle} /></label>
                   </div>
-                  <button type="submit" style={primaryButtonStyle}>Create assignment</button>
+                  <button type="submit" style={primaryButtonStyle}>{createState.target_type === "cohort" ? "Assign to cohort" : "Create assignment"}</button>
                 </form>
               </section>
               <section style={assignmentPanelStyle}>
@@ -587,6 +723,32 @@ export default function AdminPage() {
                       <div style={tagStyle}>{assignment.status}</div>
                     </div>
                   )) : <EmptyState copy="No active assignments yet." />}
+                </div>
+              </section>
+              <section style={assignmentPanelStyle}>
+                <SectionHeader eyebrow="Cohorts" title="Groups for mass assignment" />
+                <form onSubmit={handleCreateCohort} style={formGridStyle}>
+                  <label style={labelStyle}>Name<input value={cohortState.name} onChange={(event) => setCohortState((current) => ({ ...current, name: event.target.value }))} style={inputStyle} placeholder="Ex. Study Group A" required /></label>
+                  <label style={labelStyle}>Organization<select value={cohortState.organization_id} onChange={(event) => setCohortState((current) => ({ ...current, organization_id: event.target.value }))} style={inputStyle} required>
+                    <option value="">Select organization</option>
+                    {organizations.map((org) => <option key={org.organization_id} value={org.organization_id}>{org.name}</option>)}
+                  </select></label>
+                  <label style={labelStyle}>Members<select multiple value={cohortState.member_user_ids} onChange={(event) => setCohortState((current) => ({ ...current, member_user_ids: Array.from(event.currentTarget.selectedOptions).map((option) => option.value) }))} style={{ ...inputStyle, minHeight: 150 }}>
+                    {users.filter((entry) => entry.role === "member").map((entry) => <option key={entry.user_id} value={entry.user_id}>{entry.display_name || entry.email}</option>)}
+                  </select></label>
+                  <label style={labelStyle}>Description<textarea value={cohortState.description} onChange={(event) => setCohortState((current) => ({ ...current, description: event.target.value }))} style={{ ...inputStyle, minHeight: 76 }} placeholder="Optional internal note" /></label>
+                  <button type="submit" style={secondaryButtonStyle}>Create cohort</button>
+                </form>
+                <div style={{ ...scrollBoxStyle, marginTop: 16 }}>
+                  {cohorts.length ? cohorts.map((cohort) => (
+                    <div key={cohort.cohort_id} style={scrollRowStyle}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={rowTitleStyle}>{cohort.name}</div>
+                        <div style={rowMetaStyle}>{inviteOrganizationName.get(cohort.organization_id) || "Organization"} · {cohort.member_count} members</div>
+                      </div>
+                      <span style={tagStyle}>{cohort.status}</span>
+                    </div>
+                  )) : <EmptyState copy="No cohorts created yet." />}
                 </div>
               </section>
             </section>
@@ -700,6 +862,13 @@ export default function AdminPage() {
                     <details className="admin-tool-disclosure" style={detailsStyle}>
                       <summary style={summaryStyle}><span className="admin-tool-caret" aria-hidden="true">›</span><span>Bulk roster invites</span></summary>
                       <form onSubmit={handleCreateBulkInvites} style={stackStyle}>
+                        <div style={actionClusterStyle}>
+                          <button type="button" onClick={handleDownloadRosterTemplate} style={secondaryButtonStyle}>Download CSV template</button>
+                          <label style={{ ...secondaryButtonStyle, cursor: "pointer" }}>
+                            Import CSV
+                            <input type="file" accept=".csv,text/csv" onChange={(event) => void handleRosterCsvUpload(event.currentTarget.files?.[0] ?? null)} style={{ display: "none" }} />
+                          </label>
+                        </div>
                         <label style={labelStyle}><span style={labelTitleStyle}>Email list</span><textarea value={bulkInviteState.emails} onChange={(event) => setBulkInviteState((current) => ({ ...current, emails: event.target.value }))} placeholder="One email per line" style={{ ...inputStyle, minHeight: 140, resize: "vertical" }} required /></label>
                         <div style={twoColStyle}>
                           <label style={labelStyle}><span style={labelTitleStyle}>Account role</span><select value={bulkInviteState.role} onChange={(event) => updateBulkInviteRole(event.target.value)} style={inputStyle}>{roleOptionsForUser(canManageRoles).map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
@@ -712,7 +881,7 @@ export default function AdminPage() {
                           <div />
                           <label style={labelStyle}><span style={labelTitleStyle}>Invite expires in</span><input type="number" min={1} max={90} value={bulkInviteState.expires_in_days} onChange={(event) => setBulkInviteState((current) => ({ ...current, expires_in_days: Number(event.target.value) || 14 }))} placeholder="Expires in days" style={inputStyle} /></label>
                         </div>
-                        <div style={helperCopyStyle}>Use this when a training company sends you a member or coach list.</div>
+                        <div style={helperCopyStyle}>Use this when a training company sends you a roster. The import reads the email column, then uses the role and organization selected here.</div>
                         <button type="submit" style={primaryButtonStyle}>Create bulk invites</button>
                       </form>
                     </details>
@@ -801,6 +970,7 @@ function MemberDetailRow({ title, hands, ranging, response, activeAssignments, o
   );
 }
 function MetricPill({ label, value, tone }: { label: string; value: number | null; tone: "coral" | "green" }) { return <div style={{ ...metricPillStyle, color: tone === "coral" ? PALETTE.coral : PALETTE.green }}>{label} {formatScore(value)}</div>; }
+function DigestStat({ label, value }: { label: string; value: string | number }) { return <div style={digestStatStyle}><div style={headerStatLabelStyle}>{label}</div><div style={digestStatValueStyle}>{value}</div></div>; }
 function EmptyState({ copy }: { copy: string }) { return <div style={emptyStateStyle}>{copy}</div>; }
 function parseInsight(copy: string) {
   const marker = ' is ';
@@ -840,6 +1010,24 @@ function dueSortValue(value: string | null | undefined) {
   return Number.isFinite(timestamp) ? timestamp : Number.MAX_SAFE_INTEGER;
 }
 
+function extractEmailsFromCsv(text: string) {
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (!lines.length) return [];
+  const header = lines[0].toLowerCase().split(",").map((item) => item.trim());
+  const emailIndex = header.includes("email") ? header.indexOf("email") : 0;
+  const rows = header.includes("email") ? lines.slice(1) : lines;
+  const emails: string[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const cells = row.split(",").map((cell) => cell.trim().replace(/^"|"$/g, ""));
+    const email = (cells[emailIndex] || "").toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || seen.has(email)) continue;
+    seen.add(email);
+    emails.push(email);
+  }
+  return emails;
+}
+
 const panelStyle: CSSProperties = { borderTop: "1px solid var(--line-soft)", paddingTop: 18 };
 const errorStyle: CSSProperties = { color: "var(--accent)", fontWeight: 700 };
 const noticeStyle: CSSProperties = { color: "var(--success)", fontWeight: 700 };
@@ -863,6 +1051,9 @@ const headerStatLabelStyle: CSSProperties = { color: "inherit", opacity: 0.9, fo
 const headerStatValueStyle: CSSProperties = { marginTop: 6, fontSize: 28, fontWeight: 900, color: "inherit" };
 const headerStatHelperStyle: CSSProperties = { marginTop: 4, opacity: 0.88, fontSize: 12, lineHeight: 1.45 };
 const stackStyle: CSSProperties = { display: "grid", gap: 12 };
+const digestStatGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(90px, 1fr))", gap: 10 };
+const digestStatStyle: CSSProperties = { minHeight: 82, borderRadius: 14, border: "1px solid var(--line)", background: "var(--surface-fill)", padding: "12px 13px", display: "grid", alignContent: "space-between" };
+const digestStatValueStyle: CSSProperties = { marginTop: 7, color: PALETTE.cream, fontSize: 24, fontWeight: 900 };
 const rowStyle: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 14, alignItems: "center", paddingTop: 14, borderTop: "1px solid var(--line-soft)" };
 const memberAdminRowStyle: CSSProperties = { ...rowStyle, alignItems: "flex-start", padding: "18px 18px", border: "1px solid var(--line)", borderRadius: 18, background: "var(--surface-fill)", boxShadow: "0 10px 24px rgba(0,0,0,0.16)" };
 const memberDetailRowStyle: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 16, alignItems: "center", padding: "16px 18px", border: "1px solid var(--line)", borderRadius: 18, background: "var(--surface-fill)", boxShadow: "0 10px 24px rgba(0,0,0,0.14)" };

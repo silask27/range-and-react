@@ -28,7 +28,7 @@ services:
       VRT_DATABASE_URL: postgresql://range_and_react:range_and_react@postgres:5432/range_and_react_demo
       VRT_DEMO_MODE_ENABLED: "true"
       VRT_DEMO_PUBLIC_CREDENTIALS: "true"
-      VRT_DEMO_ORG_NAME: Hungry Horse Demo Workspace
+      VRT_DEMO_ORG_NAME: Coaching Demo Workspace
       VRT_DEMO_OWNER_EMAIL: owner@demo.local
       VRT_DEMO_COACH_EMAIL: coach@demo.local
       VRT_DEMO_MEMBER_EMAIL: member@demo.local

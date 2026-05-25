@@ -14,6 +14,7 @@ from api.app.services.review_service import (
     list_review_queue,
     send_flagged_hands_to_coaches,
     set_hand_review_flag,
+    update_hand_review_note,
 )
 from api.app.services.scoring_service import build_hand_debrief, build_results_overview
 
@@ -52,7 +53,25 @@ def flag_hand_for_review_route(
     current_user: UserAccount = Depends(get_current_user),
 ) -> dict:
     flagged = bool(payload.get('flagged', True))
-    return {'review': set_hand_review_flag(hand_id, user=current_user, flagged=flagged)}
+    member_note = str(payload.get('member_note') or '').strip() if isinstance(payload, dict) else None
+    return {'review': set_hand_review_flag(hand_id, user=current_user, flagged=flagged, member_note=member_note)}
+
+
+@router.patch('/hand/{hand_id}/review')
+def update_hand_review_route(
+    hand_id: str,
+    payload: dict[str, Any],
+    current_user: UserAccount = Depends(get_current_user),
+) -> dict:
+    return {
+        'review': update_hand_review_note(
+            hand_id,
+            user=current_user,
+            member_note=payload.get('member_note') if isinstance(payload, dict) else None,
+            coach_note=payload.get('coach_note') if isinstance(payload, dict) else None,
+            mark_reviewed=bool(payload.get('mark_reviewed')) if isinstance(payload, dict) else False,
+        )
+    }
 
 
 @router.post('/review/send')

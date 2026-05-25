@@ -518,6 +518,14 @@ class RegressionTestCase(unittest.TestCase):
         self.assertEqual(flag_response.status_code, 200)
         self.assertTrue(flag_response.json()["review"]["flagged"])
 
+        coach_note_response = self.client.patch(
+            f"/results/hand/{hand.hand_id}/review",
+            headers={"Authorization": f"Bearer {self.coach_token}"},
+            json={"coach_note": "Review turn sizing with the member."},
+        )
+        self.assertEqual(coach_note_response.status_code, 200)
+        self.assertEqual(coach_note_response.json()["review"]["coach_note"], "Review turn sizing with the member.")
+
         coach_queue_before = self.client.get(
             "/results/review-queue",
             headers={"Authorization": f"Bearer {self.coach_token}"},

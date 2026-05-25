@@ -61,7 +61,7 @@ def _serialize_assignment_row(row) -> dict[str, Any]:
 
 
 
-def create_assignment(*, created_by_user_id: str, target_user_id: str, title: str, description: str | None, scenario_id: str | None, villain_profile_id: str | None, repetition_target: int, minimum_overall_score: float | None, due_at: str | None, organization_id: str | None = None) -> dict[str, Any]:
+def create_assignment(*, created_by_user_id: str, target_user_id: str, title: str, description: str | None, scenario_id: str | None, villain_profile_id: str | None, repetition_target: int, minimum_overall_score: float | None, due_at: str | None, organization_id: str | None = None, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
     title_clean = (title or '').strip()
     target_user_id = (target_user_id or '').strip()
     organization_id_clean = (organization_id or '').strip() or None
@@ -88,7 +88,7 @@ def create_assignment(*, created_by_user_id: str, target_user_id: str, title: st
         raise ValueError('Unknown villain_profile_id')
     now = _utcnow_iso()
     assignment_id = str(uuid4())
-    metadata = {'source': 'coach_assignment', 'version': 2}
+    metadata_payload = {'source': 'coach_assignment', 'version': 2, **(metadata if isinstance(metadata, dict) else {})}
     with get_connection() as conn:
         conn.execute(
             """
@@ -110,7 +110,7 @@ def create_assignment(*, created_by_user_id: str, target_user_id: str, title: st
                 int(repetition_target),
                 float(minimum_overall_score) if minimum_overall_score is not None else None,
                 due_at,
-                json_dumps(metadata),
+                json_dumps(metadata_payload),
                 now,
                 now,
             ),

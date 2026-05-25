@@ -1,6 +1,6 @@
 # Demo Walkthrough
 
-Use this flow when demoing the product to a coaching company such as Hungry Horse Poker.
+Use this flow when demoing the product to a professional coaching company.
 
 ## 1. Log in as owner or coach
 - Open `/login`

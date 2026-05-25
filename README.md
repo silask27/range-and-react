@@ -79,7 +79,7 @@ The login page only exposes demo credentials when **both** of these are true:
 - `VRT_DEMO_MODE_ENABLED=true`
 - `VRT_DEMO_PUBLIC_CREDENTIALS=true`
 
-That keeps the feature generic for white-label/pitch environments without hardcoding the app to Hungry Horse or any one coaching business.
+That keeps the feature generic for white-label/pitch environments without hardcoding the app to any one coaching business.
 
 ## Demo docs
 - `docs/demo-walkthrough.md`

@@ -17,6 +17,7 @@ from api.app.services.access_service import (
 from api.app.services.hand_service import get_hand
 from api.app.services.organization_service import list_organization_members
 from api.app.services.review_state import REVIEW_METADATA_KEY, clean_ids, review_state_from_metadata
+from api.app.storage.db import get_connection, json_loads
 from api.app.storage.memory_store import store
 
 
@@ -70,7 +71,7 @@ def _coach_recipients_for_member(member_user_id: str) -> tuple[list[str], list[s
     return sorted(recipients), organization_ids
 
 
-def set_hand_review_flag(hand_id: str, *, user: UserAccount, flagged: bool) -> dict[str, Any]:
+def set_hand_review_flag(hand_id: str, *, user: UserAccount, flagged: bool, member_note: str | None = None) -> dict[str, Any]:
     result = _completed_hand_result(hand_id)
     _ensure_owns_hand_result(result, user)
 
@@ -81,6 +82,7 @@ def set_hand_review_flag(hand_id: str, *, user: UserAccount, flagged: bool) -> d
             "flagged": True,
             "flagged_at": review.get("flagged_at") or _utcnow_iso(),
             "flagged_by_user_id": user.user_id,
+            "member_note": str(member_note or review.get("member_note") or "").strip()[:1200],
             "status": "sent" if review.get("sent_to_coaches") else "flagged",
         })
     else:
@@ -92,9 +94,39 @@ def set_hand_review_flag(hand_id: str, *, user: UserAccount, flagged: bool) -> d
             "flagged_by_user_id": None,
             "sent_at": None,
             "sent_by_user_id": None,
+            "member_note": "",
+            "coach_note": "",
+            "reviewed_at": None,
+            "reviewed_by_user_id": None,
             "organization_ids": [],
             "coach_recipient_user_ids": [],
         })
+    metadata[REVIEW_METADATA_KEY] = review
+    _persist_result_metadata(result, metadata)
+    return review_state_from_metadata(metadata)
+
+
+def update_hand_review_note(hand_id: str, *, user: UserAccount, member_note: str | None = None, coach_note: str | None = None, mark_reviewed: bool = False) -> dict[str, Any]:
+    result = _completed_hand_result(hand_id)
+    owner_id = str(result.get("user_id") or "")
+    review = review_state_from_metadata(result.get("metadata"))
+    if owner_id == user.user_id:
+        allowed = True
+    else:
+        allowed = _can_view_review_result(result, user)
+    if not allowed:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to that hand review.")
+
+    metadata = dict(result.get("metadata") or {})
+    review = review_state_from_metadata(metadata)
+    if member_note is not None and owner_id == user.user_id:
+        review["member_note"] = str(member_note or "").strip()[:1200]
+    if coach_note is not None and user.role in {UserRole.OWNER, UserRole.ADMIN, UserRole.COACH}:
+        review["coach_note"] = str(coach_note or "").strip()[:1600]
+    if mark_reviewed and user.role in {UserRole.OWNER, UserRole.ADMIN, UserRole.COACH}:
+        review["status"] = "reviewed"
+        review["reviewed_at"] = _utcnow_iso()
+        review["reviewed_by_user_id"] = user.user_id
     metadata[REVIEW_METADATA_KEY] = review
     _persist_result_metadata(result, metadata)
     return review_state_from_metadata(metadata)
@@ -154,11 +186,13 @@ def _can_view_review_result(result: dict[str, Any], user: UserAccount) -> bool:
     owner_id = str(result.get("user_id") or "")
     if owner_id == user.user_id:
         return True
+    if user.role == UserRole.OWNER:
+        return True
+    if user.role in {UserRole.ADMIN, UserRole.COACH} and owner_id in set(get_visible_user_ids(user) or []):
+        return True
     review = review_state_from_metadata(result.get("metadata"))
     if not review.get("sent_to_coaches"):
         return False
-    if user.role == UserRole.OWNER:
-        return True
     if user.role not in {UserRole.ADMIN, UserRole.COACH}:
         return False
     if user.user_id in set(review.get("coach_recipient_user_ids") or []):
@@ -174,15 +208,61 @@ def ensure_can_view_review_hand(hand_id: str, user: UserAccount) -> dict[str, An
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to that hand review.")
 
 
-def list_review_queue(*, user: UserAccount) -> dict[str, Any]:
-    visible_ids = get_visible_user_ids(user)
-    candidate_user_ids = [user.user_id] if user.role == UserRole.MEMBER else visible_ids
-    if candidate_user_ids is None:
-        records = store.list_hand_results(limit=1000)
+def _serialize_result_row(row: Any) -> dict[str, Any]:
+    return {
+        "hand_id": row["hand_id"],
+        "user_id": row["user_id"],
+        "session_id": row["session_id"],
+        "scenario_id": row["scenario_id"],
+        "villain_profile_id": row["villain_profile_id"],
+        "status": row["status"],
+        "street": row["street"],
+        "ui_gate": row["ui_gate"],
+        "hand_over": bool(row["hand_over"]),
+        "total_live_combos": row["total_live_combos"],
+        "started_at": row["started_at"],
+        "updated_at": row["updated_at"],
+        "completed_at": row["completed_at"],
+        "ranging_score": row["ranging_score"],
+        "response_score": row["response_score"],
+        "overall_score": row["overall_score"],
+        "metadata": json_loads(row["metadata_json"]),
+    }
+
+
+def _list_review_candidate_results(*, user: UserAccount, limit: int = 5000) -> list[dict[str, Any]]:
+    if user.role == UserRole.MEMBER:
+        candidate_user_ids: list[str] | None = [user.user_id]
     else:
-        records = []
-        for user_id in candidate_user_ids:
-            records.extend(store.list_hand_results(user_id=user_id, limit=1000))
+        candidate_user_ids = get_visible_user_ids(user)
+    params: list[Any] = []
+    where = ["hand_over = 1"]
+    if candidate_user_ids is not None:
+        user_ids = clean_ids(candidate_user_ids)
+        if not user_ids:
+            return []
+        placeholders = ", ".join("?" for _ in user_ids)
+        where.append(f"user_id IN ({placeholders})")
+        params.extend(user_ids)
+    params.append(max(1, min(int(limit), 5000)))
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT hand_id, user_id, session_id, scenario_id, villain_profile_id, status, street, ui_gate,
+                   hand_over, total_live_combos, started_at, updated_at, completed_at,
+                   ranging_score, response_score, overall_score, metadata_json
+            FROM hand_results
+            WHERE {' AND '.join(where)}
+            ORDER BY COALESCE(completed_at, updated_at) DESC
+            LIMIT ?
+            """,
+            tuple(params),
+        ).fetchall()
+    return [_serialize_result_row(row) for row in rows]
+
+
+def list_review_queue(*, user: UserAccount) -> dict[str, Any]:
+    records = _list_review_candidate_results(user=user)
 
     rows = [
         _review_queue_context(row)
@@ -190,6 +270,8 @@ def list_review_queue(*, user: UserAccount) -> dict[str, Any]:
         if row.get("hand_over") and _can_view_review_result(row, user)
     ]
     rows = [row for row in rows if row.get("review", {}).get("flagged")]
+    if user.role in {UserRole.ADMIN, UserRole.COACH}:
+        rows = [row for row in rows if row.get("review", {}).get("sent_to_coaches")]
     rows.sort(key=lambda item: item.get("review", {}).get("sent_at") or item.get("review", {}).get("flagged_at") or item.get("completed_at") or "", reverse=True)
     return {"review_queue": rows}
 
