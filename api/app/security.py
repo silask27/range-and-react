@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Cookie, Depends, Header, HTTPException, status
 
+from api.app.config import settings
 from api.app.models.auth import UserAccount
 from api.app.models.enums import UserRole
 from api.app.services.auth_service import get_user_by_token
 
 
-def _extract_bearer_token(authorization: str | None) -> str:
+def _extract_auth_token(authorization: str | None, auth_cookie: str | None) -> str:
+    if not authorization and auth_cookie:
+        return auth_cookie.strip()
     if not authorization:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Authentication required')
     scheme, _, token = authorization.partition(' ')
@@ -16,8 +19,11 @@ def _extract_bearer_token(authorization: str | None) -> str:
     return token.strip()
 
 
-def get_current_user(authorization: str | None = Header(default=None)) -> UserAccount:
-    token = _extract_bearer_token(authorization)
+def get_current_user(
+    authorization: str | None = Header(default=None),
+    auth_cookie: str | None = Cookie(default=None, alias=settings.auth_cookie_name),
+) -> UserAccount:
+    token = _extract_auth_token(authorization, auth_cookie)
     return get_user_by_token(token)
 
 

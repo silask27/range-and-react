@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import { getStoredAuthToken } from "../lib/auth";
+import { getStoredAuthUser } from "../lib/auth";
 import SiteFooter from "../components/app/SiteFooter";
 
 const VILLAINS = [
@@ -73,7 +73,7 @@ export default function LandingPage() {
   const [hasToken, setHasToken] = useState(false);
 
   useEffect(() => {
-    setHasToken(Boolean(getStoredAuthToken()));
+    setHasToken(Boolean(getStoredAuthUser()));
   }, []);
 
   return (

@@ -17,7 +17,7 @@ from api.app.services.access_service import (
 from api.app.services.analytics_service import get_admin_analytics, invalidate_admin_analytics, invalidate_dashboard_overview
 from api.app.services.assignment_service import count_assignments_with_progress, create_assignment, list_assignments_with_progress, summarize_assignments
 from api.app.services.audit_service import count_audit_logs, list_audit_logs, log_audit_event
-from api.app.services.email_service import build_signup_invite_url, send_signup_invite_email
+from api.app.services.email_service import build_signup_invite_url, email_delivery_enabled, send_signup_invite_email
 from api.app.services.auth_service import (
     count_users,
     count_users_by_role,
@@ -97,20 +97,29 @@ def _decorate_invite(invite: dict, email_delivery: dict | None = None) -> dict:
     return item
 
 
-def _send_invite_email(invite: dict, current_user: UserAccount) -> dict:
+def _queue_invite_email(background_tasks: BackgroundTasks, invite: dict, current_user: UserAccount) -> dict:
+    if not invite.get('email') or not email_delivery_enabled():
+        delivery = send_signup_invite_email(
+            email=invite.get('email'),
+            invite_code=invite['invite_code'],
+            invited_by_name=current_user.display_name or current_user.email,
+            expires_at=invite.get('expires_at'),
+        )
+        return delivery.to_dict()
     organization_name = None
     if invite.get('organization_id'):
         organization = get_organization(str(invite['organization_id']))
         if organization is not None:
             organization_name = organization.get('name')
-    delivery = send_signup_invite_email(
+    background_tasks.add_task(
+        send_signup_invite_email,
         email=invite.get('email'),
         invite_code=invite['invite_code'],
         organization_name=organization_name,
         invited_by_name=current_user.display_name or current_user.email,
         expires_at=invite.get('expires_at'),
     )
-    return delivery.to_dict()
+    return {'status': 'queued', 'provider': 'resend', 'skipped': False}
 
 
 
@@ -155,7 +164,7 @@ def admin_overview_route(background_tasks: BackgroundTasks, current_user: UserAc
 @router.get('/users')
 def admin_users_route(
     current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH)),
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     search: str | None = None,
     role: str | None = None,
@@ -181,8 +190,9 @@ def _target_user_for_maintenance(current_user: UserAccount, target_user_id: str)
         raise HTTPException(status_code=404, detail='User not found')
     if target.user_id == current_user.user_id:
         raise HTTPException(status_code=400, detail='You cannot manage your own account from this table')
-    if current_user.role == UserRole.COACH:
+    if current_user.role != UserRole.OWNER:
         ensure_user_access(current_user, target.user_id)
+    if current_user.role == UserRole.COACH:
         if target.role != UserRole.MEMBER:
             raise HTTPException(status_code=403, detail='Coaches can only manage member accounts in their organization')
     if current_user.role == UserRole.ADMIN and target.role == UserRole.OWNER:
@@ -232,6 +242,8 @@ def admin_delete_user_route(user_id: str, current_user: UserAccount = Depends(re
 
 @router.post('/users/{user_id}/external-identities')
 def admin_link_external_identity_route(user_id: str, payload: dict = Body(...), current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN))) -> dict:
+    if current_user.role != UserRole.OWNER:
+        ensure_user_access(current_user, user_id)
     provider = str(payload.get('provider') or '').strip()
     external_user_id = str(payload.get('external_user_id') or '').strip()
     if not provider or not external_user_id:
@@ -251,14 +263,14 @@ def admin_link_external_identity_route(user_id: str, payload: dict = Body(...), 
 
 
 @router.get('/signup-invites')
-def admin_signup_invites_route(current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH)), limit: int = 100) -> dict:
+def admin_signup_invites_route(current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH)), limit: int = Query(100, ge=1, le=2500)) -> dict:
     org_scope, _ = _scope(current_user)
     invites = [_decorate_invite(invite) for invite in list_signup_invites(limit=limit, include_consumed=False, organization_ids=org_scope)]
     return {'invites': invites}
 
 
 @router.post('/signup-invites')
-def admin_create_signup_invite_route(payload: dict = Body(...), current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> dict:
+def admin_create_signup_invite_route(background_tasks: BackgroundTasks, payload: dict = Body(...), current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> dict:
     email = (str(payload.get('email') or '').strip() or None)
     role_raw = str(payload.get('role') or UserRole.MEMBER.value).strip().lower()
     requested_org_id = (str(payload.get('organization_id') or '').strip() or None)
@@ -299,14 +311,14 @@ def admin_create_signup_invite_route(payload: dict = Body(...), current_user: Us
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    email_delivery = _send_invite_email(invite, current_user)
+    email_delivery = _queue_invite_email(background_tasks, invite, current_user)
     return {'invite': _decorate_invite(invite, email_delivery)}
 
 
 @router.delete('/signup-invites/{invite_id}')
 def admin_delete_signup_invite_route(invite_id: str, current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> dict:
     org_scope, _ = _scope(current_user)
-    invite_lookup = {item['invite_id']: item for item in list_signup_invites(limit=500, organization_ids=org_scope)}
+    invite_lookup = {item['invite_id']: item for item in list_signup_invites(limit=2500, organization_ids=org_scope)}
     invite = invite_lookup.get(str(invite_id).strip())
     if invite is None:
         raise HTTPException(status_code=404, detail='Invite not found in your scope')
@@ -319,7 +331,7 @@ def admin_delete_signup_invite_route(invite_id: str, current_user: UserAccount =
 
 
 @router.post('/signup-invites/bulk')
-def admin_create_signup_invites_bulk_route(payload: dict = Body(...), current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> dict:
+def admin_create_signup_invites_bulk_route(background_tasks: BackgroundTasks, payload: dict = Body(...), current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> dict:
     requested_org_id = (str(payload.get('organization_id') or '').strip() or None)
     role_raw = str(payload.get('role') or UserRole.MEMBER.value).strip().lower()
     membership_role = str(payload.get('membership_role') or role_raw).strip().lower() or role_raw
@@ -360,7 +372,7 @@ def admin_create_signup_invites_bulk_route(payload: dict = Body(...), current_us
                 expires_in_days=expires_in_days,
                 metadata=payload.get('metadata') if isinstance(payload.get('metadata'), dict) else None,
             )
-            email_delivery = _send_invite_email(invite, current_user)
+            email_delivery = _queue_invite_email(background_tasks, invite, current_user)
             invites.append(_decorate_invite(invite, email_delivery))
             log_audit_event(
                 action_type='signup_invite_created',
@@ -377,7 +389,7 @@ def admin_create_signup_invites_bulk_route(payload: dict = Body(...), current_us
 @router.get('/assignments')
 def admin_assignments_route(
     current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH)),
-    limit: int = Query(200, ge=1, le=500),
+    limit: int = Query(200, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     status: str | None = None,
     search: str | None = None,
@@ -427,7 +439,7 @@ def admin_create_assignment_route(payload: dict = Body(...), current_user: UserA
 @router.get('/audit-logs')
 def admin_audit_logs_route(
     current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH)),
-    limit: int = Query(100, ge=1, le=250),
+    limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     action_type: str | None = None,
     search: str | None = None,
@@ -456,7 +468,7 @@ def admin_organizations_route(current_user: UserAccount = Depends(require_role(U
 
 
 @router.post('/organizations')
-def admin_create_organization_route(payload: dict = Body(...), current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN))) -> dict:
+def admin_create_organization_route(payload: dict = Body(...), current_user: UserAccount = Depends(require_role(UserRole.OWNER))) -> dict:
     try:
         org = create_organization(
             name=str(payload.get('name') or '').strip(),
@@ -478,6 +490,8 @@ def admin_add_org_member_route(organization_id: str, payload: dict = Body(...), 
     membership_role = str(payload.get('membership_role') or 'member').strip().lower() or 'member'
     if not user_id:
         raise HTTPException(status_code=400, detail='user_id is required')
+    if current_user.role != UserRole.OWNER:
+        ensure_user_access(current_user, user_id)
     if current_user.role == UserRole.COACH and membership_role != 'member':
         raise HTTPException(status_code=403, detail='Coaches can only add members to their organization')
     try:

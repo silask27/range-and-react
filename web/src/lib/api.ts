@@ -15,6 +15,7 @@ export async function apiFetch(
   const response = await fetch(input, {
     ...init,
     headers,
+    credentials: init.credentials ?? "include",
   });
 
   if (response.status === 401 && typeof window !== "undefined") {

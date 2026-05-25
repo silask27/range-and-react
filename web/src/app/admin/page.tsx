@@ -65,6 +65,8 @@ type TabKey = "analytics" | "assignments" | "members";
 const PALETTE = { cream: "#F0EBE0", coral: "#E76F51", green: "#6A9E72", muted: "rgba(240,235,224,0.45)", soft: "rgba(240,235,224,0.08)" };
 const ACCOUNT_ROLE_OPTIONS = ["member", "coach", "admin"] as const;
 const ORG_ROLE_OPTIONS = ["member", "coach", "admin", "owner"] as const;
+const ADMIN_PAGE_SIZE = 500;
+const ADMIN_COLLECTION_CAP = 2500;
 const ADMIN_TOOL_DISCLOSURE_CSS = `
   .admin-tool-disclosure > summary::-webkit-details-marker { display: none; }
   .admin-tool-disclosure > summary::marker { content: ""; }
@@ -92,6 +94,26 @@ function roleOptionsForUser(canManageRoles: boolean) {
   return canManageRoles ? ACCOUNT_ROLE_OPTIONS : (["member"] as const);
 }
 
+async function loadPagedCollection<T>(path: string, key: string, cap = ADMIN_COLLECTION_CAP): Promise<T[]> {
+  const out: T[] = [];
+  let offset = 0;
+  let total = Number.POSITIVE_INFINITY;
+  while (offset < total && out.length < cap) {
+    const sep = path.includes("?") ? "&" : "?";
+    const res = await apiFetch(`${API_BASE}${path}${sep}limit=${ADMIN_PAGE_SIZE}&offset=${offset}`, { cache: "no-store" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to load records.");
+    const rows = ((data as Record<string, unknown>)[key] ?? []) as T[];
+    out.push(...rows);
+    const meta = (data as { meta?: { total?: number; limit?: number } }).meta;
+    total = typeof meta?.total === "number" ? meta.total : out.length;
+    const step = typeof meta?.limit === "number" ? meta.limit : ADMIN_PAGE_SIZE;
+    if (rows.length === 0 || step <= 0) break;
+    offset += step;
+  }
+  return out.slice(0, cap);
+}
+
 export default function AdminPage() {
   const { user, isAuthLoading, authError } = useRequireAuth();
   const [users, setUsers] = useState<UserEntry[]>([]);
@@ -113,6 +135,7 @@ export default function AdminPage() {
   const [bulkInviteState, setBulkInviteState] = useState({ emails: "", role: "member", organization_id: "", expires_in_days: 14 });
 
   const canManageRoles = user?.role === "owner" || user?.role === "admin";
+  const canCreateOrganizations = user?.role === "owner";
   const canDeleteUsers = user?.role === "owner" || user?.role === "admin" || user?.role === "coach";
 
   const membershipSummaryByUserId = useMemo(() => {
@@ -242,33 +265,30 @@ export default function AdminPage() {
   }
 
   async function loadAll() {
-    const [usersRes, assignmentsRes, villainsRes, scenariosRes, analyticsRes, auditsRes, orgsRes, invitesRes] = await Promise.all([
-      apiFetch(`${API_BASE}/admin/users?limit=500`, { cache: "no-store" }),
-      apiFetch(`${API_BASE}/admin/assignments?limit=500`, { cache: "no-store" }),
+    const [usersData, assignmentsData, villainsRes, scenariosRes, analyticsRes, auditsData, orgsRes, invitesRes] = await Promise.all([
+      loadPagedCollection<UserEntry>("/admin/users", "users"),
+      loadPagedCollection<AssignmentEntry>("/admin/assignments", "assignments"),
       apiFetch(`${API_BASE}/villains`, { cache: "no-store" }),
       apiFetch(`${API_BASE}/scenarios`, { cache: "no-store" }),
       apiFetch(`${API_BASE}/admin/analytics`, { cache: "no-store" }),
-      apiFetch(`${API_BASE}/admin/audit-logs?limit=250`, { cache: "no-store" }),
+      loadPagedCollection<AuditEntry>("/admin/audit-logs", "audit_logs", 1000),
       apiFetch(`${API_BASE}/admin/organizations`, { cache: "no-store" }),
-      apiFetch(`${API_BASE}/admin/signup-invites?limit=500`, { cache: "no-store" }),
+      apiFetch(`${API_BASE}/admin/signup-invites?limit=${ADMIN_COLLECTION_CAP}`, { cache: "no-store" }),
     ]);
-    const [usersData, assignmentsData, villainsData, scenariosData, analyticsData, auditsData, orgsData, invitesData] = await Promise.all([
-      usersRes.json(), assignmentsRes.json(), villainsRes.json(), scenariosRes.json(), analyticsRes.json(), auditsRes.json(), orgsRes.json(), invitesRes.json(),
+    const [villainsData, scenariosData, analyticsData, orgsData, invitesData] = await Promise.all([
+      villainsRes.json(), scenariosRes.json(), analyticsRes.json(), orgsRes.json(), invitesRes.json(),
     ]);
-    if (!usersRes.ok) throw new Error(typeof usersData.detail === "string" ? usersData.detail : "Unable to load users.");
-    if (!assignmentsRes.ok) throw new Error(typeof assignmentsData.detail === "string" ? assignmentsData.detail : "Unable to load assignments.");
     if (!villainsRes.ok) throw new Error(typeof villainsData.detail === "string" ? villainsData.detail : "Unable to load villains.");
     if (!scenariosRes.ok) throw new Error(typeof scenariosData.detail === "string" ? scenariosData.detail : "Unable to load scenarios.");
     if (!analyticsRes.ok) throw new Error(typeof analyticsData.detail === "string" ? analyticsData.detail : "Unable to load analytics.");
-    if (!auditsRes.ok) throw new Error(typeof auditsData.detail === "string" ? auditsData.detail : "Unable to load audit logs.");
     if (!orgsRes.ok) throw new Error(typeof orgsData.detail === "string" ? orgsData.detail : "Unable to load organizations.");
     if (!invitesRes.ok) throw new Error(typeof invitesData.detail === "string" ? invitesData.detail : "Unable to load invites.");
-    setUsers((usersData as { users: UserEntry[] }).users);
-    setAssignments((assignmentsData as { assignments: AssignmentEntry[] }).assignments);
+    setUsers(usersData);
+    setAssignments(assignmentsData);
     setVillains((villainsData as Array<{ id: string; display_name: string }>).map((item) => ({ id: item.id, display_name: item.display_name })));
     setScenarios((scenariosData as Array<{ id: string; display_name: string }>).map((item) => ({ id: item.id, display_name: item.display_name })));
     setAnalytics(analyticsData as AnalyticsPayload);
-    setAuditLogs((auditsData as { audit_logs: AuditEntry[] }).audit_logs);
+    setAuditLogs(auditsData);
     setOrganizations((orgsData as { organizations: OrganizationEntry[] }).organizations);
     setInvites((invitesData as { invites: InviteEntry[] }).invites);
   }
@@ -634,7 +654,7 @@ export default function AdminPage() {
                   <SectionHeader eyebrow="Admin tools" title="Organizations and access setup" />
                   <div style={helperCopyStyle}>Create the organization first, then send signup links. Existing users can be attached later without creating a new account.</div>
                   <div style={toolStackStyle}>
-                    {canManageRoles ? (
+                    {canCreateOrganizations ? (
                       <details className="admin-tool-disclosure" style={detailsStyle}>
                         <summary style={summaryStyle}><span className="admin-tool-caret" aria-hidden="true">›</span><span>Create organization</span></summary>
                         <form onSubmit={handleCreateOrg} style={stackStyle}>

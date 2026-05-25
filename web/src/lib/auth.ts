@@ -25,9 +25,9 @@ export function getStoredAuthUser(): AuthUser | null {
   }
 }
 
-export function persistAuth(token: string, user: AuthUser) {
+export function persistAuth(_token: string, user: AuthUser) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(AUTH_TOKEN_KEY, token);
+  window.localStorage.removeItem(AUTH_TOKEN_KEY);
   window.localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
 }
 

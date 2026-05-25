@@ -19,7 +19,7 @@ export default function PrivacyPage() {
   }, []);
 
   const companyName = config?.legal?.company_name ?? config?.app_name ?? "Range & React";
-  const supportEmail = config?.legal?.support_email ?? config?.support_email ?? "support@example.com";
+  const supportEmail = config?.legal?.support_email ?? config?.support_email ?? "support@rangeandreact.com";
   const effectiveDate = config?.legal?.effective_date ?? "2026-04-06";
 
   return (

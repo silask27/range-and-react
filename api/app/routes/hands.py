@@ -11,9 +11,11 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 
 from api.app.engine.bucket_engine import build_bucket_matrix_view
 from api.app.models.auth import UserAccount
+from api.app.models.enums import UserRole
 from api.app.models.state import HandState
 from api.app.security import get_current_user
-from api.app.services.auth_service import ensure_can_access_owner_resource, user_has_elevated_access
+from api.app.services.access_service import get_visible_user_ids
+from api.app.services.auth_service import ensure_can_access_owner_resource
 from api.app.services.hand_service import get_hand, start_hand
 from api.app.services.session_service import get_session
 from api.app.storage.memory_store import store
@@ -59,8 +61,12 @@ def list_hands_route(
     limit: int = 25,
     current_user: UserAccount = Depends(get_current_user),
 ) -> dict:
-    user_id = None if user_has_elevated_access(current_user) else current_user.user_id
-    hands = store.list_hands(user_id=user_id, session_id=session_id, limit=limit)
+    if current_user.role == UserRole.OWNER:
+        hands = store.list_hands(session_id=session_id, limit=limit)
+        return {"hands": hands}
+
+    visible_user_ids = get_visible_user_ids(current_user) or [current_user.user_id]
+    hands = store.list_hands(user_ids=visible_user_ids, session_id=session_id, limit=limit)
     return {"hands": hands}
 
 

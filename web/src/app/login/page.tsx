@@ -2,7 +2,7 @@
 
 import { FormEvent, Suspense, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { clearStoredAuth, getStoredAuthToken, getStoredAuthUser, persistAuth } from "../../lib/auth";
+import { clearStoredAuth, getStoredAuthUser, persistAuth } from "../../lib/auth";
 import SiteFooter from "../../components/app/SiteFooter";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
@@ -35,7 +35,7 @@ function LoginPageContent() {
   const searchParams = useSearchParams();
   const [mode, setMode] = useState<Mode>("login");
   const [inviteOnly, setInviteOnly] = useState(true);
-  const [supportEmail, setSupportEmail] = useState("support@example.com");
+  const [supportEmail, setSupportEmail] = useState("support@rangeandreact.com");
   const [invitePreview, setInvitePreview] = useState<InvitePreview | null>(null);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -56,11 +56,10 @@ function LoginPageContent() {
   const isInviteFlow = Boolean(inviteCode.trim()) || inviteOnly;
 
   useEffect(() => {
-    const token = getStoredAuthToken();
-    if (!token) return;
+    const currentUser = getStoredAuthUser();
+    if (!currentUser) return;
     if (inviteCodeFromQuery) {
-      const currentUser = getStoredAuthUser();
-      setSessionNotice(currentUser ? `You are currently signed in as ${currentUser.email}. Accepting this invite will switch this browser to the new account.` : "You are currently signed in in this browser. Accepting this invite will switch this browser to the new account.");
+      setSessionNotice(`You are currently signed in as ${currentUser.email}. Accepting this invite will switch this browser to the new account.`);
       return;
     }
     router.replace("/dashboard");
@@ -73,13 +72,13 @@ function LoginPageContent() {
         const data = (await res.json()) as PublicConfig;
         if (!cancelled) {
           setInviteOnly(Boolean(data.features?.invite_only_access ?? true));
-          setSupportEmail(data.support_email || "support@example.com");
+          setSupportEmail(data.support_email || "support@rangeandreact.com");
         }
       })
       .catch(() => {
         if (!cancelled) {
           setInviteOnly(true);
-          setSupportEmail("support@example.com");
+          setSupportEmail("support@rangeandreact.com");
         }
       });
     return () => {
@@ -129,14 +128,11 @@ function LoginPageContent() {
 
 
   async function handleInviteSessionReset() {
-    const token = getStoredAuthToken();
     try {
-      if (token) {
-        await fetch(`${API_BASE}/auth/logout`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-        });
-      }
+      await fetch(`${API_BASE}/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
     } catch {
       // best-effort logout for local browser state
     } finally {
@@ -153,6 +149,7 @@ function LoginPageContent() {
     try {
       const res = await fetch(`${API_BASE}/auth/login`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: loginEmail.trim().toLowerCase(), password: loginPassword }),
       });
@@ -180,6 +177,7 @@ function LoginPageContent() {
       if (inviteCode.trim()) body.invite_code = inviteCode.trim();
       const res = await fetch(`${API_BASE}/auth/signup`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });

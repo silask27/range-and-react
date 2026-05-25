@@ -96,7 +96,7 @@ def count_audit_logs(*, target_user_id: str | None = None, action_type: str | No
 
 
 def list_audit_logs(*, limit: int = 100, offset: int = 0, target_user_id: str | None = None, action_type: str | None = None, organization_ids: Iterable[str] | None = None, user_ids: Iterable[str] | None = None, search: str | None = None) -> list[dict[str, Any]]:
-    limit = max(1, min(int(limit), 250))
+    limit = max(1, min(int(limit), 500))
     offset = max(0, int(offset))
     where_sql, params = _build_audit_filters(target_user_id=target_user_id, action_type=action_type, organization_ids=organization_ids, user_ids=user_ids, search=search)
     with get_connection() as conn:

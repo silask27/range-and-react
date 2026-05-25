@@ -173,7 +173,7 @@ def count_assignments(*, target_user_id: str | None = None, status: str | None =
 
 
 def list_assignments(*, target_user_id: str | None = None, status: str | None = None, limit: int = 200, offset: int = 0, organization_ids: Iterable[str] | None = None, target_user_ids: Iterable[str] | None = None, search: str | None = None) -> list[dict[str, Any]]:
-    limit = max(1, min(int(limit), 500))
+    limit = max(1, min(int(limit), 5000))
     offset = max(0, int(offset))
     where_sql, params = _build_assignment_filters(
         target_user_id=target_user_id,
@@ -291,7 +291,7 @@ def list_assignments_with_progress(*, target_user_id: str | None = None, status:
 
 
 def summarize_assignments(*, target_user_id: str | None = None, organization_ids: Iterable[str] | None = None, target_user_ids: Iterable[str] | None = None) -> dict[str, int]:
-    items = list_assignments_with_progress(target_user_id=target_user_id, limit=500, organization_ids=organization_ids, target_user_ids=target_user_ids)
+    items = list_assignments_with_progress(target_user_id=target_user_id, limit=5000, organization_ids=organization_ids, target_user_ids=target_user_ids)
     summary = {'total': len(items), 'active': 0, 'completed': 0, 'overdue': 0}
     for item in items:
         summary[item['status']] = summary.get(item['status'], 0) + 1

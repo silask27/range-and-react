@@ -32,7 +32,7 @@ class Settings:
     app_env: str = os.getenv("VRT_APP_ENV", "development")
     app_version: str = os.getenv("VRT_APP_VERSION", "0.7.0")
     frontend_url: str = os.getenv("VRT_FRONTEND_URL", "http://127.0.0.1:3000")
-    support_email: str = os.getenv("VRT_SUPPORT_EMAIL", "support@example.com")
+    support_email: str = os.getenv("VRT_SUPPORT_EMAIL", "support@rangeandreact.com")
     legal_company_name: str = os.getenv("VRT_LEGAL_COMPANY_NAME", os.getenv("VRT_APP_NAME", "Range & React")).strip() or os.getenv("VRT_APP_NAME", "Range & React")
     legal_effective_date: str = os.getenv("VRT_LEGAL_EFFECTIVE_DATE", "2026-04-06").strip() or "2026-04-06"
     legal_jurisdiction: str = os.getenv("VRT_LEGAL_JURISDICTION", "Missouri, USA").strip() or "Missouri, USA"
@@ -60,6 +60,10 @@ class Settings:
     trusted_hosts: list[str] = None  # type: ignore[assignment]
     admin_analytics_cache_ttl_seconds: int = int(os.getenv("VRT_ADMIN_ANALYTICS_CACHE_TTL_SECONDS", "300"))
     dashboard_overview_cache_ttl_seconds: int = int(os.getenv("VRT_DASHBOARD_OVERVIEW_CACHE_TTL_SECONDS", "120"))
+    auth_cookie_name: str = os.getenv("VRT_AUTH_COOKIE_NAME", "rr_auth").strip() or "rr_auth"
+    auth_cookie_secure: bool = _get_bool("VRT_AUTH_COOKIE_SECURE", _is_production())
+    auth_cookie_samesite: str = os.getenv("VRT_AUTH_COOKIE_SAMESITE", "none" if _is_production() else "lax").strip().lower() or ("none" if _is_production() else "lax")
+    auth_cookie_ttl_days: int = int(os.getenv("VRT_AUTH_TOKEN_TTL_DAYS", "30"))
 
     demo_mode_enabled: bool = _get_bool("VRT_DEMO_MODE_ENABLED", False)
     demo_public_credentials: bool = _get_bool("VRT_DEMO_PUBLIC_CREDENTIALS", False)

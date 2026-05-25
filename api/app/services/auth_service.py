@@ -229,7 +229,7 @@ def create_signup_invite(
 
 
 def list_signup_invites(*, limit: int = 100, include_consumed: bool = True, organization_ids: Iterable[str] | None = None, created_by_user_id: str | None = None) -> list[dict[str, Any]]:
-    limit = max(1, min(int(limit), 200))
+    limit = max(1, min(int(limit), 2500))
     org_ids = [str(value).strip() for value in (organization_ids or []) if str(value).strip()]
     clauses: list[str] = []
     params: list[Any] = []
@@ -475,9 +475,11 @@ def ensure_can_access_owner_resource(owner_user_id: str | None, current_user: Us
         return
     if owner_user_id == current_user.user_id:
         return
-    if user_has_elevated_access(current_user):
+    if current_user.role == UserRole.OWNER:
         return
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='You do not have access to this resource')
+    from api.app.services.access_service import ensure_user_access
+
+    ensure_user_access(current_user, owner_user_id)
 
 
 def owner_exists() -> bool:
@@ -583,7 +585,7 @@ def count_users(*, organization_ids: Iterable[str] | None = None, user_ids: Iter
 
 
 def list_users(*, limit: int = 100, offset: int = 0, organization_ids: Iterable[str] | None = None, user_ids: Iterable[str] | None = None, search: str | None = None, role: str | None = None, is_active: bool | None = None) -> list[dict[str, Any]]:
-    limit = max(1, min(int(limit), 500))
+    limit = max(1, min(int(limit), 1000))
     offset = max(0, int(offset))
     join_sql, where_sql, params = _build_user_filters(organization_ids=organization_ids, user_ids=user_ids, search=search, role=role, is_active=is_active)
     select_sql = 'SELECT DISTINCT u.user_id, u.email, u.display_name, u.role, u.is_active, u.created_at, u.updated_at, u.deactivated_at'

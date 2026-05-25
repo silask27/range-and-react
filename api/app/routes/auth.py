@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request, Response
+from fastapi import APIRouter, Body, Cookie, Depends, Header, HTTPException, Request, Response
 
 from api.app.config import settings
 from api.app.models.auth import UserAccount
@@ -31,6 +31,27 @@ from api.app.services.auth_service import (
 from api.app.services.organization_service import list_user_organizations
 
 router = APIRouter(prefix='/auth', tags=['auth'])
+
+
+def _set_auth_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        key=settings.auth_cookie_name,
+        value=token,
+        max_age=max(1, int(settings.auth_cookie_ttl_days)) * 24 * 60 * 60,
+        httponly=True,
+        secure=settings.auth_cookie_secure,
+        samesite=settings.auth_cookie_samesite,
+        path='/',
+    )
+
+
+def _clear_auth_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=settings.auth_cookie_name,
+        secure=settings.auth_cookie_secure,
+        samesite=settings.auth_cookie_samesite,
+        path='/',
+    )
 
 
 def _serialize_user(user: UserAccount) -> dict:
@@ -80,6 +101,7 @@ def bootstrap_owner_route(request: Request, response: Response, payload: dict = 
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    _set_auth_cookie(response, session.token)
     return {'token': session.token, 'user': _serialize_user(session.user), 'welcome_email_delivery': _send_welcome_for_user(session.user)}
 
 
@@ -117,6 +139,7 @@ def signup_route(request: Request, response: Response, payload: dict = Body(...)
 
     session = create_auth_session(user)
     log_audit_event(action_type='user_signed_up', actor=user, target_user_id=user.user_id, metadata={'email': user.email, 'role': user.role.value})
+    _set_auth_cookie(response, session.token)
     return {'token': session.token, 'user': _serialize_user(session.user), 'welcome_email_delivery': _send_welcome_for_user(session.user)}
 
 
@@ -136,18 +159,24 @@ def login_route(request: Request, response: Response, payload: dict = Body(...))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    _set_auth_cookie(response, session.token)
     return {'token': session.token, 'user': _serialize_user(session.user)}
 
 
 @router.post('/logout')
 def logout_route(
+    response: Response,
     authorization: str | None = Header(default=None),
+    auth_cookie: str | None = Cookie(default=None, alias=settings.auth_cookie_name),
     current_user: UserAccount = Depends(get_current_user),
 ) -> dict:
     if authorization:
         _, _, token = authorization.partition(' ')
         if token.strip():
             revoke_auth_token(token.strip())
+    if auth_cookie:
+        revoke_auth_token(auth_cookie.strip())
+    _clear_auth_cookie(response)
     log_audit_event(action_type='user_logged_out', actor=current_user, target_user_id=current_user.user_id)
     return {'ok': True}
 
@@ -172,7 +201,7 @@ def update_profile_route(payload: dict = Body(...), current_user: UserAccount = 
 
 
 @router.post('/change-password')
-def change_password_route(payload: dict = Body(...), current_user: UserAccount = Depends(get_current_user)) -> dict:
+def change_password_route(response: Response, payload: dict = Body(...), current_user: UserAccount = Depends(get_current_user)) -> dict:
     current_password = str(payload.get('current_password') or '')
     new_password = str(payload.get('new_password') or '')
     if not current_password or not new_password:
@@ -182,6 +211,7 @@ def change_password_route(payload: dict = Body(...), current_user: UserAccount =
         log_audit_event(action_type='password_changed', actor=current_user, target_user_id=current_user.user_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _clear_auth_cookie(response)
     return {'ok': True, 'message': 'Password updated. Please log in again.'}
 
 
@@ -215,7 +245,7 @@ def reset_password_route(request: Request, response: Response, payload: dict = B
 
 
 @router.post('/deactivate')
-def deactivate_account_route(payload: dict = Body(default={}), current_user: UserAccount = Depends(get_current_user)) -> dict:
+def deactivate_account_route(response: Response, payload: dict = Body(default={}), current_user: UserAccount = Depends(get_current_user)) -> dict:
     confirm = bool(payload.get('confirm'))
     if not confirm:
         raise HTTPException(status_code=400, detail='confirm=true is required to deactivate the account')
@@ -224,6 +254,7 @@ def deactivate_account_route(payload: dict = Body(default={}), current_user: Use
         log_audit_event(action_type='account_deactivated', actor=current_user, target_user_id=current_user.user_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _clear_auth_cookie(response)
     return {'user': updated}
 
 

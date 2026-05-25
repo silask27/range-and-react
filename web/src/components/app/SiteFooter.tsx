@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { APP_NAME } from "../../lib/theme";
 
-const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL ?? "support@example.com";
+const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL ?? "support@rangeandreact.com";
 
 export default function SiteFooter({ compact = false }: { compact?: boolean }) {
   return (

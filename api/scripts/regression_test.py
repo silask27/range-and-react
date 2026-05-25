@@ -90,6 +90,20 @@ class RegressionTestCase(unittest.TestCase):
         assert coach_signup.status_code == 200, coach_signup.text
         cls.coach_token = coach_signup.json()["token"]
 
+        admin_invite = cls.client.post(
+            "/admin/signup-invites",
+            headers={"Authorization": f"Bearer {cls.owner_token}"},
+            json={"email": "admin@example.com", "role": "admin", "organization_id": "org-alpha", "membership_role": "admin"},
+        )
+        assert admin_invite.status_code == 200, admin_invite.text
+        admin_code = admin_invite.json()["invite"]["invite_code"]
+        admin_signup = cls.client.post(
+            "/auth/signup",
+            json={"email": "admin@example.com", "password": "Password123!", "display_name": "Admin", "invite_code": admin_code},
+        )
+        assert admin_signup.status_code == 200, admin_signup.text
+        cls.admin_token = admin_signup.json()["token"]
+
         member_invite = cls.client.post(
             "/admin/signup-invites",
             headers={"Authorization": f"Bearer {cls.owner_token}"},
@@ -202,6 +216,84 @@ class RegressionTestCase(unittest.TestCase):
         self.assertIn("coach@example.com", emails)
         self.assertIn("member@example.com", emails)
         self.assertNotIn("outsider@example.com", emails)
+
+    def test_org_admin_user_visibility_is_scoped(self) -> None:
+        response = self.client.get(
+            "/admin/users",
+            headers={"Authorization": f"Bearer {self.admin_token}"},
+        )
+        self.assertEqual(response.status_code, 200)
+        emails = {item["email"] for item in response.json()["users"]}
+        self.assertIn("admin@example.com", emails)
+        self.assertIn("member@example.com", emails)
+        self.assertNotIn("outsider@example.com", emails)
+
+    def test_cross_org_direct_hand_ids_are_blocked_for_coach_and_admin(self) -> None:
+        session = SessionState(
+            session_id="outsider-session",
+            user_id=self.outsider_user_id,
+            villain_profile_id="tag",
+            train_timer_seconds=30,
+            scenario_id="srp_ip_btn_vs_bb",
+            pot=20.0,
+            hero_stack=100.0,
+            villain_stack=100.0,
+            hero_range_matrix_saved={"AA": True, "AKs": True},
+            hero_tokens_saved=["AA", "AKs"],
+            villain_range_matrix_saved={"QQ": True},
+            villain_tokens_saved=["QQ"],
+            hero_range_confirmed=True,
+            villain_range_confirmed=True,
+        )
+        store.create_session(session.session_id, asdict(session))
+
+        hand = HandState(
+            hand_id="outsider-complete-hand",
+            session_id=session.session_id,
+            user_id=self.outsider_user_id,
+            scenario_id="srp_ip_btn_vs_bb",
+            villain_profile_id="tag",
+            pot=40.0,
+            hero_stack=90.0,
+            villain_stack=90.0,
+            hero_hand=("Ah", "Kd"),
+            villain_hand=("Qs", "Qd"),
+            board=["2h", "4d", "Qh", "8c", "9s"],
+            street=Street.RIVER,
+            betting_round=BettingRoundState(),
+            hero_tokens_saved=["AA", "AKs"],
+            villain_range_matrix_saved={"QQ": True},
+            villain_range_combos_live={"QQ": [["Qs", "Qd"]]},
+            current_actor=Player.HERO,
+            ui_gate=UIGate.HAND_OVER,
+            hand_over=True,
+        )
+        store.create_hand(hand.hand_id, asdict(hand))
+
+        for token in (self.coach_token, self.admin_token):
+            hand_response = self.client.get(
+                f"/hands/{hand.hand_id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            self.assertEqual(hand_response.status_code, 403)
+
+            debrief_response = self.client.get(
+                f"/results/hand/{hand.hand_id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            self.assertEqual(debrief_response.status_code, 403)
+
+            replay_response = self.client.get(
+                f"/results/hand/{hand.hand_id}/replay",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            self.assertEqual(replay_response.status_code, 403)
+
+        owner_response = self.client.get(
+            f"/results/hand/{hand.hand_id}",
+            headers={"Authorization": f"Bearer {self.owner_token}"},
+        )
+        self.assertEqual(owner_response.status_code, 200)
 
     def test_coach_cannot_assign_outside_org(self) -> None:
         response = self.client.post(

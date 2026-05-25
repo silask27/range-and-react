@@ -211,10 +211,17 @@ class SqliteStore:
             )
         return current
 
-    def list_sessions(self, *, user_id: str | None = None, limit: int = 25) -> list[dict[str, Any]]:
+    def list_sessions(self, *, user_id: str | None = None, user_ids: list[str] | None = None, limit: int = 25) -> list[dict[str, Any]]:
         limit = max(1, min(int(limit), 100))
+        scoped_user_ids = [str(value).strip() for value in (user_ids or []) if str(value).strip()]
         with get_connection() as conn:
-            if user_id:
+            if scoped_user_ids:
+                placeholders = ', '.join('?' for _ in scoped_user_ids)
+                rows = conn.execute(
+                    f'SELECT session_id, user_id, payload_json, created_at, updated_at FROM sessions WHERE user_id IN ({placeholders}) ORDER BY updated_at DESC LIMIT ?',
+                    (*scoped_user_ids, limit),
+                ).fetchall()
+            elif user_id:
                 rows = conn.execute(
                     'SELECT session_id, user_id, payload_json, created_at, updated_at FROM sessions WHERE user_id = ? ORDER BY updated_at DESC LIMIT ?',
                     (user_id, limit),
@@ -339,10 +346,15 @@ class SqliteStore:
             )
         return current
 
-    def list_hands(self, *, user_id: str | None = None, session_id: str | None = None, limit: int = 25) -> list[dict[str, Any]]:
+    def list_hands(self, *, user_id: str | None = None, user_ids: list[str] | None = None, session_id: str | None = None, limit: int = 25) -> list[dict[str, Any]]:
         limit = max(1, min(int(limit), 100))
         clauses: list[str] = []
         params: list[Any] = []
+        scoped_user_ids = [str(value).strip() for value in (user_ids or []) if str(value).strip()]
+        if scoped_user_ids:
+            placeholders = ', '.join('?' for _ in scoped_user_ids)
+            clauses.append(f'user_id IN ({placeholders})')
+            params.extend(scoped_user_ids)
         if user_id:
             clauses.append('user_id = ?')
             params.append(user_id)

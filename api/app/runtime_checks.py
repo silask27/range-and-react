@@ -92,6 +92,14 @@ def _check_production_runtime() -> list[RuntimeCheckResult]:
         checks.append(RuntimeCheckResult("production_password_reset_tokens", "error", "Password reset tokens must not be returned in API responses in production"))
     else:
         checks.append(RuntimeCheckResult("production_password_reset_tokens", "ok", "Password reset responses are production-safe"))
+    if not settings.auth_cookie_secure:
+        checks.append(RuntimeCheckResult("production_auth_cookie_secure", "error", "Auth cookies must be Secure in production"))
+    else:
+        checks.append(RuntimeCheckResult("production_auth_cookie_secure", "ok", "Auth cookies are marked Secure"))
+    if settings.auth_cookie_samesite not in {"lax", "strict", "none"}:
+        checks.append(RuntimeCheckResult("production_auth_cookie_samesite", "error", "Auth cookie SameSite must be lax, strict, or none"))
+    else:
+        checks.append(RuntimeCheckResult("production_auth_cookie_samesite", "ok", f"Auth cookie SameSite={settings.auth_cookie_samesite}"))
     if not settings.require_signup_invite:
         checks.append(RuntimeCheckResult("production_signup_mode", "warn", "Invite-only signup is disabled", required=False))
     else:

@@ -68,7 +68,7 @@ export default function StatusPage() {
           </div>
           <div style={panelStyle}>
             <div style={labelStyle}>Support</div>
-            <div style={valueStyle}>{config?.support_email ?? "support@example.com"}</div>
+            <div style={valueStyle}>{config?.support_email ?? "support@rangeandreact.com"}</div>
             <div style={metaStyle}>This address should be monitored before launch.</div>
           </div>
         </div>

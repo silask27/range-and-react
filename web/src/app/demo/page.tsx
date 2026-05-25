@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import PublicShell from "../../components/app/PublicShell";
-import { getStoredAuthToken } from "../../lib/auth";
+import { getStoredAuthUser } from "../../lib/auth";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
 
@@ -30,7 +30,7 @@ export default function DemoPage() {
   const [hasToken, setHasToken] = useState(false);
 
   useEffect(() => {
-    setHasToken(Boolean(getStoredAuthToken()));
+    setHasToken(Boolean(getStoredAuthUser()));
     fetch(`${API_BASE}/platform/public-config`, { cache: "no-store" })
       .then((res) => res.json())
       .then((data) => setConfig(data as PublicConfig))

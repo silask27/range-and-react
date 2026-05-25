@@ -9,7 +9,7 @@ from api.app.models.enums import UserRole
 from api.app.storage.db import get_connection
 
 
-_PLATFORM_ADMIN_ROLES = {UserRole.OWNER, UserRole.ADMIN}
+_PLATFORM_ADMIN_ROLES = {UserRole.OWNER}
 
 
 def is_platform_admin(user: UserAccount) -> bool:

@@ -102,6 +102,30 @@ const PALETTE = {
   green: "#6A9E72",
 };
 
+const MEMBER_PAGE_SIZE = 1000;
+const MEMBER_OPTION_CAP = 2500;
+
+async function loadMemberOptions(): Promise<Option[]> {
+  const options: Option[] = [];
+  let offset = 0;
+  let total = Number.POSITIVE_INFINITY;
+  while (offset < total && options.length < MEMBER_OPTION_CAP) {
+    const res = await apiFetch(`${API_BASE}/admin/users?limit=${MEMBER_PAGE_SIZE}&offset=${offset}&role=member`, { cache: "no-store" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to load members.");
+    const rows = ((data as { users?: Array<{ user_id: string; display_name: string | null; email: string; role: string }> }).users ?? [])
+      .filter((entry) => entry.role === "member")
+      .map((entry) => ({ id: entry.user_id, display_name: entry.display_name || entry.email }));
+    options.push(...rows);
+    const meta = (data as { meta?: { total?: number; limit?: number } }).meta;
+    total = typeof meta?.total === "number" ? meta.total : options.length;
+    const step = typeof meta?.limit === "number" ? meta.limit : MEMBER_PAGE_SIZE;
+    if (rows.length === 0 || step <= 0) break;
+    offset += step;
+  }
+  return options.slice(0, MEMBER_OPTION_CAP);
+}
+
 export default function ResultsPage() {
   const { user, isAuthLoading, authError } = useRequireAuth();
   const [payload, setPayload] = useState<ResultsPayload | null>(null);
@@ -133,12 +157,7 @@ export default function ResultsPage() {
     async function loadMembers() {
       setMembersLoaded(false);
       try {
-        const res = await apiFetch(`${API_BASE}/admin/users?limit=500&role=member`, { cache: "no-store" });
-        const data = await res.json();
-        if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to load members.");
-        const options = ((data as { users?: Array<{ user_id: string; display_name: string | null; email: string; role: string }> }).users ?? [])
-          .filter((entry) => entry.role === "member")
-          .map((entry) => ({ id: entry.user_id, display_name: entry.display_name || entry.email }));
+        const options = await loadMemberOptions();
         if (cancelled) return;
         setMemberOptions(options);
         setSelectedMemberId((current) => current || options[0]?.id || "");

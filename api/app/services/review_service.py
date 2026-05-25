@@ -157,9 +157,9 @@ def _can_view_review_result(result: dict[str, Any], user: UserAccount) -> bool:
     review = review_state_from_metadata(result.get("metadata"))
     if not review.get("sent_to_coaches"):
         return False
-    if user.role in {UserRole.OWNER, UserRole.ADMIN}:
+    if user.role == UserRole.OWNER:
         return True
-    if user.role != UserRole.COACH:
+    if user.role not in {UserRole.ADMIN, UserRole.COACH}:
         return False
     if user.user_id in set(review.get("coach_recipient_user_ids") or []):
         return True

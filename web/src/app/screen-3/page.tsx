@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "../../lib/api";
 import Avatar from "../../components/app/Avatar";
 import TrainingHeader from "../../components/app/TrainingHeader";
-import { getStoredAuthToken } from "../../lib/auth";
+import { getStoredAuthUser } from "../../lib/auth";
 import { THEME } from "../../lib/theme";
 import TimeoutOverlay from "../../components/training/TimeoutOverlay";
 import WorkflowBar, { type WorkflowStep } from "../../components/training/WorkflowBar";
@@ -318,7 +318,7 @@ function Screen3PageContent() {
   const pruneRowStartedAtRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!getStoredAuthToken()) {
+    if (!getStoredAuthUser()) {
       router.replace("/login");
     }
   }, [router]);

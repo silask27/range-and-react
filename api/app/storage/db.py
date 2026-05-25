@@ -184,6 +184,8 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     'CREATE INDEX IF NOT EXISTS idx_hand_results_user_id ON hand_results(user_id)',
     'CREATE INDEX IF NOT EXISTS idx_hand_results_session_id ON hand_results(session_id)',
     'CREATE INDEX IF NOT EXISTS idx_hand_results_status ON hand_results(status)',
+    'CREATE INDEX IF NOT EXISTS idx_hand_results_user_completed ON hand_results(user_id, hand_over, completed_at)',
+    'CREATE INDEX IF NOT EXISTS idx_hand_results_user_scenario_villain_completed ON hand_results(user_id, scenario_id, villain_profile_id, hand_over, completed_at)',
     '''
     CREATE TABLE IF NOT EXISTS assignments (
         assignment_id TEXT PRIMARY KEY,
@@ -206,6 +208,8 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     'CREATE INDEX IF NOT EXISTS idx_assignments_target_user_id ON assignments(target_user_id)',
     'CREATE INDEX IF NOT EXISTS idx_assignments_organization_id ON assignments(organization_id)',
     'CREATE INDEX IF NOT EXISTS idx_assignments_status ON assignments(status)',
+    'CREATE INDEX IF NOT EXISTS idx_assignments_org_status_due ON assignments(organization_id, status, due_at)',
+    'CREATE INDEX IF NOT EXISTS idx_assignments_target_status_due ON assignments(target_user_id, status, due_at)',
     '''
     CREATE TABLE IF NOT EXISTS password_reset_tokens (
         reset_token_hash TEXT PRIMARY KEY,
@@ -235,6 +239,7 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     'CREATE INDEX IF NOT EXISTS idx_audit_logs_target_user_id ON audit_logs(target_user_id)',
     'CREATE INDEX IF NOT EXISTS idx_audit_logs_action_type ON audit_logs(action_type)',
     'CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at)',
+    'CREATE INDEX IF NOT EXISTS idx_audit_logs_org_created ON audit_logs(organization_id, created_at)',
     '''
     CREATE TABLE IF NOT EXISTS organizations (
         organization_id TEXT PRIMARY KEY,
@@ -284,6 +289,7 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     'CREATE INDEX IF NOT EXISTS idx_signup_invites_email ON signup_invites(email)',
     'CREATE INDEX IF NOT EXISTS idx_signup_invites_org_id ON signup_invites(organization_id)',
     'CREATE INDEX IF NOT EXISTS idx_signup_invites_expires_at ON signup_invites(expires_at)',
+    'CREATE INDEX IF NOT EXISTS idx_signup_invites_org_consumed_expires ON signup_invites(organization_id, consumed_at, expires_at)',
     '''
     CREATE TABLE IF NOT EXISTS analytics_snapshots (
         scope_type TEXT NOT NULL,
