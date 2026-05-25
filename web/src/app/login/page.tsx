@@ -2,7 +2,7 @@
 
 import { FormEvent, Suspense, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { clearStoredAuth, getStoredAuthUser, persistAuth } from "../../lib/auth";
+import { clearStoredAuth, getStoredAuthToken, getStoredAuthUser, persistAuth } from "../../lib/auth";
 import SiteFooter from "../../components/app/SiteFooter";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
@@ -56,10 +56,11 @@ function LoginPageContent() {
   const isInviteFlow = Boolean(inviteCode.trim()) || inviteOnly;
 
   useEffect(() => {
+    const token = getStoredAuthToken();
+    if (!token) return;
     const currentUser = getStoredAuthUser();
-    if (!currentUser) return;
     if (inviteCodeFromQuery) {
-      setSessionNotice(`You are currently signed in as ${currentUser.email}. Accepting this invite will switch this browser to the new account.`);
+      setSessionNotice(currentUser ? `You are currently signed in as ${currentUser.email}. Accepting this invite will switch this browser to the new account.` : "You are currently signed in in this browser. Accepting this invite will switch this browser to the new account.");
       return;
     }
     router.replace("/dashboard");
@@ -128,11 +129,15 @@ function LoginPageContent() {
 
 
   async function handleInviteSessionReset() {
+    const token = getStoredAuthToken();
     try {
-      await fetch(`${API_BASE}/auth/logout`, {
-        method: "POST",
-        credentials: "include",
-      });
+      if (token) {
+        await fetch(`${API_BASE}/auth/logout`, {
+          method: "POST",
+          credentials: "include",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      }
     } catch {
       // best-effort logout for local browser state
     } finally {

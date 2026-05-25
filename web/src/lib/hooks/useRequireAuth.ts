@@ -1,19 +1,27 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { apiFetch, API_BASE } from "../api";
-import { getStoredAuthUser, persistAuth, type AuthUser } from "../auth";
+import { getStoredAuthToken, getStoredAuthUser, persistAuth, type AuthUser } from "../auth";
 
 export function useRequireAuth() {
+  const router = useRouter();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
+    const storedToken = getStoredAuthToken();
     const storedUser = getStoredAuthUser();
 
     if (storedUser) {
       setUser(storedUser);
+    }
+
+    if (!storedToken) {
+      router.replace("/login");
+      return;
     }
 
     let cancelled = false;
@@ -29,7 +37,7 @@ export function useRequireAuth() {
           return;
         }
         const nextUser = data.user as AuthUser;
-        persistAuth("", nextUser);
+        persistAuth(storedToken || "", nextUser);
         if (!cancelled) {
           setUser(nextUser);
         }
@@ -49,7 +57,7 @@ export function useRequireAuth() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [router]);
 
   return { user, isAuthLoading, authError };
 }
