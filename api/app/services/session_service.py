@@ -32,12 +32,12 @@ def _sample_hero_stack(rng: random.Random) -> float:
     """
     Generate a hero stack that feels like a typical live-training starting stack.
 
-    Hero should usually land in the 250-400bb band and almost never be short.
-    The hard clamp keeps generated sessions from creating odd sub-100bb hero spots
-    unless we intentionally add short-stack scenarios later.
+    Hero should land in the 250-400bb band for the core deep-stack training mode.
+    Short-stack and ultra-deep hero scenarios should be added deliberately as
+    separate scenario types rather than leaking into the default randomizer.
     """
-    raw = rng.triangular(110.0, 600.0, 335.0)
-    return _clamp_stack(raw, low=110.0, high=600.0)
+    raw = rng.triangular(250.0, 400.0, 335.0)
+    return _clamp_stack(raw, low=250.0, high=400.0)
 
 
 def _sample_stack_for_villain(villain_profile_id: str, rng: random.Random) -> float:

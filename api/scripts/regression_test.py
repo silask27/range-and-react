@@ -144,6 +144,33 @@ class RegressionTestCase(unittest.TestCase):
         self.assertIn("token", payload)
         self.assertEqual(payload["user"]["email"], "owner@example.com")
 
+    def test_default_hero_stacks_stay_in_deep_training_band(self) -> None:
+        hero_stacks: list[float] = []
+        villain_stacks: list[float] = []
+
+        for seed in range(1, 16):
+            session_response = self.client.post(
+                "/sessions",
+                headers={"Authorization": f"Bearer {self.owner_token}"},
+                json={"villain_profile_id": "tag", "train_timer_seconds": 30},
+            )
+            self.assertEqual(session_response.status_code, 200)
+            session_id = session_response.json()["session_id"]
+            scenario_response = self.client.post(
+                f"/sessions/{session_id}/scenario",
+                headers={"Authorization": f"Bearer {self.owner_token}"},
+                json={"scenario_id": "srp_ip_btn_vs_bb", "seed": seed},
+            )
+            self.assertEqual(scenario_response.status_code, 200)
+            payload = scenario_response.json()
+            hero_stacks.append(float(payload["hero_stack"]))
+            villain_stacks.append(float(payload["villain_stack"]))
+
+        self.assertGreater(len(set(hero_stacks)), 1)
+        self.assertGreaterEqual(min(hero_stacks), 250.0)
+        self.assertLessEqual(max(hero_stacks), 400.0)
+        self.assertGreater(len(set(villain_stacks)), 1)
+
     def test_coach_invite_creates_coach_account(self) -> None:
         response = self.client.get(
             "/auth/me",
