@@ -12,6 +12,7 @@ from api.app.config import settings
 from api.app.data.catalog import SCENARIOS
 from api.app.data.villain_profiles import VILLAIN_PROFILES
 from api.app.services.assignment_service import build_user_assignment_queue, list_assignments_with_progress
+from api.app.services.cohort_service import list_cohort_members, list_cohorts
 from api.app.storage.db import get_connection, json_dumps, json_loads
 from api.app.storage.memory_store import store
 
@@ -324,6 +325,105 @@ def _query_user_rows(*, visible_user_ids: Sequence[str] | None = None) -> list[d
     return items
 
 
+def _query_user_organization_names(*, visible_user_ids: Sequence[str] | None = None, visible_organization_ids: Sequence[str] | None = None) -> dict[str, list[str]]:
+    clean_user_ids = _clean_ids(visible_user_ids)
+    clean_org_ids = _clean_ids(visible_organization_ids)
+    clauses: list[str] = []
+    params: list[Any] = []
+    if clean_user_ids:
+        placeholders = ', '.join('?' for _ in clean_user_ids)
+        clauses.append(f'm.user_id IN ({placeholders})')
+        params.extend(clean_user_ids)
+    if clean_org_ids:
+        placeholders = ', '.join('?' for _ in clean_org_ids)
+        clauses.append(f'm.organization_id IN ({placeholders})')
+        params.extend(clean_org_ids)
+    where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ''
+    with get_connection() as conn:
+        rows = conn.execute(
+            f'''
+            SELECT m.user_id, o.name, m.membership_role
+            FROM organization_memberships m
+            JOIN organizations o ON o.organization_id = m.organization_id
+            {where_sql}
+            ORDER BY lower(o.name) ASC
+            ''',
+            tuple(params),
+        ).fetchall()
+    out: dict[str, list[str]] = defaultdict(list)
+    for row in rows:
+        out[str(row['user_id'])].append(f"{row['name']} ({row['membership_role']})")
+    return dict(out)
+
+
+def _build_cohort_completion_rows(*, visible_user_ids: Iterable[str] | None = None, visible_organization_ids: Iterable[str] | None = None) -> list[dict[str, Any]]:
+    user_scope = set(_clean_ids(visible_user_ids))
+    org_scope = _clean_ids(visible_organization_ids)
+    rows: list[dict[str, Any]] = []
+    for cohort in list_cohorts(organization_ids=org_scope):
+        members = [
+            member for member in list_cohort_members(cohort_id=cohort['cohort_id'], active_only=True)
+            if member.get('role') == 'member' and (not user_scope or member['user_id'] in user_scope)
+        ]
+        member_ids = [member['user_id'] for member in members]
+        assignments = list_assignments_with_progress(
+            limit=5000,
+            organization_ids=[cohort['organization_id']],
+            target_user_ids=member_ids,
+        ) if member_ids else []
+        completed = sum(1 for assignment in assignments if assignment.get('status') == 'completed')
+        overdue = sum(1 for assignment in assignments if assignment.get('status') == 'overdue')
+        active = sum(1 for assignment in assignments if assignment.get('status') == 'active')
+        completed_reps = sum(int((assignment.get('progress') or {}).get('progress_count') or 0) for assignment in assignments)
+        target_reps = sum(int((assignment.get('progress') or {}).get('repetition_target') or assignment.get('repetition_target') or 0) for assignment in assignments)
+        rows.append({
+            'cohort_id': cohort['cohort_id'],
+            'organization_id': cohort['organization_id'],
+            'name': cohort['name'],
+            'member_count': len(members),
+            'assignment_count': len(assignments),
+            'completed_assignments': completed,
+            'active_assignments': active,
+            'overdue_assignments': overdue,
+            'completion_rate': round((completed / len(assignments)) * 100.0, 1) if assignments else None,
+            'completed_reps': completed_reps,
+            'target_reps': target_reps,
+            'rep_completion_rate': round((completed_reps / target_reps) * 100.0, 1) if target_reps > 0 else None,
+        })
+    rows.sort(key=lambda item: (-(item['overdue_assignments'] or 0), item['completion_rate'] if item['completion_rate'] is not None else 101, item['name']))
+    return rows
+
+
+def build_member_results_export_rows(*, visible_user_ids: Iterable[str] | None = None, visible_organization_ids: Iterable[str] | None = None) -> list[dict[str, Any]]:
+    user_scope = _clean_ids(visible_user_ids) or None
+    org_scope = _clean_ids(visible_organization_ids) or None
+    user_rows = [row for row in _query_user_rows(visible_user_ids=user_scope) if row.get('role') == 'member']
+    org_names = _query_user_organization_names(visible_user_ids=user_scope, visible_organization_ids=org_scope)
+    assignments = list_assignments_with_progress(limit=5000, organization_ids=org_scope, target_user_ids=user_scope)
+    assignments_by_user: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for assignment in assignments:
+        assignments_by_user[str(assignment['target_user_id'])].append(assignment)
+    out = []
+    for user in user_rows:
+        user_assignments = assignments_by_user.get(str(user['user_id']), [])
+        out.append({
+            'member_id': user['user_id'],
+            'display_name': user['display_name'],
+            'email': user['email'],
+            'organizations': '; '.join(org_names.get(str(user['user_id']), [])),
+            'is_active': 'yes' if user.get('is_active') else 'no',
+            'reps_done': int(user.get('completed_hands') or 0),
+            'current_range_score': user.get('avg_ranging_score'),
+            'current_action_score': user.get('avg_response_score'),
+            'current_overall_score': user.get('avg_overall_score'),
+            'active_assignments': sum(1 for item in user_assignments if item.get('status') == 'active'),
+            'completed_assignments': sum(1 for item in user_assignments if item.get('status') == 'completed'),
+            'overdue_assignments': sum(1 for item in user_assignments if item.get('status') == 'overdue'),
+        })
+    out.sort(key=lambda item: (item['organizations'], item['display_name']))
+    return out
+
+
 
 def _driver_summary(*, metric_key: str, baseline: float | None, scenario_rows: list[dict[str, Any]], villain_rows: list[dict[str, Any]], pair_rows: list[dict[str, Any]]) -> dict[str, str]:
     metric_label = 'ranging_score' if metric_key == 'ranging' else 'response_score'
@@ -445,31 +545,66 @@ def _refresh_admin_analytics_snapshot(*, visible_user_ids: Sequence[str] | None,
     _save_snapshot(scope_type='admin_analytics', scope_key=scope_key, payload=payload, ttl_seconds=ttl)
 
 
+def _query_dashboard_summary(*, user_id: str) -> dict[str, Any]:
+    with get_connection() as conn:
+        session_rows = conn.execute(
+            'SELECT payload_json FROM sessions WHERE user_id = ?',
+            (user_id,),
+        ).fetchall()
+        result_row = conn.execute(
+            '''
+            SELECT
+                SUM(CASE WHEN hand_over = 0 THEN 1 ELSE 0 END) AS active_hands,
+                SUM(CASE WHEN hand_over = 1 THEN 1 ELSE 0 END) AS completed_hands,
+                AVG(CASE WHEN hand_over = 1 THEN ranging_score ELSE NULL END) AS avg_ranging_score,
+                AVG(CASE WHEN hand_over = 1 THEN response_score ELSE NULL END) AS avg_response_score,
+                AVG(CASE WHEN hand_over = 1 THEN overall_score ELSE NULL END) AS avg_overall_score
+            FROM hand_results
+            WHERE user_id = ?
+            ''',
+            (user_id,),
+        ).fetchone()
+
+    ready_sessions = 0
+    for row in session_rows:
+        payload = json_loads(row['payload_json'])
+        if (
+            payload.get('scenario_id')
+            and payload.get('pot') is not None
+            and payload.get('hero_stack') is not None
+            and payload.get('villain_stack') is not None
+            and payload.get('hero_range_matrix_saved') is not None
+            and payload.get('villain_range_matrix_saved') is not None
+            and payload.get('hero_range_confirmed')
+            and payload.get('villain_range_confirmed')
+        ):
+            ready_sessions += 1
+
+    data = _row_to_dict(result_row)
+    completed_hands = int(data.get('completed_hands') or 0)
+    return {
+        'total_sessions': len(session_rows),
+        'ready_sessions': ready_sessions,
+        'active_hands': int(data.get('active_hands') or 0),
+        'completed_hands': completed_hands,
+        'results_tracked': completed_hands,
+        'avg_ranging_score': round(float(data['avg_ranging_score']), 2) if data.get('avg_ranging_score') is not None else None,
+        'avg_response_score': round(float(data['avg_response_score']), 2) if data.get('avg_response_score') is not None else None,
+        'avg_overall_score': round(float(data['avg_overall_score']), 2) if data.get('avg_overall_score') is not None else None,
+    }
+
+
 
 def _compute_dashboard_overview(*, user_id: str) -> dict[str, Any]:
     sessions = store.list_sessions(user_id=user_id, limit=8)
     hands = store.list_hands(user_id=user_id, limit=8)
     results = [item for item in store.list_hand_results(user_id=user_id, limit=50) if item.get('hand_over')]
     assignment_queue = build_user_assignment_queue(user_id=user_id, limit=20)
-
-    active_hands = [item for item in hands if not item.get('hand_over')]
-    completed_hands = [item for item in hands if item.get('hand_over')]
-    ready_sessions = [item for item in sessions if item.get('is_ready_for_hand_start')]
-
-    scored_ranging = [float(item['ranging_score']) for item in results if item.get('ranging_score') is not None]
-    scored_response = [float(item['response_score']) for item in results if item.get('response_score') is not None]
-    scored_overall = [float(item['overall_score']) for item in results if item.get('overall_score') is not None]
+    summary = _query_dashboard_summary(user_id=user_id)
 
     return {
         'summary': {
-            'total_sessions': len(sessions),
-            'ready_sessions': len(ready_sessions),
-            'active_hands': len(active_hands),
-            'completed_hands': len(completed_hands),
-            'results_tracked': len(results),
-            'avg_ranging_score': round(sum(scored_ranging) / len(scored_ranging), 2) if scored_ranging else None,
-            'avg_response_score': round(sum(scored_response) / len(scored_response), 2) if scored_response else None,
-            'avg_overall_score': round(sum(scored_overall) / len(scored_overall), 2) if scored_overall else None,
+            **summary,
             'assignments_total': assignment_queue['summary']['total'],
             'assignments_active': assignment_queue['summary']['active'],
             'assignments_overdue': assignment_queue['summary']['overdue'],

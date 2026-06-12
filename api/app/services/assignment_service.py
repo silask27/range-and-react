@@ -267,11 +267,13 @@ def count_assignments_with_progress(*, target_user_id: str | None = None, status
 
 
 def list_assignments_with_progress(*, target_user_id: str | None = None, status: str | None = None, limit: int = 200, offset: int = 0, organization_ids: Iterable[str] | None = None, target_user_ids: Iterable[str] | None = None, search: str | None = None) -> list[dict[str, Any]]:
+    status_clean = (status or '').strip() or None
+    derive_before_paginating = status_clean is not None
     items = list_assignments(
         target_user_id=target_user_id,
-        status=None if status in {'completed', 'overdue'} else status,
-        limit=limit,
-        offset=offset,
+        status=None if derive_before_paginating else None,
+        limit=5000 if derive_before_paginating else limit,
+        offset=0 if derive_before_paginating else offset,
         organization_ids=organization_ids,
         target_user_ids=target_user_ids,
         search=search,
@@ -283,9 +285,13 @@ def list_assignments_with_progress(*, target_user_id: str | None = None, status:
         payload = dict(item)
         payload['progress'] = progress
         payload['status'] = progress['status']
-        if status and payload['status'] != status:
+        if status_clean and payload['status'] != status_clean:
             continue
         out.append(payload)
+    if derive_before_paginating:
+        start = max(0, int(offset))
+        end = start + max(1, min(int(limit), 5000))
+        return out[start:end]
     return out
 
 

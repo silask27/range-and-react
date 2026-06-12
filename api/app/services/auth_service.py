@@ -231,6 +231,8 @@ def create_signup_invite(
 def list_signup_invites(*, limit: int = 100, include_consumed: bool = True, organization_ids: Iterable[str] | None = None, created_by_user_id: str | None = None) -> list[dict[str, Any]]:
     limit = max(1, min(int(limit), 2500))
     org_ids = [str(value).strip() for value in (organization_ids or []) if str(value).strip()]
+    if organization_ids is not None and not org_ids:
+        return []
     clauses: list[str] = []
     params: list[Any] = []
     if not include_consumed:

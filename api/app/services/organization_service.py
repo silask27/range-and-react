@@ -89,6 +89,8 @@ def get_organization(organization_id: str) -> dict[str, Any] | None:
 def list_organizations(*, limit: int = 100, organization_ids: Iterable[str] | None = None) -> list[dict[str, Any]]:
     limit = max(1, min(int(limit), 200))
     org_ids = _clean_ids(organization_ids)
+    if organization_ids is not None and not org_ids:
+        return []
     clauses: list[str] = []
     params: list[Any] = []
     if org_ids:

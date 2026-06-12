@@ -4,6 +4,7 @@ from dataclasses import asdict
 import os
 import unittest
 from pathlib import Path
+from uuid import uuid4
 
 os.environ.setdefault("VRT_DATABASE_PATH", str(Path("./data/regression_test.db").resolve()))
 os.environ.setdefault("VRT_PASSWORD_RESET_RETURNS_TOKEN", "true")
@@ -18,6 +19,7 @@ from api.app.models.betting import BettingRoundState
 from api.app.models.enums import Player, Street, UIGate
 from api.app.models.state import HandState, SessionState
 from api.app.services.action_service import apply_hero_action
+from api.app.services.assignment_service import create_assignment, list_assignments_with_progress
 from api.app.services.prune_service import _advance_to_next_street as _advance_to_next_street_after_prune
 from api.app.services.response_matrix_prefill import prepare_response_matrix_for_new_node
 from api.app.storage.db import get_connection, init_db
@@ -213,6 +215,124 @@ class RegressionTestCase(unittest.TestCase):
             json={"email": "delete-me@example.com", "password": "Password123!"},
         )
         self.assertEqual(lookup.status_code, 400)
+
+    def test_coach_cannot_permanently_delete_member(self) -> None:
+        delete_response = self.client.delete(
+            f"/admin/users/{self.member_user_id}",
+            headers={"Authorization": f"Bearer {self.coach_token}"},
+        )
+        self.assertEqual(delete_response.status_code, 403)
+
+    def test_unscoped_admin_does_not_see_all_organizations_or_invites(self) -> None:
+        invite = self.client.post(
+            "/admin/signup-invites",
+            headers={"Authorization": f"Bearer {self.owner_token}"},
+            json={"email": "unscoped-admin@example.com", "role": "admin"},
+        )
+        self.assertEqual(invite.status_code, 200)
+        code = invite.json()["invite"]["invite_code"]
+        signup = self.client.post(
+            "/auth/signup",
+            json={"email": "unscoped-admin@example.com", "password": "Password123!", "display_name": "Unscoped Admin", "invite_code": code},
+        )
+        self.assertEqual(signup.status_code, 200)
+        token = signup.json()["token"]
+
+        orgs = self.client.get(
+            "/admin/organizations",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        self.assertEqual(orgs.status_code, 200)
+        self.assertEqual(orgs.json()["organizations"], [])
+
+        invites = self.client.get(
+            "/admin/signup-invites",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        self.assertEqual(invites.status_code, 200)
+        self.assertEqual(invites.json()["invites"], [])
+
+    def test_completed_assignment_filter_derives_status_before_pagination(self) -> None:
+        completed_assignment = create_assignment(
+            created_by_user_id=self.owner_user_id,
+            target_user_id=self.member_user_id,
+            organization_id="org-alpha",
+            title="Completed before newer active assignments",
+            description=None,
+            scenario_id=None,
+            villain_profile_id=None,
+            repetition_target=1,
+            minimum_overall_score=None,
+            due_at=None,
+        )
+        session = SessionState(
+            session_id=str(uuid4()),
+            user_id=self.member_user_id,
+            villain_profile_id="tag",
+            train_timer_seconds=30,
+            scenario_id="srp_ip_btn_vs_bb",
+            pot=20.0,
+            hero_stack=100.0,
+            villain_stack=100.0,
+            hero_range_matrix_saved={"AA": True, "AKs": True},
+            hero_tokens_saved=["AA", "AKs"],
+            villain_range_matrix_saved={"QQ": True},
+            villain_tokens_saved=["QQ"],
+            hero_range_confirmed=True,
+            villain_range_confirmed=True,
+        )
+        store.create_session(session.session_id, asdict(session))
+        hand = HandState(
+            hand_id=str(uuid4()),
+            session_id=session.session_id,
+            user_id=self.member_user_id,
+            scenario_id="srp_ip_btn_vs_bb",
+            villain_profile_id="tag",
+            pot=40.0,
+            hero_stack=90.0,
+            villain_stack=90.0,
+            hero_hand=("Ah", "Kd"),
+            villain_hand=("Qs", "Qd"),
+            board=["2h", "4d", "Qh", "8c", "9s"],
+            street=Street.RIVER,
+            betting_round=BettingRoundState(),
+            hero_tokens_saved=["AA", "AKs"],
+            villain_range_matrix_saved={"QQ": True},
+            villain_range_combos_live={"QQ": [["Qs", "Qd"]]},
+            current_actor=Player.HERO,
+            ui_gate=UIGate.HAND_OVER,
+            hand_over=True,
+        )
+        store.create_hand(hand.hand_id, asdict(hand))
+        store.update_hand_result_scores(
+            hand.hand_id,
+            ranging_score=90.0,
+            response_score=90.0,
+            overall_score=90.0,
+            metadata={"score_version": 2, "scoring_ready": True},
+        )
+        for idx in range(3):
+            create_assignment(
+                created_by_user_id=self.owner_user_id,
+                target_user_id=self.member_user_id,
+                organization_id="org-alpha",
+                title=f"Newer active assignment {idx}",
+                description=None,
+                scenario_id="3bet_ip_co_vs_hj",
+                villain_profile_id=None,
+                repetition_target=5,
+                minimum_overall_score=None,
+                due_at=None,
+            )
+
+        completed = list_assignments_with_progress(
+            target_user_id=self.member_user_id,
+            status="completed",
+            limit=1,
+            offset=0,
+        )
+        self.assertEqual(len(completed), 1)
+        self.assertEqual(completed[0]["assignment_id"], completed_assignment["assignment_id"])
 
     def test_public_signup_blocks_role_escalation(self) -> None:
         response = self.client.post(

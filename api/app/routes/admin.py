@@ -280,7 +280,7 @@ def admin_update_user_active_route(user_id: str, payload: dict = Body(...), curr
 
 
 @router.delete('/users/{user_id}')
-def admin_delete_user_route(user_id: str, current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> dict:
+def admin_delete_user_route(user_id: str, current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN))) -> dict:
     target = _target_user_for_maintenance(current_user, user_id)
     try:
         deleted = delete_user_permanently(user_id=target.user_id)
