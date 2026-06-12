@@ -8,9 +8,10 @@ This runtime keeps the existing public contract (`choose_villain_action` and
 - build the richer v1-style predictor set
 - query v1/v2/v3/v4/v5 expert action models
 - score them with the trained v6 villain-prioritized meta stacker
-- select the deterministic top action from the blended distribution
+- score the final action with the trained v7 semantic direct model
+- select the deterministic top action from the v7 distribution
 - preserve close/mixed probability metadata for scoring and debriefs
-- use size-model-v3 for bet / raise sizing
+- use size-model-v4 for bet / raise sizing
 """
 
 from dataclasses import dataclass
@@ -30,8 +31,14 @@ from api.app.engine.action_model_features_v6 import (
     MODEL_ORDER_V6,
     build_action_meta_features_v6,
 )
+from api.app.engine.action_model_features_v7 import (
+    ACTIONS_BY_NODE_V7,
+    build_action_features_v7,
+)
 from api.app.engine.board_texture import evaluate_board_texture
 from api.app.engine.cards import normalize_cards
+from api.app.engine.size_model_features_v3 import build_size_feature_dict_by_space
+from api.app.engine.size_model_features_v4 import build_size_feature_dict_v4
 from api.app.models.betting import ActionEvent
 from api.app.models.enums import ActionType, Street
 
@@ -42,8 +49,10 @@ TRAINED_MODELS_V3_DIR = MODEL_DIR / "trained_models_v3"
 TRAINED_MODELS_V4_DIR = MODEL_DIR / "trained_models_v4"
 TRAINED_MODELS_V5_DIR = MODEL_DIR / "trained_models_v5"
 TRAINED_MODELS_V6_DIR = MODEL_DIR / "trained_models_v6"
+TRAINED_MODELS_V7_DIR = MODEL_DIR / "trained_models_v7"
 TRAINED_MODELS_SIZE_V2_DIR = MODEL_DIR / "trained_models_size_v2"
 TRAINED_MODELS_SIZE_V3_DIR = MODEL_DIR / "trained_models_size_v3"
+TRAINED_MODELS_SIZE_V4_DIR = MODEL_DIR / "trained_models_size_v4"
 
 OPEN_ACTION_MODEL_FILE = TRAINED_MODELS_DIR / "open_action_model.pkl"
 FACING_BET_FOLD_CONTINUE_MODEL_FILE = TRAINED_MODELS_DIR / "facing_bet_fold_continue_model.pkl"
@@ -75,6 +84,10 @@ OPEN_ACTION_META_MODEL_V6_FILE = TRAINED_MODELS_V6_DIR / "open_action_meta_model
 FACING_BET_META_MODEL_V6_FILE = TRAINED_MODELS_V6_DIR / "facing_bet_meta_model_v6.pkl"
 FACING_RAISE_META_MODEL_V6_FILE = TRAINED_MODELS_V6_DIR / "facing_raise_meta_model_v6.pkl"
 
+OPEN_ACTION_MODEL_V7_FILE = TRAINED_MODELS_V7_DIR / "open_action_model_v7.pkl"
+FACING_BET_MODEL_V7_FILE = TRAINED_MODELS_V7_DIR / "facing_bet_model_v7.pkl"
+FACING_RAISE_MODEL_V7_FILE = TRAINED_MODELS_V7_DIR / "facing_raise_model_v7.pkl"
+
 OPEN_BET_SIZE_MODEL_V2_FILE = TRAINED_MODELS_SIZE_V2_DIR / "open_bet_size_model_v2.pkl"
 RAISE_VS_BET_SIZE_MODEL_V2_FILE = TRAINED_MODELS_SIZE_V2_DIR / "raise_vs_bet_size_model_v2.pkl"
 RERAISE_VS_RAISE_SIZE_MODEL_V2_FILE = TRAINED_MODELS_SIZE_V2_DIR / "reraise_vs_raise_size_model_v2.pkl"
@@ -82,6 +95,10 @@ RERAISE_VS_RAISE_SIZE_MODEL_V2_FILE = TRAINED_MODELS_SIZE_V2_DIR / "reraise_vs_r
 OPEN_BET_SIZE_MODEL_V3_FILE = TRAINED_MODELS_SIZE_V3_DIR / "open_bet_size_model_v3.pkl"
 RAISE_VS_BET_SIZE_MODEL_V3_FILE = TRAINED_MODELS_SIZE_V3_DIR / "raise_vs_bet_size_model_v3.pkl"
 RERAISE_VS_RAISE_SIZE_MODEL_V3_FILE = TRAINED_MODELS_SIZE_V3_DIR / "reraise_vs_raise_size_model_v3.pkl"
+
+OPEN_BET_SIZE_MODEL_V4_FILE = TRAINED_MODELS_SIZE_V4_DIR / "open_bet_size_model_v4.pkl"
+RAISE_VS_BET_SIZE_MODEL_V4_FILE = TRAINED_MODELS_SIZE_V4_DIR / "raise_vs_bet_size_model_v4.pkl"
+RERAISE_VS_RAISE_SIZE_MODEL_V4_FILE = TRAINED_MODELS_SIZE_V4_DIR / "reraise_vs_raise_size_model_v4.pkl"
 
 ALLOWED_CALIBRATION_VILLAIN_NAMES = {"Dave", "Mike", "Blake", "Tom", "Steve", "Erik", "Alex"}
 MODEL_ORDER_V5 = ["v1", "v2", "v3", "v4"]
@@ -121,6 +138,7 @@ class RuntimeSpot:
     node: str
     open_action_type: str | None
     villain_is_ip: bool
+    hero_is_aggressor_preflop: bool
     pot_size: float
     effective_stack_size: float
     board: list[str]
@@ -723,6 +741,12 @@ def _adapt_spot(*, villain_type: str, scenario_id: str, street: str, node: str, 
     open_action_type = None
     if node == 'open_action':
         open_action_type = 'checked_to' if villain_is_ip else 'first_to_act'
+    try:
+        scenario = get_scenario(scenario_id)
+        aggressor = getattr(scenario, "preflop_aggressor", None)
+        hero_is_aggressor_preflop = str(getattr(aggressor, "value", aggressor)).lower() == "hero"
+    except Exception:
+        hero_is_aggressor_preflop = False
     facing_kind = 'none' if node == 'open_action' else ('bet' if node == 'facing_bet' else 'raise')
     legal_actions = ['x','b'] if node == 'open_action' else ['f','c','r']
     parts = [villain_type, scenario_id, street, node, ''.join(sorted(villain_hand)), ''.join(sorted(board)), f'{pot:.3f}', f'{effective_stack_size:.3f}', f'{facing_size_raw:.3f}']
@@ -745,6 +769,7 @@ def _adapt_spot(*, villain_type: str, scenario_id: str, street: str, node: str, 
         node=node,
         open_action_type=open_action_type,
         villain_is_ip=bool(villain_is_ip),
+        hero_is_aggressor_preflop=bool(hero_is_aggressor_preflop),
         pot_size=float(pot),
         effective_stack_size=float(effective_stack_size),
         board=list(board),
@@ -1367,6 +1392,55 @@ def _predict_v6(spot: RuntimeSpot, flat: dict[str, object]) -> dict[str, object]
     return result
 
 
+def _v7_artifact_file_for_node(node: str) -> Path:
+    if node == 'open_action':
+        return OPEN_ACTION_MODEL_V7_FILE
+    if node == 'facing_bet':
+        return FACING_BET_MODEL_V7_FILE
+    if node == 'facing_raise':
+        return FACING_RAISE_MODEL_V7_FILE
+    raise ValueError(f'unsupported v7 node: {node}')
+
+
+def _predict_v7(spot: RuntimeSpot, flat: dict[str, object]) -> dict[str, object]:
+    np, _ = _load_runtime_modules()
+    node = str(spot.node)
+    actions = ACTIONS_BY_NODE_V7[node]
+    v6 = _predict_v6(spot, flat)
+    v6_probs = _normalize_probs({action: float((v6.get('raw_action_probs') or {}).get(action, 0.0)) for action in actions})
+    feature_context = dict(flat)
+    for action in actions:
+        feature_context[f'v6_prior_p_{action}'] = float(v6_probs[action])
+    artifact = _load_artifact(str(_v7_artifact_file_for_node(node)))
+    features = build_action_features_v7(spot=spot, raw_context=feature_context)
+    frame = _build_frame_catboost(features, artifact)
+    pred = np.asarray(artifact['model'].predict(frame), dtype=float).reshape(-1)
+    raw = _normalize_probs({action: float(value) for action, value in zip(actions, pred)})
+    alpha = float(artifact.get('prior_blend_alpha', 0.0) or 0.0)
+    if alpha > 0.0:
+        raw = _normalize_probs({action: (1.0 - alpha) * raw[action] + alpha * v6_probs[action] for action in actions})
+    result: dict[str, object] = {
+        'status': 'ok',
+        'unavailable_reason': None,
+        'raw_action_probs': dict(raw),
+        'prior_action_probs_v6': dict(v6_probs),
+        'model_version': 'v7',
+        'p_x': raw.get('x'),
+        'p_b': raw.get('b'),
+        'p_f': raw.get('f'),
+        'p_c': raw.get('c'),
+        'p_r': raw.get('r'),
+    }
+    if node != 'open_action':
+        p_continue = float(raw.get('c', 0.0)) + float(raw.get('r', 0.0))
+        result['p_continue'] = p_continue
+        if node == 'facing_bet':
+            result['p_raise_given_continue'] = 0.0 if p_continue <= 1e-9 else float(raw.get('r', 0.0)) / p_continue
+        else:
+            result['p_reraise_given_continue'] = 0.0 if p_continue <= 1e-9 else float(raw.get('r', 0.0)) / p_continue
+    return result
+
+
 def _predict_size_v2(flat: dict[str, object], *, node: str) -> dict[str, float | None]:
     result = {
         'pred_open_bet_size_pct_pot_v2': None,
@@ -1419,6 +1493,154 @@ def _predict_size_v3(flat: dict[str, object], *, spot: RuntimeSpot) -> dict[str,
     return result
 
 
+def _size_v4_artifact_file_for_node(node: str) -> Path:
+    if node == 'open_action':
+        return OPEN_BET_SIZE_MODEL_V4_FILE
+    if node == 'facing_bet':
+        return RAISE_VS_BET_SIZE_MODEL_V4_FILE
+    if node == 'facing_raise':
+        return RERAISE_VS_RAISE_SIZE_MODEL_V4_FILE
+    raise ValueError(f'unsupported v4 sizing node: {node}')
+
+
+def _size_prior_bucket(model_kind: str, value: float) -> str:
+    if model_kind == 'open_bet':
+        cuts = [0.34, 0.67, 1.01, 1.51]
+        labels = ['tiny', 'small', 'medium', 'large', 'overbet']
+    else:
+        cuts = [2.5, 3.5, 5.0, 7.0]
+        labels = ['minish', 'standard', 'large', 'huge', 'allin_like']
+    for cut, label in zip(cuts, labels):
+        if float(value) < cut:
+            return label
+    return labels[-1]
+
+
+def _size_model_kind_for_node(node: str) -> str:
+    if node == 'open_action':
+        return 'open_bet'
+    if node == 'facing_bet':
+        return 'raise_vs_bet'
+    if node == 'facing_raise':
+        return 'reraise_vs_raise'
+    raise ValueError(f'unsupported sizing node: {node}')
+
+
+def _with_v3_size_prior(flat: dict[str, object], *, spot: RuntimeSpot, model_kind: str) -> dict[str, object]:
+    out = dict(flat)
+    if out.get('v3_size_prior_target') is not None:
+        return out
+    prior = _predict_size_v3(flat, spot=spot)
+    if model_kind == 'open_bet':
+        value = prior.get('pred_open_bet_size_pct_pot_v3')
+    elif model_kind == 'raise_vs_bet':
+        value = prior.get('pred_raise_multiple_vs_facing_v3')
+    else:
+        value = prior.get('pred_reraise_multiple_vs_facing_v3')
+    if value is not None:
+        out['v3_size_prior_target'] = float(value)
+        out['v3_size_prior_bucket'] = _size_prior_bucket(model_kind, float(value))
+        out['v3_size_prior_model_kind'] = model_kind
+    return out
+
+
+def _build_size_v4_one_row_frame(spot: RuntimeSpot, flat: dict[str, object], artifact: dict, *, feature_columns_key: str = 'feature_columns', categorical_columns_key: str = 'categorical_feature_columns', feature_profile_key: str = 'feature_profile'):
+    _, pd = _load_runtime_modules()
+    feature_columns = list(artifact[feature_columns_key])
+    categorical_columns = set(artifact.get(categorical_columns_key, []))
+    model_kind = str(artifact['model_kind'])
+    feature_profile = str(artifact.get(feature_profile_key, artifact.get('feature_profile', 'semantic')))
+    if feature_profile == 'v3_only':
+        source = build_size_feature_dict_by_space(flat, model_kind, 'villain_context_v3')
+    else:
+        source = build_size_feature_dict_v4(flat, model_kind, spot)
+    row: dict[str, object] = {}
+    for col in feature_columns:
+        value = source.get(col)
+        if isinstance(value, bool):
+            value = int(value)
+        if col in categorical_columns:
+            row[col] = 'NA' if value is None else str(value)
+        else:
+            row[col] = 0.0 if value is None else value
+    return pd.DataFrame([row], columns=feature_columns)
+
+
+def _predict_size_v4_value(spot: RuntimeSpot, flat: dict[str, object], artifact: dict) -> float:
+    np, _ = _load_runtime_modules()
+    feature_columns = set(artifact.get('feature_columns', []))
+    feature_columns.update(artifact.get('residual_feature_columns', []))
+    model_kind = str(artifact['model_kind'])
+    if 'v3_size_prior_target' in feature_columns:
+        flat = _with_v3_size_prior(flat, spot=spot, model_kind=model_kind)
+    if str(artifact.get('model_family', 'direct')) == 'v3_semantic_residual':
+        base_frame = _build_size_v4_one_row_frame(
+            spot,
+            flat,
+            artifact,
+            feature_columns_key='base_feature_columns',
+            categorical_columns_key='base_categorical_feature_columns',
+            feature_profile_key='base_feature_profile',
+        )
+        residual_frame = _build_size_v4_one_row_frame(
+            spot,
+            flat,
+            artifact,
+            feature_columns_key='residual_feature_columns',
+            categorical_columns_key='residual_categorical_feature_columns',
+            feature_profile_key='feature_profile',
+        )
+        base_pred = np.asarray(artifact['base_model'].predict(base_frame), dtype=float).reshape(-1)[0]
+        residual_pred = np.asarray(artifact['residual_model'].predict(residual_frame), dtype=float).reshape(-1)[0]
+        pred = float(base_pred) + float(artifact.get('residual_shrinkage', 0.50) or 0.50) * float(residual_pred)
+    else:
+        frame = _build_size_v4_one_row_frame(spot, flat, artifact)
+        pred = np.asarray(artifact['model'].predict(frame), dtype=float).reshape(-1)[0]
+    if artifact.get('target_transform') == 'log':
+        pred = float(np.exp(pred))
+    return float(pred)
+
+
+def _apply_all_in_threshold(size_raw: float | None, effective_stack: float | None) -> float | None:
+    if size_raw is None:
+        return None
+    if effective_stack is None or float(effective_stack) <= 0:
+        return float(size_raw)
+    raw = max(0.0, float(size_raw))
+    stack = float(effective_stack)
+    if raw >= stack * 0.90:
+        return stack
+    return raw
+
+
+def _predict_size_v4(flat: dict[str, object], *, spot: RuntimeSpot) -> dict[str, float | None]:
+    result = {
+        'pred_open_bet_size_pct_pot_v4': None,
+        'pred_open_bet_size_raw_v4': None,
+        'pred_raise_multiple_vs_facing_v4': None,
+        'pred_reraise_multiple_vs_facing_v4': None,
+        'pred_raise_to_raw_v4': None,
+    }
+    artifact = _load_artifact(str(_size_v4_artifact_file_for_node(spot.node)))
+    if spot.node == 'open_action':
+        pred_pct = _clip_open_bet_pct_pot(_predict_size_v4_value(spot, flat, artifact))
+        raw_size = _apply_all_in_threshold(pred_pct * float(spot.pot_size), spot.effective_stack_size)
+        result['pred_open_bet_size_raw_v4'] = raw_size
+        result['pred_open_bet_size_pct_pot_v4'] = float(raw_size) / float(spot.pot_size) if raw_size is not None and float(spot.pot_size) > 0 else pred_pct
+        return result
+    if spot.node == 'facing_bet':
+        pred_mult = _clip_raise_multiple(_predict_size_v4_value(spot, flat, artifact))
+        raw_size = _apply_all_in_threshold(pred_mult * float(spot.facing_action.amount or 0.0), spot.effective_stack_size)
+        result['pred_raise_to_raw_v4'] = raw_size
+        result['pred_raise_multiple_vs_facing_v4'] = float(raw_size) / float(spot.facing_action.amount or 1.0) if raw_size is not None and float(spot.facing_action.amount or 0.0) > 0 else pred_mult
+        return result
+    pred_mult = _clip_reraise_multiple(_predict_size_v4_value(spot, flat, artifact))
+    raw_size = _apply_all_in_threshold(pred_mult * float(spot.facing_action.amount or 0.0), spot.effective_stack_size)
+    result['pred_raise_to_raw_v4'] = raw_size
+    result['pred_reraise_multiple_vs_facing_v4'] = float(raw_size) / float(spot.facing_action.amount or 1.0) if raw_size is not None and float(spot.facing_action.amount or 0.0) > 0 else pred_mult
+    return result
+
+
 def _format_probs_for_note(probs: dict[str, float]) -> str:
     pieces = [f'{label}={prob:.2f}' for label, prob in sorted(probs.items())]
     return ', '.join(pieces)
@@ -1451,12 +1673,18 @@ def validate_model_runtime() -> None:
         OPEN_ACTION_META_MODEL_V6_FILE,
         FACING_BET_META_MODEL_V6_FILE,
         FACING_RAISE_META_MODEL_V6_FILE,
+        OPEN_ACTION_MODEL_V7_FILE,
+        FACING_BET_MODEL_V7_FILE,
+        FACING_RAISE_MODEL_V7_FILE,
         OPEN_BET_SIZE_MODEL_V2_FILE,
         RAISE_VS_BET_SIZE_MODEL_V2_FILE,
         RERAISE_VS_RAISE_SIZE_MODEL_V2_FILE,
         OPEN_BET_SIZE_MODEL_V3_FILE,
         RAISE_VS_BET_SIZE_MODEL_V3_FILE,
         RERAISE_VS_RAISE_SIZE_MODEL_V3_FILE,
+        OPEN_BET_SIZE_MODEL_V4_FILE,
+        RAISE_VS_BET_SIZE_MODEL_V4_FILE,
+        RERAISE_VS_RAISE_SIZE_MODEL_V4_FILE,
     ]
     missing = [str(p) for p in required if not p.exists()]
     if missing:
@@ -1570,8 +1798,8 @@ def choose_villain_action(
 
     spot = _adapt_spot(villain_type=villain_type, scenario_id=resolved_scenario_id, street=street_key, node=node, villain_is_ip=villain_is_ip, pot=float(pot), effective_stack_size=effective_stack, facing_size_raw=facing_size_raw, villain_hand=list(villain_hand), board=list(board), history_events=history_events)
     flat = _derive_flat_predictors(villain_type=villain_type, scenario_id=resolved_scenario_id, street=street_key, node=node, villain_is_ip=villain_is_ip, pot=float(pot), effective_stack_size=effective_stack, facing_size_raw=facing_size_raw, villain_hand=list(villain_hand), board=list(board), history_events=history_events, iters=iters)
-    v6 = _predict_v6(spot, flat)
-    final_probs = dict(v6.get('raw_action_probs') or {})
+    v7 = _predict_v7(spot, flat)
+    final_probs = dict(v7.get('raw_action_probs') or {})
     if not can_raise and 'r' in final_probs:
         final_probs['r'] = 0.0
     final_probs = _normalize_probs(final_probs)
@@ -1591,20 +1819,20 @@ def choose_villain_action(
     raise_size_mult = None
     raise_size_key = None
     if node == 'open_action' and action == ActionType.BET:
-        size_result = _predict_size_v3(flat, spot=spot)
-        bet_size_frac = float(size_result['pred_open_bet_size_pct_pot_v3'] or 0.5)
+        size_result = _predict_size_v4(flat, spot=spot)
+        bet_size_frac = float(size_result['pred_open_bet_size_pct_pot_v4'] or 0.5)
         bet_size_key = _bet_size_key_from_fraction(bet_size_frac)
     elif node == 'facing_bet' and action == ActionType.RAISE:
-        size_result = _predict_size_v3(flat, spot=spot)
-        raise_size_mult = float(size_result['pred_raise_multiple_vs_facing_v3'] or 3.0)
+        size_result = _predict_size_v4(flat, spot=spot)
+        raise_size_mult = float(size_result['pred_raise_multiple_vs_facing_v4'] or 3.0)
         raise_size_key = _raise_size_key_from_multiple(raise_size_mult)
     elif node == 'facing_raise' and action == ActionType.RAISE:
-        size_result = _predict_size_v3(flat, spot=spot)
-        raise_size_mult = float(size_result['pred_reraise_multiple_vs_facing_v3'] or 3.0)
+        size_result = _predict_size_v4(flat, spot=spot)
+        raise_size_mult = float(size_result['pred_reraise_multiple_vs_facing_v4'] or 3.0)
         raise_size_key = _raise_size_key_from_multiple(raise_size_mult)
 
     note = (
-        f"model=v6 size_model=v3 selection=top_action "
+        f"model=v7 size_model=v4 selection=top_action "
         f"confidence={selection_meta['selection_confidence_band']} "
         f"[{_format_probs_for_note(final_probs)}]"
     )

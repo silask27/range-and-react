@@ -37,7 +37,7 @@ def _check_database() -> RuntimeCheckResult:
 def _check_model_runtime() -> RuntimeCheckResult:
     try:
         validate_model_runtime()
-        return RuntimeCheckResult("predictive_models", "ok", "V6 action + size-model-v3 runtime artifacts and dependencies are ready")
+        return RuntimeCheckResult("predictive_models", "ok", "V7 action + size-model-v4 runtime artifacts and dependencies are ready")
     except Exception as exc:
         return RuntimeCheckResult("predictive_models", "error", f"Model runtime check failed: {exc}")
 
