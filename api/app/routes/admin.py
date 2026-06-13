@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query
+import csv
+import io
+
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query, Response
 
 from api.app.models.auth import UserAccount
 from api.app.models.enums import UserRole
@@ -15,7 +18,7 @@ from api.app.services.access_service import (
     shared_organization_ids,
 )
 from api.app.services.accountability_service import build_weekly_accountability_digest
-from api.app.services.analytics_service import get_admin_analytics, invalidate_admin_analytics, invalidate_dashboard_overview
+from api.app.services.analytics_service import build_member_results_export_rows, get_admin_analytics, invalidate_admin_analytics, invalidate_dashboard_overview
 from api.app.services.assignment_service import count_assignments_with_progress, create_assignment, list_assignments_with_progress, summarize_assignments
 from api.app.services.audit_service import count_audit_logs, list_audit_logs, log_audit_event
 from api.app.services.cohort_service import (
@@ -602,6 +605,35 @@ def admin_analytics_route(background_tasks: BackgroundTasks, current_user: UserA
     return get_admin_analytics(visible_user_ids=user_scope, visible_organization_ids=org_scope, background_tasks=background_tasks)
 
 
+@router.get('/member-results.csv')
+def admin_member_results_csv_route(current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> Response:
+    org_scope, user_scope = _scope(current_user)
+    rows = build_member_results_export_rows(visible_user_ids=user_scope, visible_organization_ids=org_scope)
+    fieldnames = [
+        'member_id',
+        'display_name',
+        'email',
+        'organizations',
+        'is_active',
+        'reps_done',
+        'current_range_score',
+        'current_action_score',
+        'current_overall_score',
+        'active_assignments',
+        'completed_assignments',
+        'overdue_assignments',
+    ]
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(rows)
+    return Response(
+        content=buffer.getvalue(),
+        media_type='text/csv',
+        headers={'Content-Disposition': 'attachment; filename="range-and-react-member-results.csv"'},
+    )
+
+
 @router.get('/organizations')
 def admin_organizations_route(current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> dict:
     org_scope, _ = _scope(current_user)
@@ -610,13 +642,18 @@ def admin_organizations_route(current_user: UserAccount = Depends(require_role(U
 
 @router.post('/organizations')
 def admin_create_organization_route(payload: dict = Body(...), current_user: UserAccount = Depends(require_role(UserRole.OWNER))) -> dict:
+    metadata = payload.get('metadata') if isinstance(payload.get('metadata'), dict) else {}
+    for key in ('logo_url', 'invite_landing_copy', 'brand_accent', 'coach_roster_note'):
+        value = str(payload.get(key) or '').strip()
+        if value:
+            metadata[key] = value
     try:
         org = create_organization(
             name=str(payload.get('name') or '').strip(),
             slug=(str(payload.get('slug')).strip() or None) if payload.get('slug') is not None else None,
             external_provider=(str(payload.get('external_provider')).strip() or None) if payload.get('external_provider') is not None else None,
             external_org_id=(str(payload.get('external_org_id')).strip() or None) if payload.get('external_org_id') is not None else None,
-            metadata=payload.get('metadata') if isinstance(payload.get('metadata'), dict) else None,
+            metadata=metadata,
         )
         log_audit_event(action_type='organization_created', actor=current_user, organization_id=org['organization_id'], metadata={'name': org['name'], 'slug': org['slug']})
     except ValueError as exc:

@@ -50,6 +50,10 @@ type AnalyticsPayload = {
   trend_points: Array<{ label: string; ranging_score: number | null; response_score: number | null }>;
   users_needing_attention: Array<{ user_id: string; display_name: string; completed_hands: number; avg_ranging_score: number | null; avg_response_score: number | null; overdue_assignments: number; active_assignments: number; is_active: boolean }>;
   strongest_users: Array<{ user_id: string; display_name: string; completed_hands: number; avg_ranging_score: number | null; avg_response_score: number | null }>;
+  weakest_scenarios: ScoreBreakdown[];
+  weakest_villains: ScoreBreakdown[];
+  cohort_completion: Array<{ cohort_id: string; organization_id: string; name: string; member_count: number; assignment_count: number; completed_assignments: number; active_assignments: number; overdue_assignments: number; completion_rate: number | null; completed_reps: number; target_reps: number; rep_completion_rate: number | null }>;
+  overdue_assignments: AssignmentEntry[];
   assignment_status_counts: Record<string, number>;
   insight_drivers: {
     ranging: { low: string; high: string };
@@ -57,6 +61,7 @@ type AnalyticsPayload = {
   };
 };
 
+type ScoreBreakdown = { key: string; label: string; hands: number; overall_score: number | null; ranging_score: number | null; response_score: number | null };
 type AccountabilityDigest = {
   period: { days: number; from: string; to: string };
   summary: {
@@ -74,7 +79,7 @@ type AccountabilityDigest = {
 };
 
 type AuditEntry = { audit_log_id: string; action_type: string; created_at: string; target_user_id: string | null };
-type OrganizationEntry = { organization_id: string; name: string; slug: string; external_provider: string | null; members: Array<{ user_id: string; display_name: string | null; email: string; membership_role: string }> };
+type OrganizationEntry = { organization_id: string; name: string; slug: string; external_provider: string | null; metadata?: { logo_url?: string; invite_landing_copy?: string; brand_accent?: string; coach_roster_note?: string }; members: Array<{ user_id: string; display_name: string | null; email: string; membership_role: string }> };
 type InviteEntry = { invite_id: string; invite_code: string; email: string | null; role: string; organization_id: string | null; membership_role: string; expires_at: string | null; consumed_at: string | null; status: string; invite_url?: string; email_delivery?: { status?: string; detail?: string | null } | null };
 type CohortEntry = { cohort_id: string; organization_id: string; name: string; description: string | null; status: string; member_count: number };
 type TabKey = "analytics" | "assignments" | "members";
@@ -149,14 +154,14 @@ export default function AdminPage() {
   const [createState, setCreateState] = useState({ target_type: "member", target_user_id: "", cohort_id: "", title: "", description: "", scenario_id: "", villain_profile_id: "", repetition_target: 20, minimum_overall_score: "", due_at: "" });
   const [cohortState, setCohortState] = useState({ name: "", description: "", organization_id: "", member_user_ids: [] as string[] });
   const [externalState, setExternalState] = useState({ user_id: "", provider: "", external_user_id: "", external_email: "" });
-  const [orgState, setOrgState] = useState({ name: "", slug: "", external_provider: "", external_org_id: "" });
+  const [orgState, setOrgState] = useState({ name: "", slug: "", logo_url: "", invite_landing_copy: "", brand_accent: "", coach_roster_note: "", external_provider: "", external_org_id: "" });
   const [orgMemberState, setOrgMemberState] = useState({ organization_id: "", user_id: "", membership_role: "member" });
   const [inviteState, setInviteState] = useState({ email: "", role: "member", organization_id: "", expires_in_days: 14 });
   const [bulkInviteState, setBulkInviteState] = useState({ emails: "", role: "member", organization_id: "", expires_in_days: 14 });
 
   const canManageRoles = user?.role === "owner" || user?.role === "admin";
   const canCreateOrganizations = user?.role === "owner";
-  const canDeleteUsers = user?.role === "owner" || user?.role === "admin" || user?.role === "coach";
+  const canDeleteUsers = user?.role === "owner" || user?.role === "admin";
 
   const membershipSummaryByUserId = useMemo(() => {
     const summary = new Map<string, string[]>();
@@ -412,7 +417,7 @@ export default function AdminPage() {
       const res = await apiFetch(`${API_BASE}/admin/organizations`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(orgState) });
       const data = await res.json();
       if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to create organization.");
-      setOrgState({ name: "", slug: "", external_provider: "", external_org_id: "" });
+      setOrgState({ name: "", slug: "", logo_url: "", invite_landing_copy: "", brand_accent: "", coach_roster_note: "", external_provider: "", external_org_id: "" });
       setNotice("Organization created.");
       await loadAll();
     } catch (err) {
@@ -482,6 +487,26 @@ export default function AdminPage() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  }
+
+  async function handleDownloadMemberResultsCsv() {
+    setError(null); setNotice(null);
+    try {
+      const res = await apiFetch(`${API_BASE}/admin/member-results.csv`, { cache: "no-store" });
+      const blob = await res.blob();
+      if (!res.ok) throw new Error("Unable to download member results.");
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "range-and-react-member-results.csv";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setNotice("Member results CSV downloaded.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to download member results.");
+    }
   }
 
   async function handleRosterCsvUpload(file: File | null) {
@@ -602,6 +627,9 @@ export default function AdminPage() {
       <HeaderStat label="Assignments" value={analytics.summary.assignments_tracked} tone="neutral" />
     </>
   ) : null;
+  const averageCohortCompletion = analytics ? average(analytics.cohort_completion.map((entry) => entry.rep_completion_rate ?? entry.completion_rate)) : null;
+  const weakestScenario = analytics?.weakest_scenarios?.[0] ?? null;
+  const weakestVillain = analytics?.weakest_villains?.[0] ?? null;
 
   return (
     <AppShell title="Coach" subtitle="See what the member pool is struggling with, assign the next reps, and keep operations clean." headerContent={headerStats}>
@@ -621,8 +649,59 @@ export default function AdminPage() {
           </section>
 
           {activeTab === "analytics" ? (
-            <section style={mainGridStyle}>
-              <div style={{ display: "grid", gap: 18 }}>
+            <div style={{ display: "grid", gap: 24 }}>
+              <section style={commandCenterStyle}>
+                <div style={commandHeaderStyle}>
+                  <SectionHeader eyebrow="Command center" title="HungryHorsePoker coach view" />
+                  <button type="button" onClick={() => void handleDownloadMemberResultsCsv()} style={secondaryButtonStyle}>Download member CSV</button>
+                </div>
+                <div style={digestStatGridStyle}>
+                  <DigestStat label="Cohort completion" value={formatPercent(averageCohortCompletion)} />
+                  <DigestStat label="Struggling members" value={analytics.users_needing_attention.length} />
+                  <DigestStat label="Overdue work" value={analytics.overdue_assignments.length} />
+                  <DigestStat label="Finished reps" value={analytics.summary.completed_hands} />
+                </div>
+                <div style={commandGridStyle}>
+                  <section style={miniPanelStyle}>
+                    <SectionHeader eyebrow="Cohorts" title="Completion by group" />
+                    <div style={stackStyle}>
+                      {analytics.cohort_completion.length ? analytics.cohort_completion.slice(0, 4).map((cohort) => (
+                        <CommandRow
+                          key={cohort.cohort_id}
+                          title={cohort.name}
+                          meta={`${cohort.member_count} members · ${cohort.completed_reps}/${cohort.target_reps || 0} reps`}
+                          right={`${formatPercent(cohort.rep_completion_rate ?? cohort.completion_rate)}${cohort.overdue_assignments ? ` · ${cohort.overdue_assignments} overdue` : ""}`}
+                        />
+                      )) : <EmptyState copy="Create cohorts and cohort assignments to track group completion." />}
+                    </div>
+                  </section>
+                  <section style={miniPanelStyle}>
+                    <SectionHeader eyebrow="Weak spots" title="Scenarios and villains" />
+                    <div style={stackStyle}>
+                      {weakestScenario ? <CommandRow title="Weakest scenario" meta={`${weakestScenario.label} · ${weakestScenario.hands} reps`} right={`Range ${formatScore(weakestScenario.ranging_score)} · Action ${formatScore(weakestScenario.response_score)}`} /> : null}
+                      {weakestVillain ? <CommandRow title="Weakest villain" meta={`${weakestVillain.label} · ${weakestVillain.hands} reps`} right={`Range ${formatScore(weakestVillain.ranging_score)} · Action ${formatScore(weakestVillain.response_score)}`} /> : null}
+                      <ScoreBreakdownList title="Scenario details" rows={analytics.weakest_scenarios.slice(0, 3)} />
+                      <ScoreBreakdownList title="Villain details" rows={analytics.weakest_villains.slice(0, 3)} />
+                    </div>
+                  </section>
+                  <section style={miniPanelStyle}>
+                    <SectionHeader eyebrow="Overdue" title="Assignments needing a nudge" />
+                    <div style={stackStyle}>
+                      {analytics.overdue_assignments.length ? analytics.overdue_assignments.slice(0, 5).map((assignment) => (
+                        <CommandRow
+                          key={assignment.assignment_id}
+                          title={assignment.title}
+                          meta={userNameById.get(assignment.target_user_id) || "Member"}
+                          right={`${assignment.progress.progress_count}/${assignment.progress.repetition_target} reps`}
+                        />
+                      )) : <EmptyState copy="No overdue assignments right now." />}
+                    </div>
+                  </section>
+                </div>
+              </section>
+
+              <section style={mainGridStyle}>
+                <div style={{ display: "grid", gap: 18 }}>
                 <section style={panelStyle}>
                   <SectionHeader eyebrow="Trend" title="Member-pool score progression" />
                   {analytics.trend_points.length ? <TrendChart points={buildRunningAverageTrend(analytics.trend_points)} /> : <EmptyState copy="Complete more finished hands to unlock the pool trend." />}
@@ -671,7 +750,8 @@ export default function AdminPage() {
                   ) : <EmptyState copy="No digest preview available yet." />}
                 </section>
               </div>
-            </section>
+              </section>
+            </div>
           ) : null}
 
           {activeTab === "assignments" ? (
@@ -815,6 +895,24 @@ export default function AdminPage() {
                 <section style={membersTopPanelStyle}>
                   <SectionHeader eyebrow="Admin tools" title="Organizations and access setup" />
                   <div style={helperCopyStyle}>Create the organization first, then send signup links. Existing users can be attached later without creating a new account.</div>
+                  {organizations.length ? (
+                    <div style={workspacePreviewGridStyle}>
+                      {organizations.map((org) => (
+                        <div key={org.organization_id} style={workspacePreviewStyle}>
+                          {org.metadata?.logo_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={org.metadata.logo_url} alt={`${org.name} logo`} style={workspaceLogoStyle} />
+                          ) : <div style={workspaceLogoFallbackStyle}>{org.name.slice(0, 2).toUpperCase()}</div>}
+                          <div style={{ minWidth: 0 }}>
+                            <div style={rowTitleStyle}>{org.name}</div>
+                            <div style={rowMetaStyle}>{org.members.length} rostered users · {org.slug}</div>
+                            {org.metadata?.invite_landing_copy ? <div style={rowHelperStyle}>{org.metadata.invite_landing_copy}</div> : null}
+                            {org.metadata?.coach_roster_note ? <div style={rowHelperStyle}>{org.metadata.coach_roster_note}</div> : null}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                   <div style={toolStackStyle}>
                     {canCreateOrganizations ? (
                       <details className="admin-tool-disclosure" style={detailsStyle}>
@@ -822,6 +920,10 @@ export default function AdminPage() {
                         <form onSubmit={handleCreateOrg} style={stackStyle}>
                           <input value={orgState.name} onChange={(event) => setOrgState((current) => ({ ...current, name: event.target.value }))} placeholder="Organization name" style={inputStyle} required />
                           <input value={orgState.slug} onChange={(event) => setOrgState((current) => ({ ...current, slug: event.target.value }))} placeholder="organization-slug" style={inputStyle} required />
+                          <input value={orgState.logo_url} onChange={(event) => setOrgState((current) => ({ ...current, logo_url: event.target.value }))} placeholder="Logo URL (optional)" style={inputStyle} />
+                          <input value={orgState.brand_accent} onChange={(event) => setOrgState((current) => ({ ...current, brand_accent: event.target.value }))} placeholder="Brand accent color (optional)" style={inputStyle} />
+                          <textarea value={orgState.invite_landing_copy} onChange={(event) => setOrgState((current) => ({ ...current, invite_landing_copy: event.target.value }))} placeholder="Invite landing copy (optional)" style={{ ...inputStyle, minHeight: 82 }} />
+                          <textarea value={orgState.coach_roster_note} onChange={(event) => setOrgState((current) => ({ ...current, coach_roster_note: event.target.value }))} placeholder="Coach roster note (optional)" style={{ ...inputStyle, minHeight: 82 }} />
                           <input value={orgState.external_provider} onChange={(event) => setOrgState((current) => ({ ...current, external_provider: event.target.value }))} placeholder="External provider (optional)" style={inputStyle} />
                           <input value={orgState.external_org_id} onChange={(event) => setOrgState((current) => ({ ...current, external_org_id: event.target.value }))} placeholder="External org ID (optional)" style={inputStyle} />
                           <button type="submit" style={secondaryButtonStyle}>Create organization</button>
@@ -971,6 +1073,31 @@ function MemberDetailRow({ title, hands, ranging, response, activeAssignments, o
 }
 function MetricPill({ label, value, tone }: { label: string; value: number | null; tone: "coral" | "green" }) { return <div style={{ ...metricPillStyle, color: tone === "coral" ? PALETTE.coral : PALETTE.green }}>{label} {formatScore(value)}</div>; }
 function DigestStat({ label, value }: { label: string; value: string | number }) { return <div style={digestStatStyle}><div style={headerStatLabelStyle}>{label}</div><div style={digestStatValueStyle}>{value}</div></div>; }
+function CommandRow({ title, meta, right }: { title: string; meta: string; right: string }) {
+  return (
+    <div style={commandRowStyle}>
+      <div style={{ minWidth: 0 }}>
+        <div style={rowTitleStyle}>{title}</div>
+        <div style={rowMetaStyle}>{meta}</div>
+      </div>
+      <div style={commandRightStyle}>{right}</div>
+    </div>
+  );
+}
+function ScoreBreakdownList({ title, rows }: { title: string; rows: ScoreBreakdown[] }) {
+  if (!rows.length) return null;
+  return (
+    <div style={scoreBreakdownStyle}>
+      <div style={rowMetaStyle}>{title}</div>
+      {rows.map((row) => (
+        <div key={`${title}-${row.key}`} style={scoreBreakdownRowStyle}>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.label}</span>
+          <span>{formatScore(row.overall_score)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 function EmptyState({ copy }: { copy: string }) { return <div style={emptyStateStyle}>{copy}</div>; }
 function parseInsight(copy: string) {
   const marker = ' is ';
@@ -997,6 +1124,7 @@ function buildRunningAverageTrend(points: AnalyticsPayload["trend_points"]) {
 }
 
 function formatScore(value: number | null | undefined) { return value == null ? "—" : `${Math.round(value)}`; }
+function formatPercent(value: number | null | undefined) { return value == null ? "—" : `${Math.round(value)}%`; }
 
 function combinedScore(ranging: number | null | undefined, response: number | null | undefined) {
   const values = [ranging, response].filter((value): value is number => typeof value === "number" && Number.isFinite(value));
@@ -1035,6 +1163,14 @@ const tabRowStyle: CSSProperties = { display: "flex", gap: 10, flexWrap: "wrap" 
 const tabButtonStyle: CSSProperties = { padding: "11px 18px", borderRadius: 999, border: "1px solid var(--line)", background: "transparent", color: PALETTE.cream, fontWeight: 700 };
 const activeTabButtonStyle: CSSProperties = { padding: "11px 18px", borderRadius: 999, border: `1px solid ${PALETTE.coral}`, background: PALETTE.coral, color: PALETTE.cream, fontWeight: 700 };
 const mainGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 430px), 1fr))", gap: 24, alignItems: "start" };
+const commandCenterStyle: CSSProperties = { border: "1px solid var(--line)", borderRadius: 18, padding: 18, background: "rgba(20,18,16,0.52)", display: "grid", gap: 16 };
+const commandHeaderStyle: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 14, flexWrap: "wrap" };
+const commandGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))", gap: 14 };
+const miniPanelStyle: CSSProperties = { border: "1px solid var(--line)", borderRadius: 16, padding: 16, background: "var(--surface-fill)" };
+const commandRowStyle: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 14, alignItems: "center", paddingTop: 11, borderTop: "1px solid var(--line-soft)" };
+const commandRightStyle: CSSProperties = { color: PALETTE.cream, fontSize: 12, fontWeight: 850, textAlign: "right", maxWidth: 150, lineHeight: 1.45 };
+const scoreBreakdownStyle: CSSProperties = { display: "grid", gap: 8, paddingTop: 12, borderTop: "1px solid var(--line-soft)" };
+const scoreBreakdownRowStyle: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 12, color: "rgba(240,235,224,0.72)", fontSize: 13, lineHeight: 1.45 };
 const assignmentPanelStyle: CSSProperties = { ...panelStyle, minHeight: 560, display: "grid", alignContent: "start" };
 const membersTopPanelStyle: CSSProperties = { ...panelStyle, minHeight: 620, display: "grid", alignContent: "start" };
 const scrollBoxStyle: CSSProperties = { maxHeight: 360, overflowY: "auto", display: "grid", gap: 0, border: "1px solid var(--line)", borderRadius: 18, background: "rgba(20,18,16,0.42)" };
@@ -1043,6 +1179,10 @@ const memberFocusRowStyle: CSSProperties = { ...scrollRowStyle, textDecoration: 
 const memberFocusMetricWrapStyle: CSSProperties = { display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" };
 const memberMaintenanceStyle: CSSProperties = { display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap", minWidth: 220 };
 const toolStackStyle: CSSProperties = { display: "grid", marginTop: 14 };
+const workspacePreviewGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))", gap: 12, marginTop: 14 };
+const workspacePreviewStyle: CSSProperties = { display: "grid", gridTemplateColumns: "52px minmax(0, 1fr)", gap: 14, alignItems: "start", padding: 14, borderRadius: 16, border: "1px solid var(--line)", background: "var(--surface-fill)" };
+const workspaceLogoStyle: CSSProperties = { width: 52, height: 52, borderRadius: 14, objectFit: "contain", border: "1px solid var(--line)", background: "rgba(240,235,224,0.04)", padding: 6 };
+const workspaceLogoFallbackStyle: CSSProperties = { width: 52, height: 52, borderRadius: 14, display: "grid", placeItems: "center", border: "1px solid var(--line)", background: "rgba(231,111,81,0.16)", color: PALETTE.cream, fontWeight: 900 };
 const sectionHeaderStyle: CSSProperties = { display: "grid", gap: 8, marginBottom: 16 };
 const eyebrowStyle: CSSProperties = { color: PALETTE.coral, fontSize: 12, textTransform: "uppercase", letterSpacing: 1.3, fontWeight: 900 };
 const sectionTitleStyle: CSSProperties = { margin: 0, fontSize: 26, lineHeight: 1.08 };

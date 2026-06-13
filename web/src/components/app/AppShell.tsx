@@ -17,6 +17,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/results", label: "Results", match: (pathname) => pathname.startsWith("/results") },
   { href: "/assignments", label: "Assignments", match: (pathname) => pathname.startsWith("/assignments"), roles: ["member"] },
   { href: "/admin", label: "Coach", match: (pathname) => pathname.startsWith("/admin"), roles: ["owner", "admin", "coach"] },
+  { href: "/guide", label: "Guide", match: (pathname) => pathname.startsWith("/guide") },
 ];
 
 const PAGE_LABELS: Record<string, string> = {
@@ -27,6 +28,7 @@ const PAGE_LABELS: Record<string, string> = {
   "/results": "Results",
   "/assignments": "Assignments",
   "/admin": "Coach",
+  "/guide": "Guide",
 };
 
 export default function AppShell({ children, title, subtitle, headerContent }: { children: ReactNode; title?: string; subtitle?: string; headerContent?: ReactNode }) {

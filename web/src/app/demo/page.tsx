@@ -54,20 +54,20 @@ export default function DemoPage() {
     {
       role: "coach",
       title: "Show coach workflow",
-      copy: "Switch to the coach account to walk through assignments, practice targeting, results analytics, and how a coaching business would actually manage reps.",
+      copy: "Switch to the coach account to show the command center: cohort completion, struggling members, weakest scenarios, weakest villains, overdue work, member CSV export, and assignment creation.",
       links: [
-        { label: "Open assignments", href: "/assignments" },
-        { label: "Open dashboard", href: "/dashboard" },
+        { label: "Open command center", href: "/admin" },
+        { label: "Open guide", href: "/guide" },
         { label: "Open results", href: "/results" },
       ],
     },
     {
       role: "member",
       title: "Show member experience",
-      copy: "Finish with the member account: start a quick drill, resume an active hand, open debriefs, and show how weak-spot practice is surfaced automatically.",
+      copy: "Finish with the member account: show the growth view, recent reps, trendline, assigned work, next recommended drill, then start a quick rep.",
       links: [
-        { label: "Start training", href: "/screen-1" },
         { label: "Open dashboard", href: "/dashboard" },
+        { label: "Start training", href: "/screen-1" },
         { label: "Open results", href: "/results" },
       ],
     },
@@ -143,8 +143,9 @@ export default function DemoPage() {
           <div style={bulletGridStyle}>
             {[
               "Owner: this is the practice layer that turns coaching philosophy into measurable reps.",
-              "Coach: assign exact spot types, then use results to see who is missing which thought-process steps.",
-              "Member: complete fast drills, review debriefs, and practice weak spots without needing a full live session.",
+              "Coach: use the command center to find cohort completion gaps, struggling members, weak scenarios, weak villains, and overdue work.",
+              "Member: complete fast drills, review trendlines, and see the next recommended drill without needing a full live session.",
+              "Reporting: export one member-results CSV for review calls and external HungryHorsePoker tracking.",
               "Integration: works standalone today, with external member-link scaffolding ready for future sync/import flows.",
             ].map((item) => (
               <div key={item} style={bulletCardStyle}>{item}</div>

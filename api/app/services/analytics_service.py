@@ -366,11 +366,16 @@ def _build_cohort_completion_rows(*, visible_user_ids: Iterable[str] | None = No
             if member.get('role') == 'member' and (not user_scope or member['user_id'] in user_scope)
         ]
         member_ids = [member['user_id'] for member in members]
-        assignments = list_assignments_with_progress(
+        assignments_raw = list_assignments_with_progress(
             limit=5000,
             organization_ids=[cohort['organization_id']],
             target_user_ids=member_ids,
         ) if member_ids else []
+        cohort_assignments = [
+            assignment for assignment in assignments_raw
+            if (assignment.get('metadata') or {}).get('cohort_id') == cohort['cohort_id']
+        ]
+        assignments = cohort_assignments or assignments_raw
         completed = sum(1 for assignment in assignments if assignment.get('status') == 'completed')
         overdue = sum(1 for assignment in assignments if assignment.get('status') == 'overdue')
         active = sum(1 for assignment in assignments if assignment.get('status') == 'active')
@@ -463,6 +468,7 @@ def _compute_admin_analytics(*, visible_user_ids: Iterable[str] | None = None, v
     pair_rows = _query_pair_scores(visible_user_ids=user_scope)
     user_rows = _query_user_rows(visible_user_ids=user_scope)
     assignments = list_assignments_with_progress(limit=2000, organization_ids=org_scope, target_user_ids=user_scope)
+    cohort_completion = _build_cohort_completion_rows(visible_user_ids=user_scope, visible_organization_ids=org_scope)
 
     assignments_by_user: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for assignment in assignments:
@@ -505,6 +511,8 @@ def _compute_admin_analytics(*, visible_user_ids: Iterable[str] | None = None, v
         'strongest_pairs': sorted([row for row in pair_rows if row['overall_score'] is not None], key=lambda item: (-float(item['overall_score']), -item['hands'], item['label']))[:6],
         'users_needing_attention': users_needing_attention,
         'strongest_users': strongest_users,
+        'cohort_completion': cohort_completion,
+        'overdue_assignments': [assignment for assignment in assignments if assignment.get('status') == 'overdue'][:20],
         'assignment_status_counts': dict(assignment_status_counts),
         'insight_drivers': {
             'ranging': _driver_summary(metric_key='ranging', baseline=summary['avg_ranging_score'], scenario_rows=scenario_rows, villain_rows=villain_rows, pair_rows=pair_rows),
@@ -601,6 +609,7 @@ def _compute_dashboard_overview(*, user_id: str) -> dict[str, Any]:
     results = [item for item in store.list_hand_results(user_id=user_id, limit=50) if item.get('hand_over')]
     assignment_queue = build_user_assignment_queue(user_id=user_id, limit=20)
     summary = _query_dashboard_summary(user_id=user_id)
+    recent_trend = list(reversed(results[:12]))
 
     return {
         'summary': {
@@ -612,6 +621,14 @@ def _compute_dashboard_overview(*, user_id: str) -> dict[str, Any]:
         'recent_sessions': sessions,
         'recent_hands': hands,
         'recent_results': results,
+        'trend_points': [
+            {
+                'label': f'Rep {idx + 1}',
+                'ranging_score': item.get('ranging_score'),
+                'response_score': item.get('response_score'),
+            }
+            for idx, item in enumerate(recent_trend)
+        ],
         'assignments': assignment_queue['assignments'],
         'suggested_practice': assignment_queue['suggested_practice'],
         'results_scaffolding': {

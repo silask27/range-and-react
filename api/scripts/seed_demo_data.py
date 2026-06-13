@@ -13,6 +13,7 @@ from api.app.models.state import HandState, SessionState
 from api.app.services.assignment_service import create_assignment
 from api.app.services.auth_service import create_owner_if_none, create_user, link_external_identity
 from api.app.services.audit_service import log_audit_event
+from api.app.services.cohort_service import add_cohort_members, create_assignments_for_cohort, create_cohort
 from api.app.services.organization_service import add_user_to_organization, create_organization
 from api.app.storage.db import get_connection, init_db, json_dumps
 from api.app.storage.memory_store import store
@@ -178,11 +179,31 @@ def seed_demo_data(*, reset: bool = False) -> dict[str, Any]:
     member = create_user(email=settings.demo_member_email, password=settings.demo_seed_password, display_name="Demo Member", role=UserRole.MEMBER)
     member_two = create_user(email="member2@demo.local", password=settings.demo_seed_password, display_name="Member Struggling", role=UserRole.MEMBER)
 
-    org = create_organization(name=settings.demo_org_name, slug="demo-poker-academy", external_provider="kajabi", external_org_id="demo-kajabi-org")
+    org = create_organization(
+        name=settings.demo_org_name,
+        slug="demo-poker-academy",
+        external_provider="kajabi",
+        external_org_id="demo-kajabi-org",
+        metadata={
+            "logo_url": "/range_logo_5x5_v3_no_text.svg",
+            "brand_accent": "#E76F51",
+            "coach_roster_note": "Demo roster built to show how a HungryHorsePoker-style coaching group can track members, cohorts, weak spots, and overdue work.",
+            "invite_landing_copy": "Welcome to the Range & React demo workspace. Coaches can assign exact live-poker drills, members can complete focused reps, and results roll up into clear range/action score trends.",
+        },
+    )
     add_user_to_organization(organization_id=org["organization_id"], user_id=owner.user_id, membership_role="owner")
     add_user_to_organization(organization_id=org["organization_id"], user_id=coach.user_id, membership_role="coach")
     add_user_to_organization(organization_id=org["organization_id"], user_id=member.user_id, membership_role="member")
     add_user_to_organization(organization_id=org["organization_id"], user_id=member_two.user_id, membership_role="member")
+
+    deep_stack_cohort = create_cohort(
+        organization_id=org["organization_id"],
+        name="Deep Stack Study Group",
+        description="Members preparing for tougher, deeper-stacked live spots.",
+        created_by_user_id=coach.user_id,
+        metadata={"pitch_demo": True, "focus": "range and response discipline"},
+    )
+    add_cohort_members(cohort_id=deep_stack_cohort["cohort_id"], user_ids=[member.user_id, member_two.user_id])
 
     link_external_identity(user_id=coach.user_id, provider="kajabi", external_user_id="coach-001", external_email=coach.email, metadata={"plan": "coach"})
     link_external_identity(user_id=member.user_id, provider="kajabi", external_user_id="member-001", external_email=member.email, metadata={"plan": "basecamp"})
@@ -346,6 +367,7 @@ def seed_demo_data(*, reset: bool = False) -> dict[str, Any]:
     create_assignment(
         created_by_user_id=coach.user_id,
         target_user_id=member.user_id,
+        organization_id=org["organization_id"],
         title="Sharpen 3Bet IP reps",
         description="Complete 12 more reps in 3Bet IP spots and keep your ranging discipline above 80.",
         scenario_id="3bet_ip_co_vs_hj",
@@ -357,6 +379,7 @@ def seed_demo_data(*, reset: bool = False) -> dict[str, Any]:
     create_assignment(
         created_by_user_id=coach.user_id,
         target_user_id=member.user_id,
+        organization_id=org["organization_id"],
         title="Mike-style overcall prep",
         description="Drill calling-station nodes and tighten your response predictions.",
         scenario_id="srp_ip_btn_vs_bb",
@@ -368,6 +391,7 @@ def seed_demo_data(*, reset: bool = False) -> dict[str, Any]:
     create_assignment(
         created_by_user_id=coach.user_id,
         target_user_id=member_two.user_id,
+        organization_id=org["organization_id"],
         title="Catch up on OOP discipline",
         description="Your last results suggest you need a tighter pruning process out of position.",
         scenario_id="srp_oop_utg_vs_btn",
@@ -375,6 +399,17 @@ def seed_demo_data(*, reset: bool = False) -> dict[str, Any]:
         repetition_target=10,
         minimum_overall_score=70.0,
         due_at=overdue,
+    )
+    create_assignments_for_cohort(
+        cohort_id=deep_stack_cohort["cohort_id"],
+        created_by=coach,
+        title="Cohort sprint: pressure profiles",
+        description="Complete the sprint before review day so the coach can compare action prediction leaks across the group.",
+        scenario_id=None,
+        villain_profile_id="maniac",
+        repetition_target=6,
+        minimum_overall_score=72.0,
+        due_at=due_soon,
     )
 
     log_audit_event(action_type="demo_seed_run", actor=owner, metadata={"reset": reset, "organization_id": org["organization_id"]})
@@ -391,6 +426,14 @@ def seed_demo_data(*, reset: bool = False) -> dict[str, Any]:
         conn.execute(
             "UPDATE hand_results SET started_at = ?, updated_at = ? WHERE hand_id = ?",
             ((_now() - timedelta(days=1)).isoformat(), (_now() - timedelta(days=1)).isoformat(), member_hand_ids[2]),
+        )
+        conn.execute(
+            "UPDATE hand_results SET started_at = ?, updated_at = ? WHERE hand_id = ?",
+            ((_now() - timedelta(days=6)).isoformat(), (_now() - timedelta(days=6)).isoformat(), member_two_hand_ids[0]),
+        )
+        conn.execute(
+            "UPDATE hand_results SET started_at = ?, updated_at = ? WHERE hand_id = ?",
+            ((_now() - timedelta(days=2)).isoformat(), (_now() - timedelta(days=2)).isoformat(), member_two_hand_ids[1]),
         )
 
     return {
