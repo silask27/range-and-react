@@ -87,8 +87,8 @@ export default function TrendChart({
     <div style={chartWrapStyle}>
       {showLegend ? (
         <div style={legendStyle}>
-          <div style={legendItemStyle}><span style={{ ...legendSwatchStyle, background: COLORS.range }} />Villain ranging</div>
-          <div style={legendItemStyle}><span style={{ ...legendSwatchStyle, background: COLORS.response }} />Action prediction</div>
+          <div style={legendItemStyle}><span style={{ ...legendSwatchStyle, background: COLORS.range }} />Range Score</div>
+          <div style={legendItemStyle}><span style={{ ...legendSwatchStyle, background: COLORS.response }} />Action Score</div>
         </div>
       ) : null}
       <div style={chartGridStyle}>

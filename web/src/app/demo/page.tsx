@@ -145,7 +145,7 @@ export default function DemoPage() {
               "Owner: this is the practice layer that turns coaching philosophy into measurable reps.",
               "Coach: use the command center to find cohort completion gaps, struggling members, weak scenarios, weak villains, and overdue work.",
               "Member: complete fast drills, review trendlines, and see the next recommended drill without needing a full live session.",
-              "Reporting: export one member-results CSV for review calls and external HungryHorsePoker tracking.",
+              "Reporting: export one member-results CSV for review calls and external coaching-business tracking.",
               "Integration: works standalone today, with external member-link scaffolding ready for future sync/import flows.",
             ].map((item) => (
               <div key={item} style={bulletCardStyle}>{item}</div>

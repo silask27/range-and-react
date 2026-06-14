@@ -182,7 +182,7 @@ export default function HandDebriefPage() {
   return (
     <AppShell
       title="Hand debrief"
-      subtitle="The big-picture review: final truth, ranging quality, action-response reads, and the exact streets that mattered."
+      subtitle="The big-picture review: final truth, Range Score, Action Score, and the exact streets that mattered."
     >
       {isAuthLoading ? <div style={emptyStyle}>Loading hand debrief…</div> : null}
       {authError ? <div style={errorStyle}>{authError}</div> : null}
@@ -197,15 +197,15 @@ export default function HandDebriefPage() {
               tone="neutral"
             />
             <ScoreCard
-              eyebrow="Villain ranging"
+              eyebrow="Range Score"
               title={formatScore(payload.summary.ranging_score)}
               copy={rangeTakeaway?.headline ?? "No ranging steps were scored."}
               tone="coral"
             />
             <ScoreCard
-              eyebrow="Action prediction"
+              eyebrow="Action Score"
               title={formatScore(payload.summary.response_score)}
-              copy={responseTakeaway?.headline ?? "No action-response nodes were scored."}
+              copy={responseTakeaway?.headline ?? "No Action Score nodes were scored."}
               tone="green"
             />
           </section>
@@ -304,7 +304,7 @@ export default function HandDebriefPage() {
             </MetricSection>
 
             <MetricSection
-              eyebrow="Action response"
+              eyebrow="Action Score"
               title="How close were your bucket reads?"
               score={payload.summary.response_score}
               accent={PALETTE.green}
@@ -457,7 +457,7 @@ function EmptyState({ copy }: { copy: string }) {
 }
 
 function summarizePruning(items: DebriefPayload["prune_evaluations"]) {
-  if (!items.length) return { headline: "No ranging score yet.", detail: "No prune evaluations were recorded for this hand." };
+  if (!items.length) return { headline: "No Range Score yet.", detail: "No prune evaluations were recorded for this hand." };
   const scored = items.filter((item) => item.overall_score != null);
   const posteriorItems = items.filter((item) => item.posterior_scoring?.posterior_mass_kept != null);
   const avgPosterior = posteriorItems.length
@@ -476,7 +476,7 @@ function summarizePruning(items: DebriefPayload["prune_evaluations"]) {
 
 function summarizeResponses(items: DebriefPayload["response_evaluations"]) {
   const scored = items.filter((item) => item.supported && item.score != null);
-  if (!scored.length) return { headline: "No action-response score yet.", detail: "No scored response nodes were recorded for this hand." };
+  if (!scored.length) return { headline: "No Action Score yet.", detail: "No scored response nodes were recorded for this hand." };
   const avgScore = scored.reduce((sum, item) => sum + Number(item.score ?? 0), 0) / scored.length;
   return {
     headline: `${scored.length} bucket reaction read${scored.length === 1 ? "" : "s"} scored.`,

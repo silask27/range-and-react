@@ -187,8 +187,8 @@ def seed_demo_data(*, reset: bool = False) -> dict[str, Any]:
         metadata={
             "logo_url": "/range_logo_5x5_v3_no_text.svg",
             "brand_accent": "#E76F51",
-            "coach_roster_note": "Demo roster built to show how a HungryHorsePoker-style coaching group can track members, cohorts, weak spots, and overdue work.",
-            "invite_landing_copy": "Welcome to the Range & React demo workspace. Coaches can assign exact live-poker drills, members can complete focused reps, and results roll up into clear range/action score trends.",
+            "coach_roster_note": "Demo roster built to show how a coaching group can track members, cohorts, weak spots, and overdue work.",
+            "invite_landing_copy": "Welcome to the Range & React demo workspace. Coaches can assign exact live-poker drills, members can complete focused reps, and results roll up into clear Range Score and Action Score trends.",
         },
     )
     add_user_to_organization(organization_id=org["organization_id"], user_id=owner.user_id, membership_role="owner")
@@ -369,7 +369,7 @@ def seed_demo_data(*, reset: bool = False) -> dict[str, Any]:
         target_user_id=member.user_id,
         organization_id=org["organization_id"],
         title="Sharpen 3Bet IP reps",
-        description="Complete 12 more reps in 3Bet IP spots and keep your ranging discipline above 80.",
+        description="Complete 12 more reps in 3Bet IP spots and keep your Range Score above 80.",
         scenario_id="3bet_ip_co_vs_hj",
         villain_profile_id=None,
         repetition_target=12,
@@ -404,7 +404,7 @@ def seed_demo_data(*, reset: bool = False) -> dict[str, Any]:
         cohort_id=deep_stack_cohort["cohort_id"],
         created_by=coach,
         title="Cohort sprint: pressure profiles",
-        description="Complete the sprint before review day so the coach can compare action prediction leaks across the group.",
+        description="Complete the sprint before review day so the coach can compare Action Score leaks across the group.",
         scenario_id=None,
         villain_profile_id="maniac",
         repetition_target=6,

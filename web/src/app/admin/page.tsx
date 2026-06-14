@@ -509,6 +509,24 @@ export default function AdminPage() {
     }
   }
 
+  function handleDownloadSampleReport() {
+    if (!analytics) return;
+    const workspaceName = organizations.length === 1 ? organizations[0].name : organizations.length > 1 ? "All workspaces" : "Workspace";
+    const nextActions = buildCoachNextActions({ analytics, memberNames: userNameById, workspaceName });
+    const rows = memberPerformanceRows.slice(0, 8);
+    const html = buildCoachReportHtml({ analytics, workspaceName, rows, nextActions });
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "range-and-react-coach-report.html";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setNotice("Sample coach report downloaded.");
+  }
+
   async function handleRosterCsvUpload(file: File | null) {
     if (!file) return;
     setError(null);
@@ -622,14 +640,16 @@ export default function AdminPage() {
 
   const headerStats = analytics ? (
     <>
-      <HeaderStat label="Avg villain ranging" value={formatScore(analytics.summary.avg_ranging_score)} tone="coral" />
-      <HeaderStat label="Avg action prediction" value={formatScore(analytics.summary.avg_response_score)} tone="green" />
+      <HeaderStat label="Avg Range Score" value={formatScore(analytics.summary.avg_ranging_score)} tone="coral" />
+      <HeaderStat label="Avg Action Score" value={formatScore(analytics.summary.avg_response_score)} tone="green" />
       <HeaderStat label="Assignments" value={analytics.summary.assignments_tracked} tone="neutral" />
     </>
   ) : null;
   const averageCohortCompletion = analytics ? average(analytics.cohort_completion.map((entry) => entry.rep_completion_rate ?? entry.completion_rate)) : null;
   const weakestScenario = analytics?.weakest_scenarios?.[0] ?? null;
   const weakestVillain = analytics?.weakest_villains?.[0] ?? null;
+  const workspaceName = organizations.length === 1 ? organizations[0].name : organizations.length > 1 ? "All workspaces" : "Workspace";
+  const nextCoachActions = analytics ? buildCoachNextActions({ analytics, memberNames: userNameById, workspaceName }) : [];
 
   return (
     <AppShell title="Coach" subtitle="See what the member pool is struggling with, assign the next reps, and keep operations clean." headerContent={headerStats}>
@@ -652,8 +672,11 @@ export default function AdminPage() {
             <div style={{ display: "grid", gap: 24 }}>
               <section style={commandCenterStyle}>
                 <div style={commandHeaderStyle}>
-                  <SectionHeader eyebrow="Command center" title="HungryHorsePoker coach view" />
-                  <button type="button" onClick={() => void handleDownloadMemberResultsCsv()} style={secondaryButtonStyle}>Download member CSV</button>
+                  <SectionHeader eyebrow={workspaceName} title="Coach command center" />
+                  <div style={actionClusterStyle}>
+                    <button type="button" onClick={handleDownloadSampleReport} style={secondaryButtonStyle}>Sample report</button>
+                    <button type="button" onClick={() => void handleDownloadMemberResultsCsv()} style={secondaryButtonStyle}>Download member CSV</button>
+                  </div>
                 </div>
                 <div style={digestStatGridStyle}>
                   <DigestStat label="Cohort completion" value={formatPercent(averageCohortCompletion)} />
@@ -682,6 +705,14 @@ export default function AdminPage() {
                       {weakestVillain ? <CommandRow title="Weakest villain" meta={`${weakestVillain.label} · ${weakestVillain.hands} reps`} right={`Range ${formatScore(weakestVillain.ranging_score)} · Action ${formatScore(weakestVillain.response_score)}`} /> : null}
                       <ScoreBreakdownList title="Scenario details" rows={analytics.weakest_scenarios.slice(0, 3)} />
                       <ScoreBreakdownList title="Villain details" rows={analytics.weakest_villains.slice(0, 3)} />
+                    </div>
+                  </section>
+                  <section style={miniPanelStyle}>
+                    <SectionHeader eyebrow="Next actions" title="Coach action plan" />
+                    <div style={stackStyle}>
+                      {nextCoachActions.length ? nextCoachActions.map((item) => (
+                        <CommandRow key={item.title} title={item.title} meta={item.meta} right={item.right} />
+                      )) : <EmptyState copy="More completed reps will unlock clearer next actions." />}
                     </div>
                   </section>
                   <section style={miniPanelStyle}>
@@ -728,10 +759,10 @@ export default function AdminPage() {
                 <section style={panelStyle}>
                   <SectionHeader eyebrow="Insights" title="What is driving the pool scores" />
                   <div style={stackStyle}>
-                    <InsightCard tone="coral" title="Ranging struggle" copy={analytics.insight_drivers.ranging.low} />
-                    <InsightCard tone="green" title="Ranging strength" copy={analytics.insight_drivers.ranging.high} />
-                    <InsightCard tone="coral" title="Action-read struggle" copy={analytics.insight_drivers.response.low} />
-                    <InsightCard tone="green" title="Action-read strength" copy={analytics.insight_drivers.response.high} />
+                    <InsightCard tone="coral" title="Range Score struggle" copy={analytics.insight_drivers.ranging.low} />
+                    <InsightCard tone="green" title="Range Score strength" copy={analytics.insight_drivers.ranging.high} />
+                    <InsightCard tone="coral" title="Action Score struggle" copy={analytics.insight_drivers.response.low} />
+                    <InsightCard tone="green" title="Action Score strength" copy={analytics.insight_drivers.response.high} />
                   </div>
                 </section>
                 <section style={panelStyle}>
@@ -1099,6 +1130,117 @@ function ScoreBreakdownList({ title, rows }: { title: string; rows: ScoreBreakdo
   );
 }
 function EmptyState({ copy }: { copy: string }) { return <div style={emptyStateStyle}>{copy}</div>; }
+
+function buildCoachNextActions({ analytics, memberNames, workspaceName }: { analytics: AnalyticsPayload; memberNames: Map<string, string>; workspaceName: string }) {
+  const actions: Array<{ title: string; meta: string; right: string }> = [];
+  const overdue = analytics.overdue_assignments[0];
+  if (overdue) {
+    actions.push({
+      title: "Nudge overdue work",
+      meta: `${memberNames.get(overdue.target_user_id) || "Member"} has ${overdue.title} waiting.`,
+      right: `${overdue.progress.progress_count}/${overdue.progress.repetition_target} reps`,
+    });
+  }
+  const weakVillain = analytics.weakest_villains[0];
+  if (weakVillain) {
+    actions.push({
+      title: "Assign opponent-specific reps",
+      meta: `${workspaceName} is weakest against ${weakVillain.label}.`,
+      right: `Action ${formatScore(weakVillain.response_score)}`,
+    });
+  }
+  const weakScenario = analytics.weakest_scenarios[0];
+  if (weakScenario) {
+    actions.push({
+      title: "Review the weakest scenario",
+      meta: `${weakScenario.label} is the lowest scenario in the current pool.`,
+      right: `Range ${formatScore(weakScenario.ranging_score)}`,
+    });
+  }
+  const attention = analytics.users_needing_attention.find((entry) => entry.completed_hands > 0);
+  if (attention) {
+    actions.push({
+      title: "Coach a struggling member",
+      meta: `${attention.display_name} has the lowest current combined score pressure.`,
+      right: `Range ${formatScore(attention.avg_ranging_score)} · Action ${formatScore(attention.avg_response_score)}`,
+    });
+  }
+  return actions.slice(0, 4);
+}
+
+function buildCoachReportHtml({
+  analytics,
+  workspaceName,
+  rows,
+  nextActions,
+}: {
+  analytics: AnalyticsPayload;
+  workspaceName: string;
+  rows: Array<{ display_name: string; completed_hands: number; avg_ranging_score: number | null; avg_response_score: number | null; active_assignments: number; overdue_assignments?: number }>;
+  nextActions: Array<{ title: string; meta: string; right: string }>;
+}) {
+  const generated = new Date().toLocaleString();
+  const memberRows = rows.map((row) => `
+    <tr>
+      <td>${escapeHtml(row.display_name)}</td>
+      <td>${row.completed_hands}</td>
+      <td>${formatScore(row.avg_ranging_score)}</td>
+      <td>${formatScore(row.avg_response_score)}</td>
+      <td>${row.active_assignments}</td>
+      <td>${row.overdue_assignments ?? 0}</td>
+    </tr>
+  `).join("");
+  const actionRows = nextActions.map((item) => `<li><strong>${escapeHtml(item.title)}</strong><br><span>${escapeHtml(item.meta)} ${escapeHtml(item.right)}</span></li>`).join("");
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(workspaceName)} Coach Report</title>
+  <style>
+    body { font-family: Inter, Arial, sans-serif; margin: 40px; color: #171412; line-height: 1.45; }
+    h1 { margin: 0 0 6px; font-size: 32px; }
+    h2 { margin-top: 28px; font-size: 20px; }
+    .meta { color: #6b625b; margin-bottom: 24px; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 22px 0; }
+    .stat { border: 1px solid #ded8ce; border-radius: 10px; padding: 14px; }
+    .label { color: #6b625b; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-weight: 800; }
+    .value { margin-top: 8px; font-size: 26px; font-weight: 900; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { border-bottom: 1px solid #ded8ce; padding: 10px 8px; text-align: left; }
+    th { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #6b625b; }
+    li { margin: 0 0 12px; }
+    span { color: #6b625b; }
+  </style>
+</head>
+<body>
+  <h1>${escapeHtml(workspaceName)} Coach Report</h1>
+  <div class="meta">Generated from Range & React on ${escapeHtml(generated)}</div>
+  <div class="stats">
+    <div class="stat"><div class="label">Finished reps</div><div class="value">${analytics.summary.completed_hands}</div></div>
+    <div class="stat"><div class="label">Range Score</div><div class="value">${formatScore(analytics.summary.avg_ranging_score)}</div></div>
+    <div class="stat"><div class="label">Action Score</div><div class="value">${formatScore(analytics.summary.avg_response_score)}</div></div>
+    <div class="stat"><div class="label">Overdue work</div><div class="value">${analytics.overdue_assignments.length}</div></div>
+  </div>
+  <h2>Recommended next actions</h2>
+  <ol>${actionRows || "<li>More completed reps will unlock clearer next actions.</li>"}</ol>
+  <h2>Member snapshot</h2>
+  <table>
+    <thead><tr><th>Member</th><th>Reps</th><th>Range Score</th><th>Action Score</th><th>Active</th><th>Overdue</th></tr></thead>
+    <tbody>${memberRows || "<tr><td colspan='6'>No member rows yet.</td></tr>"}</tbody>
+  </table>
+</body>
+</html>`;
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 function parseInsight(copy: string) {
   const marker = ' is ';
   const idx = copy.indexOf(marker);

@@ -341,8 +341,8 @@ export default function ResultsPage() {
 
   const headerStats = (
     <>
-      <HeaderStat label="Villain ranging" value={formatScore(filteredSummary.ranging)} tone="coral" />
-      <HeaderStat label="Action prediction" value={formatScore(filteredSummary.response)} tone="green" />
+      <HeaderStat label="Range Score" value={formatScore(filteredSummary.ranging)} tone="coral" />
+      <HeaderStat label="Action Score" value={formatScore(filteredSummary.response)} tone="green" />
       <HeaderStat label="Finished hands" value={filteredSummary.hands} tone="neutral" />
     </>
   );
@@ -451,7 +451,7 @@ export default function ResultsPage() {
                       <div style={rowTitleStyle}>{result.scenario_display_name || "Scenario"} · {result.villain_display_name || "Villain"}</div>
                       <div style={rowMetaStyle}>{compactDateTime(result.completed_at)} · {result.position} · {result.timer_label}</div>
                       <div style={rowHelperStyle}>
-                        Villain ranging {formatScore(result.ranging_score)} · {result.response_score == null ? "Action prediction unscored for this hand path" : `Action prediction ${formatScore(result.response_score)}`}
+                        Range Score {formatScore(result.ranging_score)} · {result.response_score == null ? "Action Score unscored for this hand path" : `Action Score ${formatScore(result.response_score)}`}
                       </div>
                       {result.review?.flagged ? (
                         <div style={rowHelperStyle}>{result.review.sent_to_coaches ? "Flagged and sent to coach queue" : "Flagged for review"}</div>
@@ -562,7 +562,7 @@ function buildDriverInsights(results: ResultEntry[]): InsightCardData[] {
 }
 
 function bestDriverInsight(results: ResultEntry[], metric: "ranging" | "response", direction: "low" | "high"): InsightCardData {
-  const titlePrefix = metric === "ranging" ? "Villain ranging" : "Action prediction";
+  const titlePrefix = metric === "ranging" ? "Range Score" : "Action Score";
   if (!results.length) {
     return {
       key: `${metric}-${direction}`,

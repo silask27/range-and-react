@@ -76,7 +76,12 @@ class Settings:
     allowed_origins: list[str] = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
-        fallback = ["http://localhost:3000", "http://127.0.0.1:3000"]
+        fallback = [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "https://rangeandreact.com",
+            "https://www.rangeandreact.com",
+        ]
         object.__setattr__(self, "allowed_origins", _split_csv(os.getenv("ALLOWED_ORIGINS"), fallback))
         trusted_host_fallback = ["localhost", "127.0.0.1", "testserver"] if not _is_production() else []
         object.__setattr__(self, "trusted_hosts", _split_csv(os.getenv("VRT_TRUSTED_HOSTS"), trusted_host_fallback))

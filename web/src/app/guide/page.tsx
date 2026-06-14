@@ -6,19 +6,19 @@ import { useRequireAuth } from "../../lib/hooks/useRequireAuth";
 
 const GUIDE_SECTIONS = [
   {
-    title: "Range score",
-    copy: "Range score measures how well a member kept the real hand, bucket, and hand family alive while narrowing villain down. A high score means the member did not cut the truth too early and still removed enough unlikely hands to make the range useful.",
+    title: "Range Score",
+    copy: "Range Score measures how well a member kept the real hand, bucket, and hand family alive while narrowing villain down. A high score means the member did not cut the truth too early and still removed enough unlikely hands to make the range useful.",
     example: "Example: villain actually has a set. If the member keeps sets in the range on flop and turn, they get credit. If they remove every set after a small bet, the score drops because the real answer was no longer possible.",
   },
   {
-    title: "Action score",
-    copy: "Action score measures how well the member predicted how villain's current range would respond to hero's available action. It is about the reaction, not whether hero personally liked the line.",
-    example: "Example: hero bets small and a calling-station villain continues with a flush draw. If the member marked that draw bucket as call, they get credit. If they marked fold, the action score drops.",
+    title: "Action Score",
+    copy: "Action Score measures how well the member predicted how villain's current range would respond to hero's available action. It is about the reaction, not whether hero personally liked the line.",
+    example: "Example: hero bets small and a calling-station villain continues with a flush draw. If the member marked that draw bucket as call, they get credit. If they marked fold, the Action Score drops.",
   },
   {
-    title: "Overall score",
-    copy: "Overall score is the simple average of range score and action score. Keeping them separate is important because a player can range villains well but still miss how a specific villain type reacts.",
-    example: "Example: range 82 and action 64 gives an overall of 73. The coach should not just see 73; they should see that action prediction needs the next drill.",
+    title: "Overall Score",
+    copy: "Overall Score is the simple average of Range Score and Action Score. Keeping them separate is important because a player can range villains well but still miss how a specific villain type reacts.",
+    example: "Example: Range Score 82 and Action Score 64 gives an Overall Score of 73. The coach should not just see 73; they should see that Action Score needs the next drill.",
   },
   {
     title: "Villain types",
@@ -32,8 +32,8 @@ const GUIDE_SECTIONS = [
   },
   {
     title: "Member CSV",
-    copy: "Coaches and admins can download one row per member with current range score, action score, overall score, reps done, and assignment counts. That makes external reporting easy for a coaching business.",
-    example: "Example: HungryHorsePoker can export the roster before a review call and sort by overdue assignments or lowest action score.",
+    copy: "Coaches and admins can download one row per member with current Range Score, Action Score, Overall Score, reps done, and assignment counts. That makes external reporting easy for a coaching business.",
+    example: "Example: a coaching organization can export the roster before a review call and sort by overdue assignments or lowest Action Score.",
   },
 ];
 

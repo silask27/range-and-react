@@ -356,6 +356,50 @@ def _query_user_organization_names(*, visible_user_ids: Sequence[str] | None = N
     return dict(out)
 
 
+def _query_user_worst_opponents(*, visible_user_ids: Sequence[str] | None = None) -> dict[str, dict[str, Any]]:
+    clean_user_ids = _clean_ids(visible_user_ids)
+    clauses = ['hr.hand_over = 1', 'hr.villain_profile_id IS NOT NULL']
+    params: list[Any] = []
+    if clean_user_ids:
+        placeholders = ', '.join('?' for _ in clean_user_ids)
+        clauses.append(f'hr.user_id IN ({placeholders})')
+        params.extend(clean_user_ids)
+    where_sql = ' AND '.join(clauses)
+    with get_connection() as conn:
+        rows = conn.execute(
+            f'''
+            SELECT
+                hr.user_id,
+                hr.villain_profile_id,
+                COUNT(*) AS hands,
+                AVG(hr.overall_score) AS avg_overall_score,
+                AVG(hr.ranging_score) AS avg_ranging_score,
+                AVG(hr.response_score) AS avg_response_score
+            FROM hand_results hr
+            WHERE {where_sql}
+            GROUP BY hr.user_id, hr.villain_profile_id
+            HAVING COUNT(*) >= 1
+            ORDER BY hr.user_id ASC, AVG(hr.overall_score) ASC, COUNT(*) DESC
+            ''',
+            tuple(params),
+        ).fetchall()
+    out: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        user_id = str(row['user_id'])
+        if user_id in out:
+            continue
+        villain_id = str(row['villain_profile_id'])
+        out[user_id] = {
+            'villain_profile_id': villain_id,
+            'villain_display_name': _label_for(villain_id),
+            'hands': int(row['hands'] or 0),
+            'avg_overall_score': round(float(row['avg_overall_score']), 2) if row['avg_overall_score'] is not None else None,
+            'avg_ranging_score': round(float(row['avg_ranging_score']), 2) if row['avg_ranging_score'] is not None else None,
+            'avg_response_score': round(float(row['avg_response_score']), 2) if row['avg_response_score'] is not None else None,
+        }
+    return out
+
+
 def _build_cohort_completion_rows(*, visible_user_ids: Iterable[str] | None = None, visible_organization_ids: Iterable[str] | None = None) -> list[dict[str, Any]]:
     user_scope = set(_clean_ids(visible_user_ids))
     org_scope = _clean_ids(visible_organization_ids)
@@ -404,6 +448,7 @@ def build_member_results_export_rows(*, visible_user_ids: Iterable[str] | None =
     org_scope = _clean_ids(visible_organization_ids) or None
     user_rows = [row for row in _query_user_rows(visible_user_ids=user_scope) if row.get('role') == 'member']
     org_names = _query_user_organization_names(visible_user_ids=user_scope, visible_organization_ids=org_scope)
+    worst_opponents = _query_user_worst_opponents(visible_user_ids=user_scope)
     assignments = list_assignments_with_progress(limit=5000, organization_ids=org_scope, target_user_ids=user_scope)
     assignments_by_user: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for assignment in assignments:
@@ -411,6 +456,7 @@ def build_member_results_export_rows(*, visible_user_ids: Iterable[str] | None =
     out = []
     for user in user_rows:
         user_assignments = assignments_by_user.get(str(user['user_id']), [])
+        worst = worst_opponents.get(str(user['user_id'])) or {}
         out.append({
             'member_id': user['user_id'],
             'display_name': user['display_name'],
@@ -421,6 +467,9 @@ def build_member_results_export_rows(*, visible_user_ids: Iterable[str] | None =
             'current_range_score': user.get('avg_ranging_score'),
             'current_action_score': user.get('avg_response_score'),
             'current_overall_score': user.get('avg_overall_score'),
+            'worst_opponent': worst.get('villain_display_name'),
+            'worst_opponent_hands': worst.get('hands'),
+            'worst_opponent_overall_score': worst.get('avg_overall_score'),
             'active_assignments': sum(1 for item in user_assignments if item.get('status') == 'active'),
             'completed_assignments': sum(1 for item in user_assignments if item.get('status') == 'completed'),
             'overdue_assignments': sum(1 for item in user_assignments if item.get('status') == 'overdue'),

@@ -1,4 +1,4 @@
-# HungryHorsePoker Demo and Scoring Guide
+# Coach Demo and Scoring Guide
 
 This guide is written for coaches, members, and pitch walkthroughs. It avoids model language and explains what Range & React is measuring in plain English.
 
@@ -7,17 +7,17 @@ This guide is written for coaches, members, and pitch walkthroughs. It avoids mo
 1. Start on `/demo`.
 2. Log in as the owner to show the platform view, organization setup, and demo workspace.
 3. Switch to the coach account and open `/admin`.
-4. Walk through the coach command center: cohort completion, struggling members, weakest scenarios, weakest villains, and overdue work.
-5. Download the member results CSV to show how HungryHorsePoker could review the whole roster outside the app.
+4. Walk through the coach command center: cohort completion, struggling members, weakest scenarios, weakest villains, overdue work, next actions, and sample reporting.
+5. Download the member results CSV to show how an organization can review the whole roster outside the app.
 6. Switch to a member and open `/dashboard`.
 7. Show recent reps, trendline, assigned work, and the next recommended drill.
 8. Open `/guide` whenever someone asks how the scores are calculated.
 
 ## Range Score
 
-Range score measures whether the member kept the real villain hand, bucket, and hand family alive while narrowing the range.
+Range Score measures whether the member kept the real villain hand, bucket, and hand family alive while narrowing the range.
 
-High range score means:
+High Range Score means:
 
 - The real hand was not removed too early.
 - The correct bucket stayed plausible.
@@ -28,25 +28,25 @@ Example: villain actually has a set. If the member keeps sets alive after a flop
 
 ## Action Score
 
-Action score measures whether the member predicted how villain's current range would respond to hero's action.
+Action Score measures whether the member predicted how villain's current range would respond to hero's action.
 
-High action score means:
+High Action Score means:
 
 - The member understood how each bucket reacts.
-- The member accounted for villain type.
+- The member accounted for opponent type.
 - The member picked the correct response for the actual bucket.
 
-Example: hero bets small into a calling-station villain. If the actual hand is a flush draw and the member marks that bucket as call, they get credit. If they mark fold, the score falls.
+Example: hero bets small into a calling-station opponent. If the actual hand is a flush draw and the member marks that bucket as call, they get credit. If they mark fold, the score falls.
 
 ## Overall Score
 
-Overall score is the average of range score and action score.
+Overall Score is the average of Range Score and Action Score.
 
-Example: a member scores 82 on range and 64 on action. Overall score is 73. Coaches should still look at the split because the useful coaching note is that action prediction is lagging behind range work.
+Example: a member scores 82 on Range Score and 64 on Action Score. Overall Score is 73. Coaches should still look at the split because the useful coaching note is that Action Score is lagging behind range work.
 
-## Why Villain Type Matters
+## Why Opponent Type Matters
 
-Villain type is intentionally central. The same board and action can mean different things from a nit, calling station, loose regular, or maniac.
+Opponent type is intentionally central. The same board and action can mean different things from a nit, calling station, loose regular, or maniac.
 
 Coach use case:
 
@@ -56,13 +56,14 @@ Coach use case:
 
 ## Coach Command Center
 
-The command center answers five questions:
+The command center answers six questions:
 
 - Are cohorts completing their work?
 - Which members are struggling?
 - Which scenarios are weakest?
-- Which villains are weakest?
+- Which opponents are weakest?
 - Which assignments are overdue?
+- What should the coach do next?
 
 This lets a coach move from data to action quickly.
 
@@ -79,13 +80,14 @@ The member dashboard answers four questions:
 
 The member results CSV gives one row per member with:
 
-- Current range score
-- Current action score
-- Current overall score
+- Current Range Score
+- Current Action Score
+- Current Overall Score
+- Worst Opponent
 - Reps completed
 - Active assignments
 - Completed assignments
 - Overdue assignments
 - Organization membership
 
-This is useful for coaching calls, weekly accountability, and external HungryHorsePoker reporting.
+This is useful for coaching calls, weekly accountability, and external organization reporting.

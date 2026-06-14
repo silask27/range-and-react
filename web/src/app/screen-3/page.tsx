@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "../../lib/api";
 import Avatar from "../../components/app/Avatar";
 import TrainingHeader from "../../components/app/TrainingHeader";
-import { getStoredAuthToken } from "../../lib/auth";
+import { getStoredAuthToken, getStoredAuthUser, type AuthUser } from "../../lib/auth";
 import { THEME } from "../../lib/theme";
 import TimeoutOverlay from "../../components/training/TimeoutOverlay";
 import WorkflowBar, { type WorkflowStep } from "../../components/training/WorkflowBar";
@@ -194,7 +194,17 @@ type ReplayPayload = {
   pot: number;
   hero_stack: number;
   villain_stack: number;
+  review?: ReviewState;
   steps: ReplayStep[];
+};
+
+type ReviewState = {
+  flagged: boolean;
+  sent_to_coaches: boolean;
+  status: string;
+  member_note?: string | null;
+  coach_note?: string | null;
+  reviewed_at?: string | null;
 };
 
 type PhaseKey = "prune" | "matrix" | "action" | "done" | null;
@@ -283,6 +293,10 @@ function Screen3PageContent() {
   const [debriefPreview, setDebriefPreview] = useState<DebriefPreview | null>(null);
   const [replayPayload, setReplayPayload] = useState<ReplayPayload | null>(null);
   const [replayStepIndex, setReplayStepIndex] = useState(0);
+  const [reviewDraft, setReviewDraft] = useState({ member_note: "", coach_note: "" });
+  const [reviewMessage, setReviewMessage] = useState<string | null>(null);
+  const [isSavingReview, setIsSavingReview] = useState(false);
+  const [storedUser, setStoredUser] = useState<AuthUser | null>(null);
 
   const [responseSelections, setResponseSelections] = useState<
     Record<string, Record<string, string>>
@@ -305,6 +319,7 @@ function Screen3PageContent() {
   const [isTimeoutTransitioning, setIsTimeoutTransitioning] = useState(false);
   const [timeLeftSeconds, setTimeLeftSeconds] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const canCoachReview = storedUser?.role === "owner" || storedUser?.role === "admin" || storedUser?.role === "coach";
 
   const isMountedRef = useRef(true);
   const emptyPruneAutoAdvanceRef = useRef<string | null>(null);
@@ -439,6 +454,18 @@ function Screen3PageContent() {
   useEffect(() => {
     responseSelectionsRef.current = responseSelections;
   }, [responseSelections]);
+
+  useEffect(() => {
+    setStoredUser(getStoredAuthUser());
+  }, []);
+
+  useEffect(() => {
+    setReviewDraft({
+      member_note: replayPayload?.review?.member_note ?? "",
+      coach_note: replayPayload?.review?.coach_note ?? "",
+    });
+    setReviewMessage(null);
+  }, [replayPayload?.hand_id, replayPayload?.review?.member_note, replayPayload?.review?.coach_note]);
 
 
   useEffect(() => {
@@ -865,19 +892,25 @@ function Screen3PageContent() {
     action: string,
     amount?: number,
   ): Promise<HandState> {
-    const res = await apiFetch(`${API_BASE}/actions/hero`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        hand_id: handId,
-        action,
-        amount,
-        iters: SCREEN3_ITERS,
-        bucket_matrix_view: handRef.current?.bucket_matrix_view,
-      }),
-    });
+    let res: Response;
+    try {
+      res = await apiFetch(`${API_BASE}/actions/hero`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          hand_id: handId,
+          action,
+          amount,
+          iters: SCREEN3_ITERS,
+        }),
+      });
+    } catch (err) {
+      throw new Error(err instanceof Error && err.message !== "Failed to fetch"
+        ? err.message
+        : "Could not reach the training server. Please retry the action; your hand state is still saved.");
+    }
 
     if (!res.ok) {
       const detail = await safeReadError(res);
@@ -1128,6 +1161,30 @@ function Screen3PageContent() {
     }
   }
 
+  async function saveReplayReviewNote(markReviewed = false) {
+    if (!replayPayload) return;
+    setIsSavingReview(true);
+    setReviewMessage(null);
+    try {
+      const body = canCoachReview
+        ? { coach_note: reviewDraft.coach_note, mark_reviewed: markReviewed }
+        : { member_note: reviewDraft.member_note };
+      const res = await apiFetch(`${API_BASE}/results/hand/${encodeURIComponent(replayPayload.hand_id)}/review`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to save replay note.");
+      setReplayPayload((current) => current ? { ...current, review: data.review as ReviewState } : current);
+      setReviewMessage(markReviewed ? "Marked reviewed." : "Replay note saved.");
+    } catch (err) {
+      setReviewMessage(err instanceof Error ? err.message : "Unable to save replay note.");
+    } finally {
+      setIsSavingReview(false);
+    }
+  }
+
   async function handlePruneRemoveSubgroup(subgroupName: string) {
     if (!hand) return;
 
@@ -1345,6 +1402,50 @@ function Screen3PageContent() {
               showTimer
               showHelper={false}
             />
+          ) : null}
+
+          {isReplayMode && replayPayload?.review ? (
+            <section className="screen3-replay-note-panel">
+              <div className="screen3-replay-note-copy">
+                <div className="screen3-replay-kicker">Coach notes</div>
+                <div className="screen3-replay-note-title">Replay discussion</div>
+                <div className="screen3-replay-note-meta">
+                  Status: {replayPayload.review.status || "flagged"}
+                  {replayPayload.review.reviewed_at ? ` · Reviewed ${formatShortDate(replayPayload.review.reviewed_at)}` : ""}
+                </div>
+              </div>
+              <div className="screen3-replay-note-grid">
+                <label className="screen3-replay-note-field">
+                  <span>Member note</span>
+                  <textarea
+                    value={reviewDraft.member_note}
+                    onChange={(event) => setReviewDraft((current) => ({ ...current, member_note: event.target.value }))}
+                    disabled={canCoachReview}
+                    placeholder="No member note yet."
+                  />
+                </label>
+                <label className="screen3-replay-note-field">
+                  <span>Coach comment</span>
+                  <textarea
+                    value={reviewDraft.coach_note}
+                    onChange={(event) => setReviewDraft((current) => ({ ...current, coach_note: event.target.value }))}
+                    disabled={!canCoachReview}
+                    placeholder={canCoachReview ? "Add the coaching point for this replay." : "No coach comment yet."}
+                  />
+                </label>
+              </div>
+              <div className="screen3-replay-note-actions">
+                {reviewMessage ? <span className="screen3-replay-note-message">{reviewMessage}</span> : null}
+                <button type="button" className="btn btn-ghost" onClick={() => void saveReplayReviewNote(false)} disabled={isSavingReview}>
+                  {isSavingReview ? "Saving..." : "Save note"}
+                </button>
+                {canCoachReview ? (
+                  <button type="button" className="btn btn-primary" onClick={() => void saveReplayReviewNote(true)} disabled={isSavingReview}>
+                    Mark reviewed
+                  </button>
+                ) : null}
+              </div>
+            </section>
           ) : null}
 
           <div className="screen3-grid">
@@ -1814,11 +1915,11 @@ function Screen3PageContent() {
                     </div>
                     <div className="screen3-preview-grid">
                       <div className="screen3-preview-metric is-ranging">
-                        <span className="screen3-preview-label">Villain Ranging</span>
+                        <span className="screen3-preview-label">Range Score</span>
                         <strong>{formatRoundedScore(debriefPreview.summary.ranging_score)}</strong>
                       </div>
                       <div className="screen3-preview-metric is-action">
-                        <span className="screen3-preview-label">Action Prediction</span>
+                        <span className="screen3-preview-label">Action Score</span>
                         <strong>{formatRoundedScore(debriefPreview.summary.response_score)}</strong>
                       </div>
                     </div>
@@ -2537,6 +2638,75 @@ var(--bg);
           line-height: 1;
         }
 
+        .screen3-replay-note-panel {
+          border-top: 1px solid var(--line-soft);
+          padding-top: 18px;
+          display: grid;
+          grid-template-columns: minmax(220px, 0.7fr) minmax(320px, 1.25fr) auto;
+          gap: 16px;
+          align-items: start;
+        }
+
+        .screen3-replay-note-title {
+          margin-top: 6px;
+          color: var(--text);
+          font-weight: 900;
+          font-size: 20px;
+          line-height: 1.12;
+        }
+
+        .screen3-replay-note-meta,
+        .screen3-replay-note-message {
+          margin-top: 6px;
+          color: var(--text-muted);
+          font-size: 13px;
+          line-height: 1.45;
+        }
+
+        .screen3-replay-note-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 12px;
+        }
+
+        .screen3-replay-note-field {
+          display: grid;
+          gap: 7px;
+        }
+
+        .screen3-replay-note-field span {
+          color: var(--text-65);
+          font-size: 11px;
+          font-weight: 900;
+          letter-spacing: 0.09em;
+          text-transform: uppercase;
+        }
+
+        .screen3-replay-note-field textarea {
+          width: 100%;
+          min-height: 86px;
+          resize: vertical;
+          border-radius: 14px;
+          border: 1px solid var(--border);
+          background: var(--surface-fill);
+          color: var(--text);
+          padding: 11px 12px;
+          font: inherit;
+          line-height: 1.45;
+        }
+
+        .screen3-replay-note-field textarea:disabled {
+          opacity: 0.72;
+        }
+
+        .screen3-replay-note-actions {
+          display: flex;
+          gap: 10px;
+          justify-content: flex-end;
+          align-items: center;
+          flex-wrap: wrap;
+        }
+
         .screen3-stat-value {
           font-weight: 800;
         }
@@ -2970,6 +3140,15 @@ var(--bg);
 
           .screen3-preview-grid {
             grid-template-columns: 1fr;
+          }
+
+          .screen3-replay-note-panel,
+          .screen3-replay-note-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .screen3-replay-note-actions {
+            justify-content: flex-start;
           }
         }
 
@@ -3839,6 +4018,12 @@ function formatBb(amount: number): string {
 function formatRoundedScore(value: number | null | undefined): string {
   if (value == null || Number.isNaN(value)) return "—";
   return `${Math.round(value)}`;
+}
+
+function formatShortDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function formatGateLabel(gate: HandState["ui_gate"]): string {
