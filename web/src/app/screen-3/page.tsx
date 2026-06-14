@@ -491,7 +491,7 @@ function Screen3PageContent() {
         let activeSessionId = sessionId;
 
         if (isReplayMode && handIdFromUrl) {
-          const replayRes = await apiFetch(`${API_BASE}/results/hand/${encodeURIComponent(handIdFromUrl)}/replay`, {
+          const replayRes = await apiFetchWithRetry(`${API_BASE}/results/hand/${encodeURIComponent(handIdFromUrl)}/replay`, {
             cache: "no-store",
           });
           if (!replayRes.ok) {
@@ -506,7 +506,7 @@ function Screen3PageContent() {
           throw new Error("Replay session was not found.");
         }
 
-        const sessionRes = await apiFetch(`${API_BASE}/sessions/${activeSessionId}`, {
+        const sessionRes = await apiFetchWithRetry(`${API_BASE}/sessions/${activeSessionId}`, {
           cache: "no-store",
         });
 
@@ -517,10 +517,10 @@ function Screen3PageContent() {
         const sessionData = (await sessionRes.json()) as SessionState;
 
         const [villainRes, scenariosRes] = await Promise.all([
-          apiFetch(`${API_BASE}/villains/${sessionData.villain_profile_id}`, {
+          apiFetchWithRetry(`${API_BASE}/villains/${sessionData.villain_profile_id}`, {
             cache: "no-store",
           }),
-          apiFetch(`${API_BASE}/scenarios`, { cache: "no-store" }),
+          apiFetchWithRetry(`${API_BASE}/scenarios`, { cache: "no-store" }),
         ]);
 
         if (!villainRes.ok) {
@@ -540,10 +540,10 @@ function Screen3PageContent() {
         }
 
         const handRes = isReplayMode && handIdFromUrl
-          ? await apiFetch(`${API_BASE}/hands/${encodeURIComponent(handIdFromUrl)}?iters=${SCREEN3_ITERS}`, {
+          ? await apiFetchWithRetry(`${API_BASE}/hands/${encodeURIComponent(handIdFromUrl)}?iters=${SCREEN3_ITERS}`, {
               cache: "no-store",
             })
-          : await apiFetch(`${API_BASE}/hands/start`, {
+          : await apiFetchWithRetry(`${API_BASE}/hands/start`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -630,7 +630,7 @@ function Screen3PageContent() {
         setHand(handData);
       } catch (err) {
         if (!isMounted) return;
-        setError(err instanceof Error ? err.message : "Failed to load Screen 3.");
+        setError(trainingServerErrorMessage(err));
       } finally {
         if (isMounted && !loadingResolvedEarly) {
           setIsLoading(false);
@@ -809,7 +809,7 @@ function Screen3PageContent() {
   }
 
   async function saveFullPruneStep(handId: string): Promise<HandState> {
-    const res = await apiFetch(`${API_BASE}/prune/save-step`, {
+    const res = await apiFetchWithRetry(`${API_BASE}/prune/save-step`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -846,7 +846,7 @@ function Screen3PageContent() {
       (item) => visibleRows.has(item.bucket) && visibleColumns.has(item.column),
     );
 
-    const res = await apiFetch(`${API_BASE}/response-matrix/save`, {
+    const res = await apiFetchWithRetry(`${API_BASE}/response-matrix/save`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -872,7 +872,7 @@ function Screen3PageContent() {
   }
 
   async function refreshCurrentHand(handId: string): Promise<HandState> {
-    const res = await apiFetch(
+    const res = await apiFetchWithRetry(
       `${API_BASE}/hands/${encodeURIComponent(handId)}?iters=${SCREEN3_ITERS}`,
       {
         cache: "no-store",
@@ -894,7 +894,7 @@ function Screen3PageContent() {
   ): Promise<HandState> {
     let res: Response;
     try {
-      res = await apiFetch(`${API_BASE}/actions/hero`, {
+      res = await apiFetchWithRetry(`${API_BASE}/actions/hero`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1024,7 +1024,7 @@ function Screen3PageContent() {
   }
 
   async function startPruneMode(handId: string): Promise<HandState> {
-    const res = await apiFetch(`${API_BASE}/prune/start`, {
+    const res = await apiFetchWithRetry(`${API_BASE}/prune/start`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -1169,7 +1169,7 @@ function Screen3PageContent() {
       const body = canCoachReview
         ? { coach_note: reviewDraft.coach_note, mark_reviewed: markReviewed }
         : { member_note: reviewDraft.member_note };
-      const res = await apiFetch(`${API_BASE}/results/hand/${encodeURIComponent(replayPayload.hand_id)}/review`, {
+      const res = await apiFetchWithRetry(`${API_BASE}/results/hand/${encodeURIComponent(replayPayload.hand_id)}/review`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -1192,7 +1192,7 @@ function Screen3PageContent() {
     setError(null);
 
     try {
-      const res = await apiFetch(`${API_BASE}/prune/remove-subgroup`, {
+      const res = await apiFetchWithRetry(`${API_BASE}/prune/remove-subgroup`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1232,7 +1232,7 @@ function Screen3PageContent() {
     setError(null);
 
     try {
-      const res = await apiFetch(`${API_BASE}/prune/revert`, {
+      const res = await apiFetchWithRetry(`${API_BASE}/prune/revert`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1263,7 +1263,7 @@ function Screen3PageContent() {
     try {
       const previousHand = hand;
 
-      const res = await apiFetch(`${API_BASE}/prune/save-row`, {
+      const res = await apiFetchWithRetry(`${API_BASE}/prune/save-row`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1313,7 +1313,7 @@ function Screen3PageContent() {
     setError(null);
 
     try {
-      const res = await apiFetch(`${API_BASE}/reveal/${hand.hand_id}`, {
+      const res = await apiFetchWithRetry(`${API_BASE}/reveal/${hand.hand_id}`, {
         cache: "no-store",
       });
 
@@ -1326,7 +1326,7 @@ function Screen3PageContent() {
       setReveal(data);
 
       try {
-        const debriefRes = await apiFetch(`${API_BASE}/results/hand/${hand.hand_id}`, { cache: "no-store" });
+        const debriefRes = await apiFetchWithRetry(`${API_BASE}/results/hand/${hand.hand_id}`, { cache: "no-store" });
         if (debriefRes.ok) {
           const debriefData = (await debriefRes.json()) as { summary: DebriefPreview["summary"]; recommendations: string[] };
           setDebriefPreview({ summary: debriefData.summary, recommendations: debriefData.recommendations.slice(0, 3) });
@@ -4868,6 +4868,39 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
   });
+}
+
+function isNetworkFetchError(err: unknown): boolean {
+  return err instanceof TypeError && err.message === "Failed to fetch";
+}
+
+async function apiFetchWithRetry(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  retries = 1,
+): Promise<Response> {
+  let lastError: unknown = null;
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      return await apiFetch(input, init);
+    } catch (err) {
+      lastError = err;
+      if (!isNetworkFetchError(err) || attempt >= retries) break;
+      await sleep(650);
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Could not reach the training server.");
+}
+
+function trainingServerErrorMessage(err: unknown): string {
+  if (isNetworkFetchError(err)) {
+    return "Could not reach the training server. Please reload; your setup and saved hand state are still preserved.";
+  }
+  return err instanceof Error ? err.message : "Failed to load Screen 3.";
 }
 
 async function safeReadError(res: Response): Promise<string | null> {
