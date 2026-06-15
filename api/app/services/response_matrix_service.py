@@ -5,14 +5,11 @@ from __future__ import annotations
 
 from dataclasses import fields
 
-from api.app.data.catalog import get_scenario
 from api.app.engine.bucket_engine import build_bucket_matrix_view
 from api.app.models.enums import (
-    ActionType,
     AggressionResponse,
     CallResponse,
     CheckResponse,
-    Player,
     ResponseColumnType,
     UIGate,
 )
@@ -86,67 +83,15 @@ def _current_bucket_row_order(
     return list(bucket_view["row_order"])
 
 
-def _latest_street_event(hand: HandState):
-    for event in reversed(hand.history.events):
-        if event.street == hand.street:
-            return event
-    return None
-
-
-def _is_ip_checkback_node(hand: HandState) -> bool:
-    """
-    Return True when the current response-matrix node represents:
-
-    - hero is in position
-    - villain has checked to hero on this street
-    - hero is not facing a bet
-
-    In this spot, the "If I Check" column is really asking:
-    "If I check back, what is villain's likely future posture?"
-    so the valid responses should be P / A instead of B / X.
-    """
-    scenario = get_scenario(hand.scenario_id)
-
-    if not scenario.hero_is_ip:
-        return False
-
-    if hand.current_actor != Player.HERO:
-        return False
-
-    if hand.betting_round.to_call_for(Player.HERO) > 0:
-        return False
-
-    latest_event = _latest_street_event(hand)
-    if latest_event is None:
-        return False
-
-    return (
-        latest_event.actor == Player.VILLAIN
-        and latest_event.action == ActionType.CHECK
-        and latest_event.street == hand.street
-    )
-
-
 def _valid_responses_by_column_for_hand(hand: HandState) -> dict[str, set[str]]:
     """
     Build the valid response alphabet for the current node.
-
-    Most columns are static, but the CHECK column is context-sensitive:
-    - default: B / X
-    - hero IP after villain checks: P / A
     """
-    valid = {
+    del hand
+    return {
         column: set(values)
         for column, values in _DEFAULT_VALID_RESPONSES_BY_COLUMN.items()
     }
-
-    if _is_ip_checkback_node(hand):
-        valid[ResponseColumnType.CHECK.value] = {
-            CallResponse.PASSIVE.value,
-            CallResponse.AGGRESSIVE.value,
-        }
-
-    return valid
 
 
 def _validate_and_normalize_response_matrix_payload(

@@ -595,10 +595,18 @@ def _response_step(
         "kind": "response_matrix",
         "street": street,
         "title": "Response matrix",
-        "summary": f"Selected {predicted}; villain response was {actual}.",
+        "summary": f"Selected {_format_response_code(predicted)}; villain response was {_format_response_code(actual)}.",
         "board": board,
         "details": details,
     }
+
+
+def _format_response_code(value: object) -> str:
+    if value == "P":
+        return "X"
+    if value == "A":
+        return "B"
+    return str(value)
 
 
 def _response_fill_sequence(details: dict[str, Any]) -> list[dict[str, str]]:

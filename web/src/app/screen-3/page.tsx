@@ -260,8 +260,8 @@ const RESPONSE_OPTIONS: Record<
     { value: "R", label: "R", semantic: "raise" },
   ],
   call: [
-    { value: "P", label: "P", semantic: "passive" },
-    { value: "A", label: "A", semantic: "aggressive" },
+    { value: "P", label: "X", semantic: "check" },
+    { value: "A", label: "B", semantic: "bet" },
   ],
 };
 
@@ -270,8 +270,8 @@ const RIVER_CHECKBACK_SHOWDOWN_OPTIONS: Array<{
   label: string;
   semantic: string;
 }> = [
-  { value: "P", label: "W", semantic: "win" },
-  { value: "A", label: "L", semantic: "lose" },
+  { value: "P", label: "X", semantic: "check" },
+  { value: "A", label: "B", semantic: "bet" },
 ];
 
 function Screen3PageContent() {
@@ -4354,15 +4354,7 @@ function getResponseOptionsForColumn(
   hand: HandState,
   scenario: Scenario,
 ): Array<{ value: string; label: string; semantic: string }> {
-  if (column === "check") {
-    if (isRiverIpCheckbackNode(hand, scenario)) {
-      return RIVER_CHECKBACK_SHOWDOWN_OPTIONS;
-    }
-
-    if (isIpCheckbackNode(hand, scenario)) {
-      return RESPONSE_OPTIONS.call;
-    }
-  }
+  void scenario;
 
   if (column === "call" && hand.street === "river") {
     return RIVER_CHECKBACK_SHOWDOWN_OPTIONS;

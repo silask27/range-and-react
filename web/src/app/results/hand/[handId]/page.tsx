@@ -441,7 +441,7 @@ function ResponseRow({ item }: { item: DebriefPayload["response_evaluations"][nu
       <div style={{ minWidth: 0 }}>
         <div style={rowTitleStyle}>{formatStreet(item.street)} · Hero {formatAction(item.hero_action)}</div>
         <div style={rowMetaStyle}>{item.actual_bucket} · {item.actual_display_subgroup ?? item.actual_subgroup}</div>
-        <div style={rowMetaStyle}>Selected {item.predicted ?? "—"} · Villain actually {item.actual ?? "—"}</div>
+        <div style={rowMetaStyle}>Selected {formatResponseCode(item.predicted)} · Villain actually {formatResponseCode(item.actual)}</div>
         <div style={rowMetaStyle}>Scored by bucket-level model probability closeness.</div>
       </div>
       <div style={rowRightStyle}>
@@ -472,6 +472,13 @@ function summarizePruning(items: DebriefPayload["prune_evaluations"]) {
         ? `You kept about ${Math.round(avgPosterior)}% of model-likely posterior range on average. Exact-combo survival is tracked, but it is no longer the whole score.`
         : `You kept about ${Math.round(avgPosterior)}% of model-likely posterior range on average.`,
   };
+}
+
+function formatResponseCode(value: string | null | undefined): string {
+  if (!value) return "—";
+  if (value === "P") return "X";
+  if (value === "A") return "B";
+  return value;
 }
 
 function summarizeResponses(items: DebriefPayload["response_evaluations"]) {
