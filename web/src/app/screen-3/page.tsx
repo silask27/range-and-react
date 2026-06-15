@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { apiFetch } from "../../lib/api";
+import { API_BASE, apiFetch } from "../../lib/api";
 import Avatar from "../../components/app/Avatar";
 import TrainingHeader from "../../components/app/TrainingHeader";
 import { getStoredAuthToken, getStoredAuthUser, type AuthUser } from "../../lib/auth";
@@ -209,9 +209,6 @@ type ReviewState = {
 
 type PhaseKey = "prune" | "matrix" | "action" | "done" | null;
 type ActionTone = "neutral" | "positive" | "negative";
-
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
 
 const HERO_NAME = "Hero";
 

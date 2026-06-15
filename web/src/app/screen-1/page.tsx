@@ -9,7 +9,7 @@ import {
   type CSSProperties,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { apiFetch } from "../../lib/api";
+import { API_BASE, apiFetch } from "../../lib/api";
 import Avatar from "../../components/app/Avatar";
 import TrainingHeader from "../../components/app/TrainingHeader";
 import { getStoredAuthToken } from "../../lib/auth";
@@ -94,9 +94,6 @@ type ReplayPayload = {
   session_id: string;
   steps: ReplayStep[];
 };
-
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
 
 const ALL_HAND_TOKENS = make13x13Grid().map((cell) => cell.token);
 const DISPLAY_SEATS = [

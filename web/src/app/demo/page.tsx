@@ -4,8 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import PublicShell from "../../components/app/PublicShell";
 import { getStoredAuthToken } from "../../lib/auth";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
+import { API_BASE } from "../../lib/api";
 
 type DemoAccount = {
   label: string;

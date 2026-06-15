@@ -1,6 +1,11 @@
 import { clearStoredAuth, getStoredAuthToken } from "./auth";
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
+const DEFAULT_API_BASE =
+  process.env.NODE_ENV === "production"
+    ? "https://range-and-react.up.railway.app"
+    : "http://127.0.0.1:8000";
+
+export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_API_BASE;
 
 export async function apiFetch(
   input: RequestInfo | URL,

@@ -4,8 +4,7 @@ import { FormEvent, Suspense, useEffect, useMemo, useState, type CSSProperties }
 import { useRouter, useSearchParams } from "next/navigation";
 import { clearStoredAuth, getStoredAuthToken, getStoredAuthUser, persistAuth } from "../../lib/auth";
 import SiteFooter from "../../components/app/SiteFooter";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
+import { API_BASE } from "../../lib/api";
 
 type Mode = "login" | "signup";
 
