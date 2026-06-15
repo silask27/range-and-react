@@ -16,11 +16,13 @@ This runtime keeps the existing public contract (`choose_villain_action` and
 
 from dataclasses import dataclass
 import hashlib
+import importlib
 import json
 from functools import lru_cache
 from pathlib import Path
 import pickle
 import random
+import sys
 from typing import Iterable, Sequence, Any
 
 from api.app.data.catalog import get_scenario
@@ -102,6 +104,11 @@ RERAISE_VS_RAISE_SIZE_MODEL_V4_FILE = TRAINED_MODELS_SIZE_V4_DIR / "reraise_vs_r
 
 ALLOWED_CALIBRATION_VILLAIN_NAMES = {"Dave", "Mike", "Blake", "Tom", "Steve", "Erik", "Alex"}
 MODEL_ORDER_V5 = ["v1", "v2", "v3", "v4"]
+PICKLE_MODULE_ALIASES = {
+    # Some trained sklearn GradientBoosting artifacts reference the Cython
+    # loss module by its old top-level pickle name.
+    "_loss": "sklearn._loss.loss",
+}
 
 
 @dataclass(frozen=True)
@@ -181,17 +188,31 @@ def _load_runtime_modules():
     return np, pd
 
 
+def _install_pickle_module_aliases() -> None:
+    for legacy_name, target_name in PICKLE_MODULE_ALIASES.items():
+        if legacy_name in sys.modules:
+            continue
+        try:
+            sys.modules[legacy_name] = importlib.import_module(target_name)
+        except ModuleNotFoundError:
+            continue
+
+
 @lru_cache(maxsize=None)
 def _load_artifact(path_str: str) -> dict:
     path = Path(path_str)
     if not path.exists():
         raise FileNotFoundError(f"Missing predictive villain model artifact: {path}")
+    _install_pickle_module_aliases()
     try:
         with path.open("rb") as f:
             return pickle.load(f)
     except ModuleNotFoundError as exc:  # pragma: no cover
+        missing_module = exc.name or str(exc)
         raise RuntimeError(
-            "Failed to load predictive villain model artifacts. Install CatBoost and scikit-learn."
+            "Failed to load predictive villain model artifacts. "
+            f"Missing runtime module: {missing_module}. "
+            "Install compatible CatBoost and scikit-learn."
         ) from exc
 
 
