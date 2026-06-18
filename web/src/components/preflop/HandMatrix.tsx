@@ -4,7 +4,7 @@ import React, { useMemo, useState } from "react";
 import type { MatrixAction } from "../../lib/preflop/types";
 import { make13x13Grid } from "../../lib/preflop/handGrid";
 
-type DeltaKind = "none" | "added" | "removed" | "changed";
+type DeltaKind = "none" | "added" | "removed";
 
 type Props = {
   allowedActions: MatrixAction[]; // e.g. ["FOLD","RAISE"] or ["FOLD","CALL","RAISE"]
@@ -38,7 +38,7 @@ function getDeltaKind(def: MatrixAction, cur: MatrixAction): DeltaKind {
 
   if (defIsFold && !curIsFold) return "added";
   if (!defIsFold && curIsFold) return "removed";
-  return "changed";
+  return "none";
 }
 
 function bgForAction(action: MatrixAction): string {
@@ -256,7 +256,7 @@ export function HandMatrix(props: Props) {
             };
 
             const deltaIcon =
-              deltaKind === "added" ? "+" : deltaKind === "removed" ? "−" : deltaKind === "changed" ? "→" : null;
+              deltaKind === "added" ? "+" : deltaKind === "removed" ? "−" : null;
 
             return (
               <div
@@ -348,7 +348,6 @@ export function HandMatrix(props: Props) {
         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
           <LegendIcon label="Added" icon="+" />
           <LegendIcon label="Removed" icon="−" />
-          <LegendIcon label="Changed" icon="→" />
         </div>
       </div>
     </div>

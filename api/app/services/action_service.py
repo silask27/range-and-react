@@ -300,6 +300,18 @@ def _last_non_forced_aggressive_event_for_street(hand: HandState) -> ActionEvent
     return None
 
 
+def _effective_remaining_stack(hand: HandState) -> float:
+    return round(max(0.0, min(float(hand.hero_stack or 0.0), float(hand.villain_stack or 0.0))), 2)
+
+
+def _max_hero_bet_amount(hand: HandState) -> float:
+    return _effective_remaining_stack(hand)
+
+
+def _max_hero_raise_to(hand: HandState) -> float:
+    return round(float(hand.betting_round.hero_contrib or 0.0) + _effective_remaining_stack(hand), 2)
+
+
 def _villain_node_hint_for_current_spot(hand: HandState) -> DecisionNode | None:
     to_call = hand.betting_round.to_call_for(Player.VILLAIN)
     if to_call <= 0:
@@ -730,8 +742,9 @@ def apply_hero_action(
         amount = round(float(amount), 2)
         if amount <= 0:
             raise ValueError("Hero bet amount must be > 0")
-        if amount > hand.hero_stack:
-            raise ValueError("Hero bet amount cannot exceed hero stack")
+        max_bet = _max_hero_bet_amount(hand)
+        if amount > max_bet:
+            raise ValueError(f"Hero bet amount cannot exceed the effective stack ({max_bet:g}bb)")
 
         hand.hero_stack = round(hand.hero_stack - amount, 2)
         hand.pot = round(hand.pot + amount, 2)
@@ -814,9 +827,9 @@ def apply_hero_action(
         raise_to = round(float(amount), 2)
         if raise_to <= hand.betting_round.current_bet:
             raise ValueError("Hero raise amount must be greater than current bet")
-        max_raise_to = round(hand.hero_stack + hand.betting_round.hero_contrib, 2)
+        max_raise_to = _max_hero_raise_to(hand)
         if raise_to > max_raise_to:
-            raise ValueError("Hero raise amount cannot exceed hero stack plus contribution")
+            raise ValueError(f"Hero raise amount cannot exceed the effective all-in amount ({max_raise_to:g}bb)")
 
         put_in = round(raise_to - hand.betting_round.hero_contrib, 2)
         previous_bet = hand.betting_round.current_bet

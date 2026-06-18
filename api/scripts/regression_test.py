@@ -15,12 +15,14 @@ os.environ.setdefault("VRT_PUBLIC_STATUS_SHOW_DEMO_DETAILS", "false")
 from fastapi.testclient import TestClient
 
 from api.app.main import app
-from api.app.models.betting import BettingRoundState
-from api.app.models.enums import Player, Street, UIGate
+from api.app.engine.bucketizer import _one_pair_subgroup
+from api.app.models.betting import ActionEvent, BettingRoundState
+from api.app.models.enums import ActionType, Player, Street, UIGate
 from api.app.models.state import HandState, SessionState
 from api.app.services.action_service import apply_hero_action
 from api.app.services.assignment_service import create_assignment, list_assignments_with_progress
 from api.app.services.prune_service import _advance_to_next_street as _advance_to_next_street_after_prune
+from api.app.services.response_matrix_service import save_response_matrix
 from api.app.services.response_matrix_prefill import prepare_response_matrix_for_new_node
 from api.app.storage.db import get_connection, init_db
 from api.app.storage.memory_store import store
@@ -136,6 +138,34 @@ class RegressionTestCase(unittest.TestCase):
         cls.outsider_user_id = other_signup.json()["user"]["user_id"]
 
 
+    def _create_session_fixture(
+        self,
+        *,
+        session_id: str,
+        user_id: str | None = None,
+        pot: float = 20.0,
+        hero_stack: float = 100.0,
+        villain_stack: float = 100.0,
+    ) -> None:
+        session = SessionState(
+            session_id=session_id,
+            user_id=user_id or self.owner_user_id,
+            villain_profile_id="tag",
+            train_timer_seconds=30,
+            scenario_id="srp_ip_btn_vs_bb",
+            pot=pot,
+            hero_stack=hero_stack,
+            villain_stack=villain_stack,
+            hero_range_matrix_saved={"AA": True, "KK": True, "QQ": True, "AKs": True, "AKo": True},
+            hero_tokens_saved=["AA", "KK", "QQ", "AKs", "AKo"],
+            villain_range_matrix_saved={"QQ": True},
+            villain_tokens_saved=["QQ"],
+            hero_range_confirmed=True,
+            villain_range_confirmed=True,
+        )
+        store.create_session(session.session_id, asdict(session))
+
+
     def test_login_route_returns_success(self) -> None:
         response = self.client.post(
             "/auth/login",
@@ -172,6 +202,70 @@ class RegressionTestCase(unittest.TestCase):
         self.assertGreaterEqual(min(hero_stacks), 250.0)
         self.assertLessEqual(max(hero_stacks), 400.0)
         self.assertGreater(len(set(villain_stacks)), 1)
+
+    def test_hero_bet_and_raise_cannot_exceed_effective_stack(self) -> None:
+        self._create_session_fixture(session_id="effective-stack-bet-session", villain_stack=25.0)
+        bet_hand = HandState(
+            hand_id="effective-stack-bet-hand",
+            session_id="effective-stack-bet-session",
+            user_id=self.owner_user_id,
+            scenario_id="srp_ip_btn_vs_bb",
+            villain_profile_id="tag",
+            pot=20.0,
+            hero_stack=100.0,
+            villain_stack=25.0,
+            hero_hand=("Ah", "Kd"),
+            villain_hand=("Qs", "Qd"),
+            board=["2h", "4d", "Qh"],
+            street=Street.FLOP,
+            betting_round=BettingRoundState(),
+            hero_tokens_saved=["AA", "KK", "QQ", "AKs", "AKo"],
+            villain_range_combos_live={"QQ": [["Qs", "Qd"]]},
+            current_actor=Player.HERO,
+            ui_gate=UIGate.HERO_TO_ACT,
+        )
+        store.create_hand(bet_hand.hand_id, asdict(bet_hand))
+
+        with self.assertRaisesRegex(ValueError, "effective stack"):
+            apply_hero_action(hand_id=bet_hand.hand_id, action="bet", amount=26.0, iters=10)
+
+        self._create_session_fixture(session_id="effective-stack-raise-session", pot=45.0, hero_stack=100.0, villain_stack=45.0)
+        raise_hand = HandState(
+            hand_id="effective-stack-raise-hand",
+            session_id="effective-stack-raise-session",
+            user_id=self.owner_user_id,
+            scenario_id="srp_ip_btn_vs_bb",
+            villain_profile_id="tag",
+            pot=45.0,
+            hero_stack=95.0,
+            villain_stack=25.0,
+            hero_hand=("Ah", "Kd"),
+            villain_hand=("Qs", "Qd"),
+            board=["2h", "4d", "Qh"],
+            street=Street.FLOP,
+            betting_round=BettingRoundState(
+                current_bet=20.0,
+                hero_contrib=5.0,
+                villain_contrib=20.0,
+                last_raise_size=15.0,
+            ),
+            hero_tokens_saved=["AA", "KK", "QQ", "AKs", "AKo"],
+            villain_range_combos_live={"QQ": [["Qs", "Qd"]]},
+            current_actor=Player.HERO,
+            ui_gate=UIGate.HERO_TO_ACT,
+        )
+        store.create_hand(raise_hand.hand_id, asdict(raise_hand))
+
+        with self.assertRaisesRegex(ValueError, "effective all-in"):
+            apply_hero_action(hand_id=raise_hand.hand_id, action="raise", amount=31.0, iters=10)
+
+    def test_low_pair_only_covers_bottom_pair_or_below_board_pocket_pairs(self) -> None:
+        board = ["Ac", "Td", "7s"]
+
+        self.assertEqual(_one_pair_subgroup(("9c", "9d"), board), "Mid Pair")
+        self.assertEqual(_one_pair_subgroup(("8c", "8d"), board), "Mid Pair")
+        self.assertEqual(_one_pair_subgroup(("7c", "6d"), board), "Low Pair")
+        self.assertEqual(_one_pair_subgroup(("3c", "3d"), board), "Low Pair")
 
     def test_coach_invite_creates_coach_account(self) -> None:
         response = self.client.get(
@@ -222,6 +316,41 @@ class RegressionTestCase(unittest.TestCase):
             headers={"Authorization": f"Bearer {self.coach_token}"},
         )
         self.assertEqual(delete_response.status_code, 403)
+
+    def test_cohort_member_editor_can_remove_members(self) -> None:
+        create_response = self.client.post(
+            "/admin/cohorts",
+            headers={"Authorization": f"Bearer {self.owner_token}"},
+            json={
+                "organization_id": "org-alpha",
+                "name": "Regression Cohort",
+                "user_ids": [self.member_user_id],
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        cohort_id = create_response.json()["cohort"]["cohort_id"]
+        self.assertEqual(create_response.json()["cohort"]["member_count"], 1)
+
+        before = self.client.get(
+            f"/admin/cohorts/{cohort_id}/members",
+            headers={"Authorization": f"Bearer {self.owner_token}"},
+        )
+        self.assertEqual(before.status_code, 200)
+        self.assertIn(self.member_user_id, {row["user_id"] for row in before.json()["members"]})
+
+        remove_response = self.client.delete(
+            f"/admin/cohorts/{cohort_id}/members/{self.member_user_id}",
+            headers={"Authorization": f"Bearer {self.owner_token}"},
+        )
+        self.assertEqual(remove_response.status_code, 200)
+        self.assertEqual(remove_response.json()["cohort"]["member_count"], 0)
+
+        after = self.client.get(
+            f"/admin/cohorts/{cohort_id}/members",
+            headers={"Authorization": f"Bearer {self.owner_token}"},
+        )
+        self.assertEqual(after.status_code, 200)
+        self.assertNotIn(self.member_user_id, {row["user_id"] for row in after.json()["members"]})
 
     def test_unscoped_admin_does_not_see_all_organizations_or_invites(self) -> None:
         invite = self.client.post(
@@ -572,10 +701,10 @@ class RegressionTestCase(unittest.TestCase):
         self.assertEqual(hand.street, Street.TURN)
         self.assertEqual(hand.response_matrix_saved, saved_matrix)
 
-    def test_river_air_prefills_from_turn_draw_when_air_is_new(self) -> None:
+    def test_new_response_matrix_node_clears_previous_street_answers(self) -> None:
         hand = HandState(
-            hand_id="river-air-prefill-hand",
-            session_id="river-air-prefill-session",
+            hand_id="clear-previous-matrix-hand",
+            session_id="clear-previous-matrix-session",
             user_id=self.owner_user_id,
             scenario_id="srp_ip_btn_vs_bb",
             villain_profile_id="tag",
@@ -608,12 +737,73 @@ class RegressionTestCase(unittest.TestCase):
 
         prepare_response_matrix_for_new_node(hand, iters=10)
 
-        self.assertEqual(hand.response_matrix_saved["street"], "river")
-        self.assertEqual(
-            hand.response_matrix_saved["selections"]["Air"],
-            {"check": "P", "bet_small": "C", "bet_big": "C"},
+        self.assertEqual(hand.response_matrix_saved, {})
+
+    def test_river_terminal_response_matrix_accepts_showdown_results(self) -> None:
+        self._create_session_fixture(session_id="river-call-showdown-matrix-session", pot=80.0, hero_stack=80.0, villain_stack=100.0)
+        call_hand = HandState(
+            hand_id="river-call-showdown-matrix-hand",
+            session_id="river-call-showdown-matrix-session",
+            user_id=self.owner_user_id,
+            scenario_id="srp_ip_btn_vs_bb",
+            villain_profile_id="tag",
+            pot=80.0,
+            hero_stack=80.0,
+            villain_stack=80.0,
+            hero_hand=("Ah", "Kd"),
+            villain_hand=("Qs", "Qd"),
+            board=["2h", "4d", "Qh", "8c", "9s"],
+            street=Street.RIVER,
+            betting_round=BettingRoundState(current_bet=20.0, hero_contrib=0.0, villain_contrib=20.0, last_raise_size=20.0),
+            hero_tokens_saved=["AA", "KK", "QQ", "AKs", "AKo"],
+            villain_range_combos_live={"QQ": [["Qs", "Qd"]]},
+            current_actor=Player.HERO,
+            ui_gate=UIGate.MUST_FILL_RESPONSE_MATRIX,
+            response_matrix_columns=["call"],
         )
-        self.assertFalse(hand.response_matrix_saved["complete"])
+        store.create_hand(call_hand.hand_id, asdict(call_hand))
+
+        saved_call = save_response_matrix(
+            call_hand.hand_id,
+            selections={"SDV": {"call": "W"}},
+            row_order=["SDV"],
+            iters=10,
+        )
+        self.assertEqual(saved_call.response_matrix_saved["selections"]["SDV"]["call"], "W")
+
+        self._create_session_fixture(session_id="river-checkback-showdown-matrix-session", pot=80.0, hero_stack=80.0, villain_stack=80.0)
+        checkback_hand = HandState(
+            hand_id="river-checkback-showdown-matrix-hand",
+            session_id="river-checkback-showdown-matrix-session",
+            user_id=self.owner_user_id,
+            scenario_id="srp_ip_btn_vs_bb",
+            villain_profile_id="tag",
+            pot=80.0,
+            hero_stack=80.0,
+            villain_stack=80.0,
+            hero_hand=("Ah", "Kd"),
+            villain_hand=("Qs", "Qd"),
+            board=["2h", "4d", "Qh", "8c", "9s"],
+            street=Street.RIVER,
+            betting_round=BettingRoundState(),
+            hero_tokens_saved=["AA", "KK", "QQ", "AKs", "AKo"],
+            villain_range_combos_live={"QQ": [["Qs", "Qd"]]},
+            current_actor=Player.HERO,
+            ui_gate=UIGate.MUST_FILL_RESPONSE_MATRIX,
+            response_matrix_columns=["check"],
+        )
+        checkback_hand.history.append(
+            ActionEvent(street=Street.RIVER, actor=Player.VILLAIN, action=ActionType.CHECK)
+        )
+        store.create_hand(checkback_hand.hand_id, asdict(checkback_hand))
+
+        saved_checkback = save_response_matrix(
+            checkback_hand.hand_id,
+            selections={"SDV": {"check": "L"}},
+            row_order=["SDV"],
+            iters=10,
+        )
+        self.assertEqual(saved_checkback.response_matrix_saved["selections"]["SDV"]["check"], "L")
 
     def test_member_can_send_flagged_hand_to_coach_replay_queue(self) -> None:
         session = SessionState(

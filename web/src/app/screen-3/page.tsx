@@ -270,8 +270,8 @@ const RIVER_CHECKBACK_SHOWDOWN_OPTIONS: Array<{
   label: string;
   semantic: string;
 }> = [
-  { value: "P", label: "X", semantic: "check" },
-  { value: "A", label: "B", semantic: "bet" },
+  { value: "W", label: "W", semantic: "win" },
+  { value: "L", label: "L", semantic: "lose" },
 ];
 
 function Screen3PageContent() {
@@ -401,6 +401,18 @@ function Screen3PageContent() {
       : activeHand?.current_actor ?? null;
 
   const heroToCall = activeHand ? getToCallForHero(activeHand) : 0;
+  const maxHeroBet = activeHand ? getMaxHeroBetAmount(activeHand) : 0;
+  const maxHeroRaiseTo = activeHand ? getMaxHeroRaiseToAmount(activeHand) : 0;
+  const parsedBetInput = Number.parseFloat(betInput);
+  const parsedRaiseInput = Number.parseFloat(raiseInput);
+  const betInputInvalid =
+    Number.isNaN(parsedBetInput) ||
+    parsedBetInput <= 0 ||
+    parsedBetInput > maxHeroBet;
+  const raiseInputInvalid =
+    Number.isNaN(parsedRaiseInput) ||
+    parsedRaiseInput <= (activeHand?.betting_round.current_bet ?? 0) ||
+    parsedRaiseInput > maxHeroRaiseTo;
   const canSaveMatrix =
     !isReplayMode &&
     activeHand?.ui_gate === "must_fill_response_matrix" &&
@@ -1807,7 +1819,9 @@ function Screen3PageContent() {
                           onChange={(e) => setBetInput(e.target.value)}
                           placeholder="Bet amount"
                           inputMode="decimal"
+                          max={maxHeroBet}
                         />
+                        <div className="screen3-bet-helper">Max {formatBb(maxHeroBet)}</div>
                         <button
                           className="btn btn-primary"
                           type="button"
@@ -1815,12 +1829,12 @@ function Screen3PageContent() {
                             isSubmittingAction ||
                             isVillainThinking ||
                             isTimeoutTransitioning ||
-                            Number.parseFloat(betInput) <= 0
+                            betInputInvalid
                           }
                           onClick={() =>
                             void handleHeroAction(
                               "bet",
-                              Number.parseFloat(betInput),
+                              parsedBetInput,
                             )
                           }
                         >
@@ -1857,7 +1871,9 @@ function Screen3PageContent() {
                           onChange={(e) => setRaiseInput(e.target.value)}
                           placeholder="Raise to"
                           inputMode="decimal"
+                          max={maxHeroRaiseTo}
                         />
+                        <div className="screen3-bet-helper">Max {formatBb(maxHeroRaiseTo)}</div>
                         <button
                           className="btn btn-primary"
                           type="button"
@@ -1865,13 +1881,12 @@ function Screen3PageContent() {
                             isSubmittingAction ||
                             isVillainThinking ||
                             isTimeoutTransitioning ||
-                            Number.parseFloat(raiseInput) <=
-                              activeHand.betting_round.current_bet
+                            raiseInputInvalid
                           }
                           onClick={() =>
                             void handleHeroAction(
                               "raise",
-                              Number.parseFloat(raiseInput),
+                              parsedRaiseInput,
                             )
                           }
                         >
@@ -2504,6 +2519,14 @@ var(--bg);
           gap: 10px;
           align-items: center;
           flex-wrap: wrap;
+        }
+
+        .screen3-bet-helper {
+          color: var(--text-muted);
+          font-size: 11px;
+          font-weight: 850;
+          min-width: 68px;
+          white-space: nowrap;
         }
 
         .screen3-left-actions,
@@ -4003,6 +4026,18 @@ function getToCallForHero(hand: HandState): number {
   );
 }
 
+function getEffectiveRemainingStack(hand: HandState): number {
+  return round2(Math.max(0, Math.min(hand.hero_stack ?? 0, hand.villain_stack ?? 0)));
+}
+
+function getMaxHeroBetAmount(hand: HandState): number {
+  return getEffectiveRemainingStack(hand);
+}
+
+function getMaxHeroRaiseToAmount(hand: HandState): number {
+  return round2((hand.betting_round.hero_contrib ?? 0) + getEffectiveRemainingStack(hand));
+}
+
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
 }
@@ -4354,9 +4389,10 @@ function getResponseOptionsForColumn(
   hand: HandState,
   scenario: Scenario,
 ): Array<{ value: string; label: string; semantic: string }> {
-  void scenario;
-
-  if (column === "call" && hand.street === "river") {
+  if (
+    hand.street === "river" &&
+    (column === "call" || (column === "check" && isRiverIpCheckbackNode(hand, scenario)))
+  ) {
     return RIVER_CHECKBACK_SHOWDOWN_OPTIONS;
   }
 
@@ -4524,7 +4560,8 @@ function getResponseTone(value: string, semantic?: string): ActionTone {
   if (semantic === "lose") return "negative";
 
   if (value === "C") return "positive";
-  if (value === "R" || value === "B" || value === "A") return "negative";
+  if (value === "R" || value === "B" || value === "A" || value === "L") return "negative";
+  if (value === "W") return "positive";
   return "neutral";
 }
 

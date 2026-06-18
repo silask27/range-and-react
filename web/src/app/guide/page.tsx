@@ -41,7 +41,7 @@ export default function GuidePage() {
   const { isAuthLoading, authError } = useRequireAuth();
 
   return (
-    <AppShell title="Guide" subtitle="Plain-English scoring and workflow notes for coaches, members, and demo walkthroughs.">
+    <AppShell title="Guide" subtitle="Plain-English scoring and workflow notes for coaches and members.">
       {isAuthLoading ? <div style={mutedStyle}>Loading guide…</div> : null}
       {authError ? <div style={errorStyle}>{authError}</div> : null}
       <section style={introStyle}>
@@ -59,13 +59,6 @@ export default function GuidePage() {
             <div style={exampleStyle}>{section.example}</div>
           </article>
         ))}
-      </section>
-      <section style={introStyle}>
-        <div style={eyebrowStyle}>How to use this in a pitch</div>
-        <h2 style={titleStyle}>Show owner value, coach control, then member growth.</h2>
-        <p style={copyStyle}>
-          Start with the demo walkthrough, open the coach command center, download the member CSV, then switch to a member and show their growth view. That sequence makes the business value and the training value easy to understand in under ten minutes.
-        </p>
       </section>
     </AppShell>
   );

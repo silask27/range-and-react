@@ -679,13 +679,14 @@ def is_top_pair_from_hole(hole: tuple[str, str], board: list[str]) -> bool:
 def is_mid_pair_from_hole(hole: tuple[str, str], board: list[str]) -> bool:
     """
     Mid Pair is:
-    1. Traditional second pair, OR
-    2. A pocket pair whose rank lies strictly between the top board rank
-       and second-highest board rank.
+    1. Any non-top, non-bottom board pair made with a hole card, OR
+    2. A pocket pair whose rank lies strictly between the top and bottom
+       board ranks.
 
     Example:
     - QJ on A T 7 -> no
     - T9 on A T 7 -> Mid Pair
+    - 99 on A T 7 -> Mid Pair
     - QQ on A T 7 -> Mid Pair
     """
     board_ranks = sorted({RANK_TO_VALUE[c[0]] for c in board}, reverse=True)
@@ -693,15 +694,15 @@ def is_mid_pair_from_hole(hole: tuple[str, str], board: list[str]) -> bool:
         return False
 
     top_board = board_ranks[0]
-    second_board = board_ranks[1]
+    bottom_board = board_ranks[-1]
 
     r1 = RANK_TO_VALUE[hole[0][0]]
     r2 = RANK_TO_VALUE[hole[1][0]]
 
     if r1 == r2:
-        return second_board < r1 < top_board
+        return bottom_board < r1 < top_board
 
-    return (r1 == second_board) or (r2 == second_board)
+    return any(bottom_board < rank < top_board for rank in (r1, r2) if rank in board_ranks)
 
 
 def is_overpair(hole: tuple[str, str], board: list[str]) -> bool:

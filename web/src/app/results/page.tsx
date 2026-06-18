@@ -58,10 +58,6 @@ type ResultsPayload = {
   recent_results: ResultEntry[];
 };
 
-type ReviewQueuePayload = {
-  review_queue: ResultEntry[];
-};
-
 type BreakdownDimension = "scenario" | "villain" | "street" | "position" | "timer";
 
 type Filters = {
@@ -135,7 +131,6 @@ export default function ResultsPage() {
   const [breakdown, setBreakdown] = useState<BreakdownDimension>("villain");
   const [memberOptions, setMemberOptions] = useState<Option[]>([]);
   const [membersLoaded, setMembersLoaded] = useState(false);
-  const [reviewQueue, setReviewQueue] = useState<ResultEntry[]>([]);
   const [reviewMessage, setReviewMessage] = useState<string | null>(null);
   const [flagBusyHandId, setFlagBusyHandId] = useState<string | null>(null);
   const [sendBusy, setSendBusy] = useState(false);
@@ -192,25 +187,6 @@ export default function ResultsPage() {
     };
   }, [user, selectedMemberId, isCoachResultsView, membersLoaded, memberOptions.length]);
 
-  useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-    async function loadQueue() {
-      try {
-        const res = await apiFetch(`${API_BASE}/results/review-queue`, { cache: "no-store" });
-        const data = await res.json();
-        if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to load review queue.");
-        if (!cancelled) setReviewQueue((data as ReviewQueuePayload).review_queue ?? []);
-      } catch (err) {
-        if (!cancelled) setReviewMessage(err instanceof Error ? err.message : "Unable to load review queue.");
-      }
-    }
-    void loadQueue();
-    return () => {
-      cancelled = true;
-    };
-  }, [user]);
-
   async function loadResults({ cancelled }: { cancelled?: () => boolean } = {}) {
     setIsLoading(true);
     setError(null);
@@ -225,13 +201,6 @@ export default function ResultsPage() {
     } finally {
       if (!cancelled?.()) setIsLoading(false);
     }
-  }
-
-  async function loadReviewQueue() {
-    const res = await apiFetch(`${API_BASE}/results/review-queue`, { cache: "no-store" });
-    const data = await res.json();
-    if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to load review queue.");
-    setReviewQueue((data as ReviewQueuePayload).review_queue ?? []);
   }
 
   function handleMemberChange(memberId: string) {
@@ -253,7 +222,6 @@ export default function ResultsPage() {
       completed_results: patchRows(current.completed_results),
       recent_results: patchRows(current.recent_results),
     } : current);
-    setReviewQueue((current) => patchRows(current).filter((row) => row.review?.flagged));
   }
 
   async function toggleFlag(result: ResultEntry) {
@@ -269,7 +237,6 @@ export default function ResultsPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to update review flag.");
       applyReviewState(result.hand_id, (data as { review: ReviewState }).review);
-      await loadReviewQueue();
     } catch (err) {
       setReviewMessage(err instanceof Error ? err.message : "Unable to update review flag.");
     } finally {
@@ -291,7 +258,6 @@ export default function ResultsPage() {
       const count = Number((data as { sent_count?: number }).sent_count ?? 0);
       setReviewMessage(count ? `Sent ${count} flagged hand${count === 1 ? "" : "s"} to your coach queue.` : "No flagged hands were waiting to send.");
       await loadResults();
-      await loadReviewQueue();
     } catch (err) {
       setReviewMessage(err instanceof Error ? err.message : "Unable to send flagged hands.");
     } finally {
@@ -480,31 +446,6 @@ export default function ResultsPage() {
               </div>
             ) : <EmptyState copy="Complete a postflop hand to unlock debrief history." />}
           </section>
-
-          {reviewQueue.length ? (
-            <section style={panelStyle}>
-              <div style={sectionHeaderStyle}>
-                <div>
-                  <div style={eyebrowStyle}>Review queue</div>
-                  <h2 style={sectionTitleStyle}>{isCoachResultsView ? "Flagged hands from members" : "Hands flagged for review"}</h2>
-                </div>
-              </div>
-              <div style={scrollTableStackStyle}>
-                {reviewQueue.map((result) => (
-                  <div key={`review-${result.hand_id}`} style={rowStyle}>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={rowTitleStyle}>{result.scenario_display_name || "Scenario"} · {result.villain_display_name || "Villain"}</div>
-                      <div style={rowMetaStyle}>{compactDateTime(result.completed_at)} · {result.review?.sent_to_coaches ? "Sent to coach queue" : "Flagged"}</div>
-                    </div>
-                    <div style={rowActionsStyle}>
-                      <Link href={replayHref(result)} style={secondaryLinkStyle}>Replay</Link>
-                      <Link href={`/results/hand/${encodeURIComponent(result.hand_id)}`} style={secondaryLinkStyle}>Debrief</Link>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          ) : null}
         </>
       ) : null}
     </AppShell>

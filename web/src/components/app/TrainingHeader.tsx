@@ -13,7 +13,9 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Home", match: (pathname) => pathname === "/dashboard" },
   { href: "/account", label: "Account", match: (pathname) => pathname.startsWith("/account") },
   { href: "/screen-1", label: "Train", match: (pathname) => pathname.startsWith("/screen-1") || pathname.startsWith("/screen-3") },
+  { href: "/study", label: "Study", match: (pathname) => pathname.startsWith("/study") },
   { href: "/results", label: "Results", match: (pathname) => pathname.startsWith("/results") },
+  { href: "/review", label: "Review", match: (pathname) => pathname.startsWith("/review"), roles: ["owner", "admin", "coach"] },
   { href: "/assignments", label: "Assignments", match: (pathname) => pathname.startsWith("/assignments"), roles: ["member"] },
   { href: "/admin", label: "Coach", match: (pathname) => pathname.startsWith("/admin"), roles: ["owner", "admin", "coach"] },
 ];

@@ -92,21 +92,31 @@ export default function TrendChart({
         </div>
       ) : null}
       <div style={chartGridStyle}>
-        <div style={axisStyle}>
-          {ticks.slice().reverse().map((tick) => <span key={tick} style={axisLabelStyle}>{tick}</span>)}
+        <div style={{ ...axisStyle, height }}>
+          {ticks.map((tick) => {
+            const y = padding + (height - padding * 2) - (tick / 100) * (height - padding * 2);
+            return <span key={tick} style={{ ...axisLabelStyle, top: y }}>{tick}</span>;
+          })}
         </div>
         <div>
-          <div style={svgWrapStyle}>
+          <div style={{ ...svgWrapStyle, height }}>
             <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" style={svgStyle}>
-              {ticks.filter((tick) => tick > 0 && tick < 100).map((tick) => {
+              {ticks.map((tick) => {
                 const y = padding + (height - padding * 2) - (tick / 100) * (height - padding * 2);
-                return <line key={tick} x1={padding} x2={width - padding} y1={y} y2={y} stroke="rgba(240,235,224,0.08)" strokeDasharray="5 7" />;
+                return <line key={tick} x1={padding} x2={width - padding} y1={y} y2={y} stroke={tick === 0 ? "rgba(240,235,224,0.14)" : "rgba(240,235,224,0.08)"} strokeDasharray={tick === 0 ? undefined : "5 7"} />;
               })}
-              <line x1={padding} x2={width - padding} y1={height - padding} y2={height - padding} stroke="rgba(240,235,224,0.12)" />
               {rangingPath ? <path d={rangingPath} fill="none" stroke={COLORS.range} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" /> : null}
               {responsePath ? <path d={responsePath} fill="none" stroke={COLORS.response} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" /> : null}
-              {rangingDots.map((point, index) => point ? <circle key={`r-${index}`} cx={point.x} cy={point.y} r="4.5" fill={COLORS.range} stroke="#141210" strokeWidth="2" /> : null)}
-              {responseDots.map((point, index) => point ? <circle key={`a-${index}`} cx={point.x} cy={point.y} r="4.5" fill={COLORS.response} stroke="#141210" strokeWidth="2" /> : null)}
+              {rangingDots.map((point, index) => point ? (
+                <circle key={`r-${index}`} cx={point.x} cy={point.y} r="4.5" fill={COLORS.range} stroke="#141210" strokeWidth="2">
+                  <title>{`${points[index]?.label ?? `Rep ${index + 1}`} · Range Score ${round(point.value)}`}</title>
+                </circle>
+              ) : null)}
+              {responseDots.map((point, index) => point ? (
+                <circle key={`a-${index}`} cx={point.x} cy={point.y} r="4.5" fill={COLORS.response} stroke="#141210" strokeWidth="2">
+                  <title>{`${points[index]?.label ?? `Rep ${index + 1}`} · Action Score ${round(point.value)}`}</title>
+                </circle>
+              ) : null)}
             </svg>
           </div>
           <div style={{ ...labelsStyle, gridTemplateColumns: `repeat(${Math.max(displayLabels.length, 1)}, minmax(0, 1fr))` }}>
@@ -120,14 +130,18 @@ export default function TrendChart({
   );
 }
 
+function round(value: number) {
+  return Number(value.toFixed(2)).toString();
+}
+
 const chartWrapStyle: CSSProperties = { display: "grid", gap: 12 };
 const legendStyle: CSSProperties = { display: "flex", gap: 14, flexWrap: "wrap" };
 const legendItemStyle: CSSProperties = { display: "inline-flex", alignItems: "center", gap: 8, color: COLORS.text, fontSize: 13, fontWeight: 700 };
 const legendSwatchStyle: CSSProperties = { width: 10, height: 10, borderRadius: 999 };
 const chartGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "36px minmax(0, 1fr)", gap: 10, alignItems: "stretch" };
-const axisStyle: CSSProperties = { display: "grid", gridTemplateRows: "repeat(5, 1fr)", justifyItems: "end", padding: "10px 0 24px" };
-const axisLabelStyle: CSSProperties = { color: COLORS.muted, fontSize: 11, lineHeight: 1 };
-const svgWrapStyle: CSSProperties = { borderRadius: 18, overflow: "hidden", border: `1px solid ${COLORS.border}`, background: "var(--surface-fill)", padding: 8 };
-const svgStyle: CSSProperties = { width: "100%", height: "100%", minHeight: 220, display: "block" };
+const axisStyle: CSSProperties = { position: "relative" };
+const axisLabelStyle: CSSProperties = { position: "absolute", right: 0, transform: "translateY(-50%)", color: COLORS.muted, fontSize: 11, lineHeight: 1 };
+const svgWrapStyle: CSSProperties = { borderRadius: 18, overflow: "hidden", border: `1px solid ${COLORS.border}`, background: "var(--surface-fill)" };
+const svgStyle: CSSProperties = { width: "100%", height: "100%", display: "block" };
 const labelsStyle: CSSProperties = { display: "grid", gap: 8, paddingLeft: 2 };
 const labelStyle: CSSProperties = { color: COLORS.muted, fontSize: 11, textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };

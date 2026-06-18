@@ -162,6 +162,21 @@ def add_cohort_members(*, cohort_id: str, user_ids: Iterable[str]) -> dict[str, 
     return {"cohort": get_cohort(cohort_id), "added_user_ids": added, "skipped_user_ids": skipped}
 
 
+def remove_cohort_member(*, cohort_id: str, user_id: str) -> dict[str, Any]:
+    cohort = get_cohort(cohort_id)
+    if cohort is None:
+        raise ValueError("Unknown cohort_id")
+    user_id_clean = str(user_id or "").strip()
+    if not user_id_clean:
+        raise ValueError("user_id is required")
+    with get_connection() as conn:
+        conn.execute(
+            "DELETE FROM cohort_memberships WHERE cohort_id = ? AND user_id = ?",
+            (cohort["cohort_id"], user_id_clean),
+        )
+    return {"cohort": get_cohort(cohort_id), "removed_user_id": user_id_clean}
+
+
 def list_cohort_members(*, cohort_id: str, active_only: bool = True) -> list[dict[str, Any]]:
     cohort = get_cohort(cohort_id)
     if cohort is None:

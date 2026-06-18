@@ -28,6 +28,7 @@ from api.app.services.cohort_service import (
     get_cohort,
     list_cohort_members,
     list_cohorts,
+    remove_cohort_member,
 )
 from api.app.services.email_service import build_signup_invite_url, email_delivery_enabled, send_accountability_digest_email, send_signup_invite_email
 from api.app.services.auth_service import (
@@ -516,6 +517,21 @@ def admin_add_cohort_members_route(cohort_id: str, payload: dict = Body(...), cu
     try:
         result = add_cohort_members(cohort_id=cohort_id, user_ids=user_ids)
         log_audit_event(action_type='cohort_members_added', actor=current_user, organization_id=cohort['organization_id'], metadata={'cohort_id': cohort_id, 'added_count': len(result['added_user_ids'])})
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result
+
+
+@router.delete('/cohorts/{cohort_id}/members/{user_id}')
+def admin_remove_cohort_member_route(cohort_id: str, user_id: str, current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> dict:
+    cohort = get_cohort(cohort_id)
+    if cohort is None:
+        raise HTTPException(status_code=404, detail='Cohort not found')
+    ensure_organization_access(current_user, cohort['organization_id'])
+    ensure_user_access(current_user, user_id)
+    try:
+        result = remove_cohort_member(cohort_id=cohort_id, user_id=user_id)
+        log_audit_event(action_type='cohort_member_removed', actor=current_user, target_user_id=user_id, organization_id=cohort['organization_id'], metadata={'cohort_id': cohort_id})
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return result

@@ -6,6 +6,7 @@ from __future__ import annotations
 from dataclasses import fields
 
 from api.app.engine.bucket_engine import build_bucket_matrix_view
+from api.app.data.catalog import SCENARIOS
 from api.app.models.enums import (
     AggressionResponse,
     CallResponse,
@@ -13,6 +14,7 @@ from api.app.models.enums import (
     ResponseColumnType,
     UIGate,
 )
+from api.app.models.enums import ActionType, Player, Street
 from api.app.models.state import HandState
 from api.app.storage.memory_store import store
 
@@ -39,6 +41,7 @@ _DEFAULT_VALID_RESPONSES_BY_COLUMN: dict[str, set[str]] = {
         CallResponse.AGGRESSIVE.value,
     },
 }
+_SHOWDOWN_RESPONSES = {"W", "L"}
 
 
 def _hand_to_store_payload(hand: HandState) -> dict:
@@ -83,15 +86,36 @@ def _current_bucket_row_order(
     return list(bucket_view["row_order"])
 
 
+def _is_river_ip_checkback_node(hand: HandState) -> bool:
+    if hand.street != Street.RIVER:
+        return False
+    scenario = SCENARIOS.get(hand.scenario_id)
+    if not scenario or not scenario.hero_is_ip:
+        return False
+    if hand.current_actor != Player.HERO:
+        return False
+    if hand.betting_round.to_call_for(Player.HERO) > 0:
+        return False
+    street_events = [event for event in hand.history.events if event.street == hand.street]
+    if not street_events:
+        return False
+    latest = street_events[-1]
+    return latest.actor == Player.VILLAIN and latest.action == ActionType.CHECK
+
+
 def _valid_responses_by_column_for_hand(hand: HandState) -> dict[str, set[str]]:
     """
     Build the valid response alphabet for the current node.
     """
-    del hand
-    return {
+    valid = {
         column: set(values)
         for column, values in _DEFAULT_VALID_RESPONSES_BY_COLUMN.items()
     }
+    if hand.street == Street.RIVER:
+        valid[ResponseColumnType.CALL.value] = set(_SHOWDOWN_RESPONSES)
+        if _is_river_ip_checkback_node(hand):
+            valid[ResponseColumnType.CHECK.value] = set(_SHOWDOWN_RESPONSES)
+    return valid
 
 
 def _validate_and_normalize_response_matrix_payload(

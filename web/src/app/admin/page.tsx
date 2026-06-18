@@ -82,6 +82,7 @@ type AuditEntry = { audit_log_id: string; action_type: string; created_at: strin
 type OrganizationEntry = { organization_id: string; name: string; slug: string; external_provider: string | null; metadata?: { logo_url?: string; invite_landing_copy?: string; brand_accent?: string; coach_roster_note?: string }; members: Array<{ user_id: string; display_name: string | null; email: string; membership_role: string }> };
 type InviteEntry = { invite_id: string; invite_code: string; email: string | null; role: string; organization_id: string | null; membership_role: string; expires_at: string | null; consumed_at: string | null; status: string; invite_url?: string; email_delivery?: { status?: string; detail?: string | null } | null };
 type CohortEntry = { cohort_id: string; organization_id: string; name: string; description: string | null; status: string; member_count: number };
+type CohortMemberEntry = { user_id: string; email: string; display_name: string | null; role: string; is_active: boolean };
 type TabKey = "analytics" | "assignments" | "members";
 
 const PALETTE = { cream: "#F0EBE0", coral: "#E76F51", green: "#6A9E72", muted: "rgba(240,235,224,0.45)", soft: "rgba(240,235,224,0.08)" };
@@ -158,6 +159,10 @@ export default function AdminPage() {
   const [orgMemberState, setOrgMemberState] = useState({ organization_id: "", user_id: "", membership_role: "member" });
   const [inviteState, setInviteState] = useState({ email: "", role: "member", organization_id: "", expires_in_days: 14 });
   const [bulkInviteState, setBulkInviteState] = useState({ emails: "", role: "member", organization_id: "", expires_in_days: 14 });
+  const [selectedCohortId, setSelectedCohortId] = useState("");
+  const [cohortMemberIds, setCohortMemberIds] = useState<string[]>([]);
+  const [savedCohortMemberIds, setSavedCohortMemberIds] = useState<string[]>([]);
+  const [isCohortMembersBusy, setIsCohortMembersBusy] = useState(false);
 
   const canManageRoles = user?.role === "owner" || user?.role === "admin";
   const canCreateOrganizations = user?.role === "owner";
@@ -213,6 +218,11 @@ export default function AdminPage() {
       .slice()
       .sort((a, b) => dueSortValue(a.expires_at) - dueSortValue(b.expires_at) || (a.email || "").localeCompare(b.email || ""));
   }, [invites]);
+
+  const memberUsers = useMemo(
+    () => users.filter((entry) => entry.role === "member" && entry.is_active),
+    [users],
+  );
 
   const auditLogsSorted = useMemo(() => {
     return auditLogs.slice().sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
@@ -278,6 +288,13 @@ export default function AdminPage() {
 
     return Array.from(byUserId.values())
       .filter((entry) => users.find((userEntry) => userEntry.user_id === entry.user_id)?.role === "member")
+      .filter((entry) =>
+        (entry.overdue_assignments ?? 0) > 0 ||
+        (
+          entry.completed_hands >= 2 &&
+          combinedScore(entry.avg_ranging_score, entry.avg_response_score) < 80
+        )
+      )
       .sort((a, b) => combinedScore(a.avg_ranging_score, a.avg_response_score) - combinedScore(b.avg_ranging_score, b.avg_response_score) || a.display_name.localeCompare(b.display_name));
   }, [analytics, users, assignmentCountByUserId]);
 
@@ -322,6 +339,9 @@ export default function AdminPage() {
     setOrganizations((orgsData as { organizations: OrganizationEntry[] }).organizations);
     setInvites((invitesData as { invites: InviteEntry[] }).invites);
     setCohorts((cohortsData as { cohorts: CohortEntry[] }).cohorts);
+    if (selectedCohortId) {
+      await loadCohortMembers(selectedCohortId);
+    }
   }
 
   useEffect(() => {
@@ -383,6 +403,70 @@ export default function AdminPage() {
       await loadAll();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to create cohort.");
+    }
+  }
+
+  async function loadCohortMembers(cohortId: string) {
+    if (!cohortId) {
+      setCohortMemberIds([]);
+      setSavedCohortMemberIds([]);
+      return;
+    }
+    const res = await apiFetch(`${API_BASE}/admin/cohorts/${encodeURIComponent(cohortId)}/members`, { cache: "no-store" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to load cohort members.");
+    const ids = ((data as { members?: CohortMemberEntry[] }).members ?? [])
+      .filter((member) => member.role === "member")
+      .map((member) => member.user_id);
+    setCohortMemberIds(ids);
+    setSavedCohortMemberIds(ids);
+  }
+
+  async function handleSelectCohort(cohortId: string) {
+    setSelectedCohortId(cohortId);
+    setError(null);
+    setNotice(null);
+    try {
+      await loadCohortMembers(cohortId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load cohort members.");
+    }
+  }
+
+  async function handleSaveCohortMembers() {
+    if (!selectedCohortId) return;
+    setIsCohortMembersBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const nextIds = new Set(cohortMemberIds);
+      const previousIds = new Set(savedCohortMemberIds);
+      const toAdd = cohortMemberIds.filter((id) => !previousIds.has(id));
+      const toRemove = savedCohortMemberIds.filter((id) => !nextIds.has(id));
+
+      if (toAdd.length) {
+        const addRes = await apiFetch(`${API_BASE}/admin/cohorts/${encodeURIComponent(selectedCohortId)}/members`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_ids: toAdd }),
+        });
+        const addData = await addRes.json();
+        if (!addRes.ok) throw new Error(typeof addData.detail === "string" ? addData.detail : "Unable to add cohort members.");
+      }
+
+      for (const userId of toRemove) {
+        const removeRes = await apiFetch(`${API_BASE}/admin/cohorts/${encodeURIComponent(selectedCohortId)}/members/${encodeURIComponent(userId)}`, { method: "DELETE" });
+        const removeData = await removeRes.json();
+        if (!removeRes.ok) throw new Error(typeof removeData.detail === "string" ? removeData.detail : "Unable to remove cohort member.");
+      }
+
+      setNotice("Cohort members updated.");
+      await loadAll();
+      await loadCohortMembers(selectedCohortId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update cohort members.");
+    } finally {
+      setIsCohortMembersBusy(false);
     }
   }
 
@@ -738,7 +822,7 @@ export default function AdminPage() {
                   {analytics.trend_points.length ? <TrendChart points={buildRunningAverageTrend(analytics.trend_points)} /> : <EmptyState copy="Complete more finished hands to unlock the pool trend." />}
                 </section>
                 <section style={panelStyle}>
-                  <SectionHeader eyebrow="Member focus" title="Lowest combined scores first" />
+                  <SectionHeader eyebrow="Member focus" title="Members needing attention" />
                   <div style={scrollBoxStyle}>
                     {memberPerformanceRows.length ? memberPerformanceRows.map((entry) => (
                       <Link key={entry.user_id} href={`/results?member_id=${encodeURIComponent(entry.user_id)}`} style={memberFocusRowStyle}>
@@ -751,7 +835,7 @@ export default function AdminPage() {
                           <MetricPill label="Action" value={entry.avg_response_score} tone="green" />
                         </div>
                       </Link>
-                    )) : <EmptyState copy="No member performance rows yet." />}
+                    )) : <EmptyState copy="No members need attention right now." />}
                   </div>
                 </section>
               </div>
@@ -844,9 +928,12 @@ export default function AdminPage() {
                     <option value="">Select organization</option>
                     {organizations.map((org) => <option key={org.organization_id} value={org.organization_id}>{org.name}</option>)}
                   </select></label>
-                  <label style={labelStyle}>Members<select multiple value={cohortState.member_user_ids} onChange={(event) => setCohortState((current) => ({ ...current, member_user_ids: Array.from(event.currentTarget.selectedOptions).map((option) => option.value) }))} style={{ ...inputStyle, minHeight: 150 }}>
-                    {users.filter((entry) => entry.role === "member").map((entry) => <option key={entry.user_id} value={entry.user_id}>{entry.display_name || entry.email}</option>)}
-                  </select></label>
+                  <MemberCheckboxList
+                    label="Members"
+                    users={memberUsers}
+                    selectedIds={cohortState.member_user_ids}
+                    onChange={(ids) => setCohortState((current) => ({ ...current, member_user_ids: ids }))}
+                  />
                   <label style={labelStyle}>Description<textarea value={cohortState.description} onChange={(event) => setCohortState((current) => ({ ...current, description: event.target.value }))} style={{ ...inputStyle, minHeight: 76 }} placeholder="Optional internal note" /></label>
                   <button type="submit" style={secondaryButtonStyle}>Create cohort</button>
                 </form>
@@ -860,6 +947,26 @@ export default function AdminPage() {
                       <span style={tagStyle}>{cohort.status}</span>
                     </div>
                   )) : <EmptyState copy="No cohorts created yet." />}
+                </div>
+                <div style={{ ...cohortEditorStyle, marginTop: 16 }}>
+                  <SectionHeader eyebrow="Membership" title="Add or remove cohort members" />
+                  <label style={labelStyle}>Cohort<select value={selectedCohortId} onChange={(event) => void handleSelectCohort(event.target.value)} style={inputStyle}>
+                    <option value="">Select cohort</option>
+                    {cohorts.map((cohort) => <option key={cohort.cohort_id} value={cohort.cohort_id}>{cohort.name} ({cohort.member_count})</option>)}
+                  </select></label>
+                  {selectedCohortId ? (
+                    <>
+                      <MemberCheckboxList
+                        label="Members in this cohort"
+                        users={memberUsers}
+                        selectedIds={cohortMemberIds}
+                        onChange={setCohortMemberIds}
+                      />
+                      <button type="button" onClick={() => void handleSaveCohortMembers()} disabled={isCohortMembersBusy} style={primaryButtonStyle}>
+                        {isCohortMembersBusy ? "Saving members…" : "Save cohort members"}
+                      </button>
+                    </>
+                  ) : <EmptyState copy="Select a cohort to edit its member list." />}
                 </div>
               </section>
             </section>
@@ -1131,6 +1238,46 @@ function ScoreBreakdownList({ title, rows }: { title: string; rows: ScoreBreakdo
 }
 function EmptyState({ copy }: { copy: string }) { return <div style={emptyStateStyle}>{copy}</div>; }
 
+function MemberCheckboxList({
+  label,
+  users,
+  selectedIds,
+  onChange,
+}: {
+  label: string;
+  users: UserEntry[];
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const selected = new Set(selectedIds);
+
+  function toggle(userId: string) {
+    if (selected.has(userId)) {
+      onChange(selectedIds.filter((id) => id !== userId));
+      return;
+    }
+    onChange([...selectedIds, userId]);
+  }
+
+  return (
+    <div style={labelStyle}>
+      <span style={labelTitleStyle}>{label}</span>
+      <div style={checkboxListStyle}>
+        {users.length ? users.map((entry) => (
+          <label key={entry.user_id} style={checkboxRowStyle}>
+            <input
+              type="checkbox"
+              checked={selected.has(entry.user_id)}
+              onChange={() => toggle(entry.user_id)}
+            />
+            <span>{entry.display_name || entry.email}</span>
+          </label>
+        )) : <div style={helperCopyStyle}>No active members are available.</div>}
+      </div>
+    </div>
+  );
+}
+
 function buildCoachNextActions({ analytics, memberNames, workspaceName }: { analytics: AnalyticsPayload; memberNames: Map<string, string>; workspaceName: string }) {
   const actions: Array<{ title: string; meta: string; right: string }> = [];
   const overdue = analytics.overdue_assignments[0];
@@ -1353,6 +1500,9 @@ const twoColStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repe
 const threeColStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 150px), 1fr))", gap: 12 };
 const labelStyle: CSSProperties = { display: "grid", gap: 8, color: PALETTE.cream, fontSize: 14 };
 const labelTitleStyle: CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6 };
+const cohortEditorStyle: CSSProperties = { display: "grid", gap: 14, padding: 16, borderRadius: 18, border: "1px solid var(--line)", background: "rgba(20,18,16,0.42)" };
+const checkboxListStyle: CSSProperties = { maxHeight: 220, overflowY: "auto", display: "grid", gap: 8, padding: 12, borderRadius: 14, border: "1px solid var(--line)", background: "var(--surface-fill)" };
+const checkboxRowStyle: CSSProperties = { display: "grid", gridTemplateColumns: "auto minmax(0, 1fr)", alignItems: "center", gap: 10, color: "rgba(240,235,224,0.82)", lineHeight: 1.45 };
 const inputStyle: CSSProperties = { width: "100%", padding: "11px 12px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface-fill)", color: PALETTE.cream };
 const compactInputStyle: CSSProperties = { ...inputStyle, width: 120, padding: "9px 10px" };
 const requiredStyle: CSSProperties = { color: PALETTE.coral, fontWeight: 900 };

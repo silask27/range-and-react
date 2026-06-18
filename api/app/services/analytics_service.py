@@ -144,7 +144,9 @@ def _build_results_where(*, visible_user_ids: Sequence[str] | None = None, alias
     clauses = [f'{alias}.hand_over = 1']
     params: list[Any] = []
     clean_user_ids = _clean_ids(visible_user_ids)
-    if clean_user_ids:
+    if visible_user_ids is not None and not clean_user_ids:
+        clauses.append('1 = 0')
+    elif clean_user_ids:
         placeholders = ', '.join('?' for _ in clean_user_ids)
         clauses.append(f'{alias}.user_id IN ({placeholders})')
         params.extend(clean_user_ids)
@@ -281,7 +283,9 @@ def _query_user_rows(*, visible_user_ids: Sequence[str] | None = None) -> list[d
     clauses: list[str] = []
     params: list[Any] = []
     clean_user_ids = _clean_ids(visible_user_ids)
-    if clean_user_ids:
+    if visible_user_ids is not None and not clean_user_ids:
+        clauses.append('1 = 0')
+    elif clean_user_ids:
         placeholders = ', '.join('?' for _ in clean_user_ids)
         clauses.append(f'u.user_id IN ({placeholders})')
         params.extend(clean_user_ids)
@@ -356,11 +360,42 @@ def _query_user_organization_names(*, visible_user_ids: Sequence[str] | None = N
     return dict(out)
 
 
+def _query_member_user_ids(*, visible_user_ids: Sequence[str] | None = None, visible_organization_ids: Sequence[str] | None = None) -> list[str]:
+    clean_user_ids = _clean_ids(visible_user_ids)
+    clean_org_ids = _clean_ids(visible_organization_ids)
+    clauses = ["u.role = 'member'"]
+    params: list[Any] = []
+    join_sql = ''
+    if clean_org_ids:
+        join_sql = 'JOIN organization_memberships m ON m.user_id = u.user_id'
+        placeholders = ', '.join('?' for _ in clean_org_ids)
+        clauses.append(f'm.organization_id IN ({placeholders})')
+        params.extend(clean_org_ids)
+    if clean_user_ids:
+        placeholders = ', '.join('?' for _ in clean_user_ids)
+        clauses.append(f'u.user_id IN ({placeholders})')
+        params.extend(clean_user_ids)
+    with get_connection() as conn:
+        rows = conn.execute(
+            f'''
+            SELECT DISTINCT u.user_id
+            FROM users u
+            {join_sql}
+            WHERE {' AND '.join(clauses)}
+            ORDER BY lower(COALESCE(u.display_name, u.email)) ASC
+            ''',
+            tuple(params),
+        ).fetchall()
+    return [str(row['user_id']) for row in rows]
+
+
 def _query_user_worst_opponents(*, visible_user_ids: Sequence[str] | None = None) -> dict[str, dict[str, Any]]:
     clean_user_ids = _clean_ids(visible_user_ids)
     clauses = ['hr.hand_over = 1', 'hr.villain_profile_id IS NOT NULL']
     params: list[Any] = []
-    if clean_user_ids:
+    if visible_user_ids is not None and not clean_user_ids:
+        clauses.append('1 = 0')
+    elif clean_user_ids:
         placeholders = ', '.join('?' for _ in clean_user_ids)
         clauses.append(f'hr.user_id IN ({placeholders})')
         params.extend(clean_user_ids)
@@ -506,18 +541,29 @@ def _driver_summary(*, metric_key: str, baseline: float | None, scenario_rows: l
     }
 
 
+def _meaningful_weak_rows(rows: list[dict[str, Any]], *, limit: int = 6, min_hands: int = 2) -> list[dict[str, Any]]:
+    meaningful = [
+        row for row in rows
+        if int(row.get('hands') or 0) >= min_hands
+        and row.get('overall_score') is not None
+        and float(row.get('overall_score') or 0.0) < 100.0
+    ]
+    return meaningful[:limit]
+
+
 
 def _compute_admin_analytics(*, visible_user_ids: Iterable[str] | None = None, visible_organization_ids: Iterable[str] | None = None) -> dict[str, Any]:
     user_scope = _clean_ids(visible_user_ids) or None
     org_scope = _clean_ids(visible_organization_ids) or None
+    member_user_scope = _query_member_user_ids(visible_user_ids=user_scope, visible_organization_ids=org_scope)
 
-    summary = _query_summary(visible_user_ids=user_scope)
-    scenario_rows = _query_group_scores(column='scenario_id', visible_user_ids=user_scope)
-    villain_rows = _query_group_scores(column='villain_profile_id', visible_user_ids=user_scope)
-    pair_rows = _query_pair_scores(visible_user_ids=user_scope)
-    user_rows = _query_user_rows(visible_user_ids=user_scope)
-    assignments = list_assignments_with_progress(limit=2000, organization_ids=org_scope, target_user_ids=user_scope)
-    cohort_completion = _build_cohort_completion_rows(visible_user_ids=user_scope, visible_organization_ids=org_scope)
+    summary = _query_summary(visible_user_ids=member_user_scope)
+    scenario_rows = _query_group_scores(column='scenario_id', visible_user_ids=member_user_scope)
+    villain_rows = _query_group_scores(column='villain_profile_id', visible_user_ids=member_user_scope)
+    pair_rows = _query_pair_scores(visible_user_ids=member_user_scope)
+    user_rows = _query_user_rows(visible_user_ids=member_user_scope)
+    assignments = list_assignments_with_progress(limit=2000, organization_ids=org_scope, target_user_ids=member_user_scope)
+    cohort_completion = _build_cohort_completion_rows(visible_user_ids=member_user_scope, visible_organization_ids=org_scope)
 
     assignments_by_user: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for assignment in assignments:
@@ -532,8 +578,17 @@ def _compute_admin_analytics(*, visible_user_ids: Iterable[str] | None = None, v
         payload['overdue_assignments'] = overdue
         enriched_user_rows.append(payload)
 
+    attention_candidates = [
+        row for row in enriched_user_rows
+        if row.get('overdue_assignments', 0) > 0
+        or (
+            int(row.get('completed_hands') or 0) >= 2
+            and row.get('avg_overall_score') is not None
+            and float(row.get('avg_overall_score') or 0.0) < 80.0
+        )
+    ]
     users_needing_attention = sorted(
-        enriched_user_rows,
+        attention_candidates,
         key=lambda item: (-item['overdue_assignments'], 999 if item['avg_overall_score'] is None else item['avg_overall_score'], item['display_name']),
     )[:10]
     strongest_users = sorted(
@@ -551,12 +606,12 @@ def _compute_admin_analytics(*, visible_user_ids: Iterable[str] | None = None, v
             'users_tracked': len(user_rows),
             'assignments_tracked': len(assignments),
         },
-        'trend_points': _query_trend_points(visible_user_ids=user_scope),
-        'weakest_scenarios': scenario_rows[:6],
+        'trend_points': _query_trend_points(visible_user_ids=member_user_scope),
+        'weakest_scenarios': _meaningful_weak_rows(scenario_rows),
         'strongest_scenarios': sorted([row for row in scenario_rows if row['overall_score'] is not None], key=lambda item: (-float(item['overall_score']), -item['hands'], item['label']))[:6],
-        'weakest_villains': villain_rows[:6],
+        'weakest_villains': _meaningful_weak_rows(villain_rows),
         'strongest_villains': sorted([row for row in villain_rows if row['overall_score'] is not None], key=lambda item: (-float(item['overall_score']), -item['hands'], item['label']))[:6],
-        'weakest_pairs': pair_rows[:6],
+        'weakest_pairs': _meaningful_weak_rows(pair_rows),
         'strongest_pairs': sorted([row for row in pair_rows if row['overall_score'] is not None], key=lambda item: (-float(item['overall_score']), -item['hands'], item['label']))[:6],
         'users_needing_attention': users_needing_attention,
         'strongest_users': strongest_users,

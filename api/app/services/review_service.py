@@ -14,6 +14,7 @@ from api.app.services.access_service import (
     get_visible_user_ids,
     list_user_organization_ids,
 )
+from api.app.services.auth_service import get_user_by_id
 from api.app.services.hand_service import get_hand
 from api.app.services.organization_service import list_organization_members
 from api.app.services.review_state import REVIEW_METADATA_KEY, clean_ids, review_state_from_metadata
@@ -271,7 +272,11 @@ def list_review_queue(*, user: UserAccount) -> dict[str, Any]:
     ]
     rows = [row for row in rows if row.get("review", {}).get("flagged")]
     if user.role in {UserRole.ADMIN, UserRole.COACH}:
-        rows = [row for row in rows if row.get("review", {}).get("sent_to_coaches")]
+        rows = [
+            row for row in rows
+            if row.get("review", {}).get("sent_to_coaches")
+            or str(row.get("owner_user_id") or "") == str(user.user_id)
+        ]
     rows.sort(key=lambda item: item.get("review", {}).get("sent_at") or item.get("review", {}).get("flagged_at") or item.get("completed_at") or "", reverse=True)
     return {"review_queue": rows}
 
@@ -279,10 +284,13 @@ def list_review_queue(*, user: UserAccount) -> dict[str, Any]:
 def _review_queue_context(result: dict[str, Any]) -> dict[str, Any]:
     scenario = SCENARIOS.get(result.get("scenario_id"))
     villain = VILLAIN_PROFILES.get(result.get("villain_profile_id"))
+    owner = get_user_by_id(str(result.get("user_id") or ""))
     return {
         "hand_id": result.get("hand_id"),
         "session_id": result.get("session_id"),
         "owner_user_id": result.get("user_id"),
+        "owner_display_name": (owner.display_name or owner.email) if owner else "Member",
+        "owner_email": owner.email if owner else None,
         "scenario_id": result.get("scenario_id"),
         "scenario_display_name": scenario.display_name if scenario else result.get("scenario_id"),
         "villain_profile_id": result.get("villain_profile_id"),

@@ -16,17 +16,15 @@ import { getStoredAuthToken } from "../../lib/auth";
 import { THEME } from "../../lib/theme";
 
 import { HandMatrix } from "../../components/preflop/HandMatrix";
-import ModeSplitToggle from "../../components/preflop/ModeSplitToggle";
 import PreflopTableCast, {
   type PreflopCastSeat,
 } from "../../components/preflop/PreflopTableCast";
-import WorkbenchStudy from "../../components/preflop/WorkbenchStudy";
 import TimeoutOverlay from "../../components/training/TimeoutOverlay";
 import WorkflowBar, {
   type WorkflowStep,
 } from "../../components/training/WorkflowBar";
 import { make13x13Grid } from "../../lib/preflop/handGrid";
-import type { MatrixAction, TrainStudyMode } from "../../lib/preflop/types";
+import type { MatrixAction } from "../../lib/preflop/types";
 
 type VillainProfile = {
   id: string;
@@ -570,7 +568,6 @@ function Screen1PageContent() {
   const isReplayMode = searchParams.get("replay") === "1";
   const replayStepFromUrl = Number(searchParams.get("replay_step") ?? "0");
 
-  const [mode, setMode] = useState<TrainStudyMode>("train");
   const [villains, setVillains] = useState<VillainProfile[]>([]);
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [selectedVillainId, setSelectedVillainId] = useState<string>("");
@@ -674,26 +671,21 @@ function Screen1PageContent() {
   );
 
   const workflowHelperText = useMemo(() => {
-    if (mode !== "train") return "";
     if (!selectedScenario) {
       return setupHelperText(opponentChosenExplicitly, !!selectedScenario);
     }
     return stepHelperText(selectedScenario, currentActor);
-  }, [mode, opponentChosenExplicitly, selectedScenario, currentActor]);
+  }, [opponentChosenExplicitly, selectedScenario, currentActor]);
 
   const activeSetupControl = useMemo(
-    () =>
-      mode === "train"
-        ? getActiveSetupControl(opponentChosenExplicitly, !!selectedScenario)
-        : null,
-    [mode, opponentChosenExplicitly, selectedScenario],
+    () => getActiveSetupControl(opponentChosenExplicitly, !!selectedScenario),
+    [opponentChosenExplicitly, selectedScenario],
   );
 
   const isRangePanelActive =
-    mode === "train" && !!selectedScenario && !!currentActor;
+    !!selectedScenario && !!currentActor;
 
   const currentStepSignature = useMemo(() => {
-    if (mode !== "train") return null;
     if (!selectedScenario || !currentActor || !session) return null;
     return [
       session.session_id,
@@ -703,7 +695,6 @@ function Screen1PageContent() {
       session.villain_range_confirmed ? "1" : "0",
     ].join(":");
   }, [
-    mode,
     selectedScenario,
     currentActor,
     session?.session_id,
@@ -997,7 +988,6 @@ function Screen1PageContent() {
   useEffect(() => {
     if (
       isReplayMode ||
-      mode !== "train" ||
       !selectedScenario ||
       !currentActor ||
       !session ||
@@ -1012,7 +1002,6 @@ function Screen1PageContent() {
     handledTimeoutStepRef.current = null;
   }, [
     isReplayMode,
-    mode,
     selectedScenario?.id,
     currentActor,
     session?.session_id,
@@ -1023,7 +1012,6 @@ function Screen1PageContent() {
 
   useEffect(() => {
     if (
-      mode !== "train" ||
       selectedTimerSeconds <= 0 ||
       !selectedScenario ||
       !currentActor ||
@@ -1052,7 +1040,6 @@ function Screen1PageContent() {
     return () => window.clearTimeout(timeoutId);
   }, [
     isReplayMode,
-    mode,
     selectedTimerSeconds,
     selectedScenario,
     currentActor,
@@ -1064,8 +1051,6 @@ function Screen1PageContent() {
   ]);
 
   async function handleVillainSelect(villainId: string) {
-    if (mode !== "train") return;
-
     setSelectedVillainId(villainId);
     setOpponentChosenExplicitly(true);
     setOpponentOpen(false);
@@ -1090,8 +1075,6 @@ function Screen1PageContent() {
   }
 
   async function handleTimerSelect(nextTimerSeconds: TrainTimerSeconds) {
-    if (mode !== "train") return;
-
     setSelectedTimerSeconds(nextTimerSeconds);
     setTimerOpen(false);
     setOpponentOpen(false);
@@ -1115,7 +1098,7 @@ function Screen1PageContent() {
   }
 
   async function handleScenarioSelect(scenarioId: string) {
-    if (!selectedVillainId || mode !== "train") return;
+    if (!selectedVillainId) return;
 
     setSelectedScenarioId(scenarioId);
     setScenarioOpen(false);
@@ -1270,10 +1253,9 @@ function Screen1PageContent() {
     selectedScenario,
     currentActor,
   );
-  const timerSelectable = mode === "train" && !isReplayMode && !isLoading && !isBusy;
-  const opponentSelectable = mode === "train" && !isReplayMode && !isLoading && !isBusy;
+  const timerSelectable = !isReplayMode && !isLoading && !isBusy;
+  const opponentSelectable = !isReplayMode && !isLoading && !isBusy;
   const scenarioSelectable =
-    mode === "train" &&
     !isReplayMode &&
     opponentChosenExplicitly &&
     !!selectedVillainId &&
@@ -1291,10 +1273,7 @@ function Screen1PageContent() {
         flexWrap: "wrap",
       }}
     >
-      <ModeSplitToggle mode={mode} onChange={setMode} />
-
-      {mode === "train" ? (
-        <div style={{ position: "relative" }}>
+      <div style={{ position: "relative" }}>
           <button
             type="button"
             onClick={() => {
@@ -1350,11 +1329,9 @@ function Screen1PageContent() {
               ))}
             </div>
           ) : null}
-        </div>
-      ) : null}
+      </div>
 
-      {mode === "train" ? (
-        <div style={{ position: "relative" }}>
+      <div style={{ position: "relative" }}>
           <button
             type="button"
             onClick={() => {
@@ -1428,11 +1405,9 @@ function Screen1PageContent() {
               ))}
             </div>
           ) : null}
-        </div>
-      ) : null}
+      </div>
 
-      {mode === "train" ? (
-        <div style={{ position: "relative" }}>
+      <div style={{ position: "relative" }}>
           <button
             type="button"
             onClick={() => {
@@ -1490,8 +1465,7 @@ function Screen1PageContent() {
               ))}
             </div>
           ) : null}
-        </div>
-      ) : null}
+      </div>
     </div>
   );
 
@@ -1523,7 +1497,7 @@ function Screen1PageContent() {
               ? "Review the saved preflop range exactly as it was submitted, then step forward into the played postflop hand."
               : "Set the scenario, choose the opponent, and shape the starting ranges."
           }
-          stage={isReplayMode ? "Replay mode" : mode === "train" ? "Train mode" : "Study mode"}
+          stage={isReplayMode ? "Replay mode" : "Train mode"}
           headerContent={preflopHeaderControls}
         />
 
@@ -1546,8 +1520,6 @@ function Screen1PageContent() {
 
         {isLoading ? (
           <div style={loadingPanelStyle}>Loading preflop setup…</div>
-        ) : mode === "study" ? (
-          <WorkbenchStudy />
         ) : (
           <>
             <WorkflowBar
