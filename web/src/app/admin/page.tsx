@@ -86,6 +86,34 @@ type CohortMemberEntry = { user_id: string; email: string; display_name: string 
 type TabKey = "analytics" | "assignments" | "members";
 
 const PALETTE = { cream: "#F0EBE0", coral: "#E76F51", green: "#6A9E72", muted: "rgba(240,235,224,0.45)", soft: "rgba(240,235,224,0.08)" };
+const EMPTY_ANALYTICS: AnalyticsPayload = {
+  summary: {
+    completed_hands: 0,
+    users_tracked: 0,
+    assignments_tracked: 0,
+    avg_overall_score: null,
+    avg_ranging_score: null,
+    avg_response_score: null,
+  },
+  trend_points: [],
+  users_needing_attention: [],
+  strongest_users: [],
+  weakest_scenarios: [],
+  weakest_villains: [],
+  cohort_completion: [],
+  overdue_assignments: [],
+  assignment_status_counts: {},
+  insight_drivers: {
+    ranging: {
+      low: "Complete more member reps to surface the pool's biggest range leak.",
+      high: "Complete more member reps to surface the pool's strongest range spot.",
+    },
+    response: {
+      low: "Complete more member reps to surface the pool's biggest action leak.",
+      high: "Complete more member reps to surface the pool's strongest action spot.",
+    },
+  },
+};
 const ACCOUNT_ROLE_OPTIONS = ["member", "coach", "admin"] as const;
 const ORG_ROLE_OPTIONS = ["member", "coach", "admin", "owner"] as const;
 const ADMIN_PAGE_SIZE = 500;
@@ -123,7 +151,7 @@ async function loadPagedCollection<T>(path: string, key: string, cap = ADMIN_COL
   let total = Number.POSITIVE_INFINITY;
   while (offset < total && out.length < cap) {
     const sep = path.includes("?") ? "&" : "?";
-    const res = await apiFetch(`${API_BASE}${path}${sep}limit=${ADMIN_PAGE_SIZE}&offset=${offset}`, { cache: "no-store" });
+    const res = await apiFetchWithRetry(`${API_BASE}${path}${sep}limit=${ADMIN_PAGE_SIZE}&offset=${offset}`);
     const data = await res.json();
     if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to load records.");
     const rows = ((data as Record<string, unknown>)[key] ?? []) as T[];
@@ -138,10 +166,25 @@ async function loadPagedCollection<T>(path: string, key: string, cap = ADMIN_COL
 }
 
 async function loadJson<T>(path: string, fallbackMessage: string): Promise<T> {
-  const res = await apiFetch(`${API_BASE}${path}`, { cache: "no-store" });
+  const res = await apiFetchWithRetry(`${API_BASE}${path}`);
   const data = await res.json();
   if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : fallbackMessage);
   return data as T;
+}
+
+async function apiFetchWithRetry(input: RequestInfo | URL, attempts = 2): Promise<Response> {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await apiFetch(input, { cache: "no-store" });
+    } catch (err) {
+      lastError = err;
+      if (attempt < attempts - 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 450));
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Unable to reach Coach tools.");
 }
 
 async function loadOptional<T>(loader: () => Promise<T>, fallback: T): Promise<T> {
@@ -322,7 +365,11 @@ export default function AdminPage() {
   }
 
   async function loadAll() {
-    const analyticsData = await loadJson<AnalyticsPayload>("/admin/analytics", "Unable to load analytics.");
+    setError(null);
+    const analyticsData = await loadOptional(
+      () => loadJson<AnalyticsPayload>("/admin/analytics", "Unable to load analytics."),
+      EMPTY_ANALYTICS,
+    );
     setAnalytics(analyticsData);
 
     const [usersData, assignmentsData, villainsData, scenariosData, digestData, auditsData, orgsData, invitesData, cohortsData] = await Promise.all([
@@ -346,7 +393,7 @@ export default function AdminPage() {
     setInvites(invitesData.invites);
     setCohorts(cohortsData.cohorts);
     if (selectedCohortId) {
-      await loadCohortMembers(selectedCohortId);
+      await loadOptional(() => loadCohortMembers(selectedCohortId), undefined);
     }
   }
 
@@ -356,7 +403,10 @@ export default function AdminPage() {
       setError("You do not have access to Coach tools.");
       return;
     }
-    void loadAll().catch((err) => setError(err instanceof Error ? err.message : "Unable to load coach tools."));
+    void loadAll().catch(() => {
+      setAnalytics(EMPTY_ANALYTICS);
+      setError(null);
+    });
   }, [user]);
 
   async function handleCreateAssignment(event: FormEvent<HTMLFormElement>) {
