@@ -137,6 +137,21 @@ async function loadPagedCollection<T>(path: string, key: string, cap = ADMIN_COL
   return out.slice(0, cap);
 }
 
+async function loadJson<T>(path: string, fallbackMessage: string): Promise<T> {
+  const res = await apiFetch(`${API_BASE}${path}`, { cache: "no-store" });
+  const data = await res.json();
+  if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : fallbackMessage);
+  return data as T;
+}
+
+async function loadOptional<T>(loader: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await loader();
+  } catch {
+    return fallback;
+  }
+}
+
 export default function AdminPage() {
   const { user, isAuthLoading, authError } = useRequireAuth();
   const [users, setUsers] = useState<UserEntry[]>([]);
@@ -307,38 +322,29 @@ export default function AdminPage() {
   }
 
   async function loadAll() {
-    const [usersData, assignmentsData, villainsRes, scenariosRes, analyticsRes, digestRes, auditsData, orgsRes, invitesRes, cohortsRes] = await Promise.all([
-      loadPagedCollection<UserEntry>("/admin/users", "users"),
-      loadPagedCollection<AssignmentEntry>("/admin/assignments", "assignments"),
-      apiFetch(`${API_BASE}/villains`, { cache: "no-store" }),
-      apiFetch(`${API_BASE}/scenarios`, { cache: "no-store" }),
-      apiFetch(`${API_BASE}/admin/analytics`, { cache: "no-store" }),
-      apiFetch(`${API_BASE}/admin/accountability-digest`, { cache: "no-store" }),
-      loadPagedCollection<AuditEntry>("/admin/audit-logs", "audit_logs", 1000),
-      apiFetch(`${API_BASE}/admin/organizations`, { cache: "no-store" }),
-      apiFetch(`${API_BASE}/admin/signup-invites?limit=${ADMIN_COLLECTION_CAP}`, { cache: "no-store" }),
-      apiFetch(`${API_BASE}/admin/cohorts`, { cache: "no-store" }),
+    const analyticsData = await loadJson<AnalyticsPayload>("/admin/analytics", "Unable to load analytics.");
+    setAnalytics(analyticsData);
+
+    const [usersData, assignmentsData, villainsData, scenariosData, digestData, auditsData, orgsData, invitesData, cohortsData] = await Promise.all([
+      loadOptional(() => loadPagedCollection<UserEntry>("/admin/users", "users"), []),
+      loadOptional(() => loadPagedCollection<AssignmentEntry>("/admin/assignments", "assignments"), []),
+      loadOptional(() => loadJson<Array<{ id: string; display_name: string }>>("/villains", "Unable to load villains."), []),
+      loadOptional(() => loadJson<Array<{ id: string; display_name: string }>>("/scenarios", "Unable to load scenarios."), []),
+      loadOptional(() => loadJson<{ digest: AccountabilityDigest }>("/admin/accountability-digest", "Unable to load accountability digest."), null),
+      loadOptional(() => loadPagedCollection<AuditEntry>("/admin/audit-logs", "audit_logs", 1000), []),
+      loadOptional(() => loadJson<{ organizations: OrganizationEntry[] }>("/admin/organizations", "Unable to load organizations."), { organizations: [] }),
+      loadOptional(() => loadJson<{ invites: InviteEntry[] }>(`/admin/signup-invites?limit=${ADMIN_COLLECTION_CAP}`, "Unable to load invites."), { invites: [] }),
+      loadOptional(() => loadJson<{ cohorts: CohortEntry[] }>("/admin/cohorts", "Unable to load cohorts."), { cohorts: [] }),
     ]);
-    const [villainsData, scenariosData, analyticsData, digestData, orgsData, invitesData, cohortsData] = await Promise.all([
-      villainsRes.json(), scenariosRes.json(), analyticsRes.json(), digestRes.json(), orgsRes.json(), invitesRes.json(), cohortsRes.json(),
-    ]);
-    if (!villainsRes.ok) throw new Error(typeof villainsData.detail === "string" ? villainsData.detail : "Unable to load villains.");
-    if (!scenariosRes.ok) throw new Error(typeof scenariosData.detail === "string" ? scenariosData.detail : "Unable to load scenarios.");
-    if (!analyticsRes.ok) throw new Error(typeof analyticsData.detail === "string" ? analyticsData.detail : "Unable to load analytics.");
-    if (!digestRes.ok) throw new Error(typeof digestData.detail === "string" ? digestData.detail : "Unable to load accountability digest.");
-    if (!orgsRes.ok) throw new Error(typeof orgsData.detail === "string" ? orgsData.detail : "Unable to load organizations.");
-    if (!invitesRes.ok) throw new Error(typeof invitesData.detail === "string" ? invitesData.detail : "Unable to load invites.");
-    if (!cohortsRes.ok) throw new Error(typeof cohortsData.detail === "string" ? cohortsData.detail : "Unable to load cohorts.");
     setUsers(usersData);
     setAssignments(assignmentsData);
-    setVillains((villainsData as Array<{ id: string; display_name: string }>).map((item) => ({ id: item.id, display_name: item.display_name })));
-    setScenarios((scenariosData as Array<{ id: string; display_name: string }>).map((item) => ({ id: item.id, display_name: item.display_name })));
-    setAnalytics(analyticsData as AnalyticsPayload);
-    setDigest((digestData as { digest: AccountabilityDigest }).digest);
+    setVillains(villainsData.map((item) => ({ id: item.id, display_name: item.display_name })));
+    setScenarios(scenariosData.map((item) => ({ id: item.id, display_name: item.display_name })));
+    setDigest(digestData?.digest ?? null);
     setAuditLogs(auditsData);
-    setOrganizations((orgsData as { organizations: OrganizationEntry[] }).organizations);
-    setInvites((invitesData as { invites: InviteEntry[] }).invites);
-    setCohorts((cohortsData as { cohorts: CohortEntry[] }).cohorts);
+    setOrganizations(orgsData.organizations);
+    setInvites(invitesData.invites);
+    setCohorts(cohortsData.cohorts);
     if (selectedCohortId) {
       await loadCohortMembers(selectedCohortId);
     }
@@ -754,64 +760,13 @@ export default function AdminPage() {
 
           {activeTab === "analytics" ? (
             <div style={{ display: "grid", gap: 24 }}>
-              <section style={commandCenterStyle}>
-                <div style={commandHeaderStyle}>
-                  <SectionHeader eyebrow={workspaceName} title="Coach command center" />
-                  <div style={actionClusterStyle}>
-                    <button type="button" onClick={handleDownloadSampleReport} style={secondaryButtonStyle}>Sample report</button>
-                    <button type="button" onClick={() => void handleDownloadMemberResultsCsv()} style={secondaryButtonStyle}>Download member CSV</button>
-                  </div>
-                </div>
+              <section style={panelStyle}>
+                <SectionHeader eyebrow={workspaceName} title="Pool-wide performance" />
                 <div style={digestStatGridStyle}>
-                  <DigestStat label="Cohort completion" value={formatPercent(averageCohortCompletion)} />
-                  <DigestStat label="Struggling members" value={analytics.users_needing_attention.length} />
-                  <DigestStat label="Overdue work" value={analytics.overdue_assignments.length} />
+                  <DigestStat label="Range Score" value={formatScore(analytics.summary.avg_ranging_score)} />
+                  <DigestStat label="Action Score" value={formatScore(analytics.summary.avg_response_score)} />
                   <DigestStat label="Finished reps" value={analytics.summary.completed_hands} />
-                </div>
-                <div style={commandGridStyle}>
-                  <section style={miniPanelStyle}>
-                    <SectionHeader eyebrow="Cohorts" title="Completion by group" />
-                    <div style={stackStyle}>
-                      {analytics.cohort_completion.length ? analytics.cohort_completion.slice(0, 4).map((cohort) => (
-                        <CommandRow
-                          key={cohort.cohort_id}
-                          title={cohort.name}
-                          meta={`${cohort.member_count} members · ${cohort.completed_reps}/${cohort.target_reps || 0} reps`}
-                          right={`${formatPercent(cohort.rep_completion_rate ?? cohort.completion_rate)}${cohort.overdue_assignments ? ` · ${cohort.overdue_assignments} overdue` : ""}`}
-                        />
-                      )) : <EmptyState copy="Create cohorts and cohort assignments to track group completion." />}
-                    </div>
-                  </section>
-                  <section style={miniPanelStyle}>
-                    <SectionHeader eyebrow="Weak spots" title="Scenarios and villains" />
-                    <div style={stackStyle}>
-                      {weakestScenario ? <CommandRow title="Weakest scenario" meta={`${weakestScenario.label} · ${weakestScenario.hands} reps`} right={`Range ${formatScore(weakestScenario.ranging_score)} · Action ${formatScore(weakestScenario.response_score)}`} /> : null}
-                      {weakestVillain ? <CommandRow title="Weakest villain" meta={`${weakestVillain.label} · ${weakestVillain.hands} reps`} right={`Range ${formatScore(weakestVillain.ranging_score)} · Action ${formatScore(weakestVillain.response_score)}`} /> : null}
-                      <ScoreBreakdownList title="Scenario details" rows={analytics.weakest_scenarios.slice(0, 3)} />
-                      <ScoreBreakdownList title="Villain details" rows={analytics.weakest_villains.slice(0, 3)} />
-                    </div>
-                  </section>
-                  <section style={miniPanelStyle}>
-                    <SectionHeader eyebrow="Next actions" title="Coach action plan" />
-                    <div style={stackStyle}>
-                      {nextCoachActions.length ? nextCoachActions.map((item) => (
-                        <CommandRow key={item.title} title={item.title} meta={item.meta} right={item.right} />
-                      )) : <EmptyState copy="More completed reps will unlock clearer next actions." />}
-                    </div>
-                  </section>
-                  <section style={miniPanelStyle}>
-                    <SectionHeader eyebrow="Overdue" title="Assignments needing a nudge" />
-                    <div style={stackStyle}>
-                      {analytics.overdue_assignments.length ? analytics.overdue_assignments.slice(0, 5).map((assignment) => (
-                        <CommandRow
-                          key={assignment.assignment_id}
-                          title={assignment.title}
-                          meta={userNameById.get(assignment.target_user_id) || "Member"}
-                          right={`${assignment.progress.progress_count}/${assignment.progress.repetition_target} reps`}
-                        />
-                      )) : <EmptyState copy="No overdue assignments right now." />}
-                    </div>
-                  </section>
+                  <DigestStat label="Members tracked" value={analytics.summary.users_tracked} />
                 </div>
               </section>
 
@@ -820,23 +775,6 @@ export default function AdminPage() {
                 <section style={panelStyle}>
                   <SectionHeader eyebrow="Trend" title="Member-pool score progression" />
                   {analytics.trend_points.length ? <TrendChart points={buildRunningAverageTrend(analytics.trend_points)} /> : <EmptyState copy="Complete more finished hands to unlock the pool trend." />}
-                </section>
-                <section style={panelStyle}>
-                  <SectionHeader eyebrow="Member focus" title="Members needing attention" />
-                  <div style={scrollBoxStyle}>
-                    {memberPerformanceRows.length ? memberPerformanceRows.map((entry) => (
-                      <Link key={entry.user_id} href={`/results?member_id=${encodeURIComponent(entry.user_id)}`} style={memberFocusRowStyle}>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={rowTitleStyle}>{entry.display_name}</div>
-                          <div style={rowMetaStyle}>{entry.completed_hands} hands · {entry.active_assignments} assignments</div>
-                        </div>
-                        <div style={memberFocusMetricWrapStyle}>
-                          <MetricPill label="Range" value={entry.avg_ranging_score} tone="coral" />
-                          <MetricPill label="Action" value={entry.avg_response_score} tone="green" />
-                        </div>
-                      </Link>
-                    )) : <EmptyState copy="No members need attention right now." />}
-                  </div>
                 </section>
               </div>
               <div style={{ display: "grid", gap: 18 }}>
@@ -848,21 +786,6 @@ export default function AdminPage() {
                     <InsightCard tone="coral" title="Action Score struggle" copy={analytics.insight_drivers.response.low} />
                     <InsightCard tone="green" title="Action Score strength" copy={analytics.insight_drivers.response.high} />
                   </div>
-                </section>
-                <section style={panelStyle}>
-                  <SectionHeader eyebrow="Accountability" title="Weekly coach digest" />
-                  {digest ? (
-                    <div style={stackStyle}>
-                      <div style={digestStatGridStyle}>
-                        <DigestStat label="Trained" value={`${digest.summary.members_trained}/${digest.summary.active_members}`} />
-                        <DigestStat label="Hands" value={digest.summary.completed_hands} />
-                        <DigestStat label="Missed" value={digest.summary.members_missed} />
-                        <DigestStat label="Overdue" value={digest.summary.overdue_assignments} />
-                      </div>
-                      <div style={helperCopyStyle}>Email includes the member attention list, no-training list, weakest current spots, and overdue assignments for the last seven days.</div>
-                      <button type="button" onClick={() => void handleSendDigest()} style={secondaryButtonStyle}>Email digest to me</button>
-                    </div>
-                  ) : <EmptyState copy="No digest preview available yet." />}
                 </section>
               </div>
               </section>

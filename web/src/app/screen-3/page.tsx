@@ -304,6 +304,7 @@ function Screen3PageContent() {
   const [stableResponseColumns, setStableResponseColumns] = useState<string[]>([]);
   const [betInput, setBetInput] = useState("");
   const [raiseInput, setRaiseInput] = useState("");
+  const [actionInputMessage, setActionInputMessage] = useState<string | null>(null);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingMatrix, setIsSavingMatrix] = useState(false);
@@ -408,11 +409,11 @@ function Screen3PageContent() {
   const betInputInvalid =
     Number.isNaN(parsedBetInput) ||
     parsedBetInput <= 0 ||
-    parsedBetInput > maxHeroBet;
+    maxHeroBet <= 0;
   const raiseInputInvalid =
     Number.isNaN(parsedRaiseInput) ||
     parsedRaiseInput <= (activeHand?.betting_round.current_bet ?? 0) ||
-    parsedRaiseInput > maxHeroRaiseTo;
+    maxHeroRaiseTo <= 0;
   const canSaveMatrix =
     !isReplayMode &&
     activeHand?.ui_gate === "must_fill_response_matrix" &&
@@ -1147,6 +1148,9 @@ function Screen3PageContent() {
       if (action === "raise") {
         setRaiseInput("");
       }
+      if (action === "bet" || action === "raise") {
+        setActionInputMessage(null);
+      }
     } catch (err) {
       setIsVillainThinking(false);
       const message = err instanceof Error ? err.message : "Failed to apply action.";
@@ -1168,6 +1172,49 @@ function Screen3PageContent() {
     } finally {
       setIsSubmittingAction(false);
     }
+  }
+
+  function formatActionInputAmount(amount: number) {
+    return Number.isInteger(amount) ? String(amount) : String(Number(amount.toFixed(2)));
+  }
+
+  function capActionInput(
+    rawValue: string,
+    maxAmount: number,
+    actionLabel: "Bet" | "Raise",
+    setValue: (value: string) => void,
+  ) {
+    const parsedValue = Number.parseFloat(rawValue);
+    if (!Number.isFinite(parsedValue) || maxAmount <= 0) {
+      setValue(rawValue);
+      setActionInputMessage(null);
+      return;
+    }
+
+    if (parsedValue > maxAmount) {
+      setValue(formatActionInputAmount(maxAmount));
+      setActionInputMessage(`${actionLabel} capped at effective stack: ${formatBb(maxAmount)}.`);
+      return;
+    }
+
+    setValue(rawValue);
+    setActionInputMessage(null);
+  }
+
+  function cappedActionAmount(
+    rawValue: string,
+    maxAmount: number,
+    actionLabel: "Bet" | "Raise",
+    setValue: (value: string) => void,
+  ) {
+    const parsedValue = Number.parseFloat(rawValue);
+    if (!Number.isFinite(parsedValue) || parsedValue <= 0) return null;
+    if (parsedValue > maxAmount) {
+      setValue(formatActionInputAmount(maxAmount));
+      setActionInputMessage(`${actionLabel} capped at effective stack: ${formatBb(maxAmount)}.`);
+      return maxAmount;
+    }
+    return parsedValue;
   }
 
   async function saveReplayReviewNote(markReviewed = false) {
@@ -1816,7 +1863,7 @@ function Screen3PageContent() {
                         <input
                           className="input"
                           value={betInput}
-                          onChange={(e) => setBetInput(e.target.value)}
+                          onChange={(e) => capActionInput(e.target.value, maxHeroBet, "Bet", setBetInput)}
                           placeholder="Bet amount"
                           inputMode="decimal"
                           max={maxHeroBet}
@@ -1831,16 +1878,15 @@ function Screen3PageContent() {
                             isTimeoutTransitioning ||
                             betInputInvalid
                           }
-                          onClick={() =>
-                            void handleHeroAction(
-                              "bet",
-                              parsedBetInput,
-                            )
-                          }
+                          onClick={() => {
+                            const amount = cappedActionAmount(betInput, maxHeroBet, "Bet", setBetInput);
+                            if (amount !== null) void handleHeroAction("bet", amount);
+                          }}
                         >
                           Bet
                         </button>
                       </div>
+                      {actionInputMessage ? <div className="screen3-bet-warning">{actionInputMessage}</div> : null}
                     </div>
                   ) : (
                     <div className="screen3-action-stack">
@@ -1868,7 +1914,7 @@ function Screen3PageContent() {
                         <input
                           className="input"
                           value={raiseInput}
-                          onChange={(e) => setRaiseInput(e.target.value)}
+                          onChange={(e) => capActionInput(e.target.value, maxHeroRaiseTo, "Raise", setRaiseInput)}
                           placeholder="Raise to"
                           inputMode="decimal"
                           max={maxHeroRaiseTo}
@@ -1883,16 +1929,15 @@ function Screen3PageContent() {
                             isTimeoutTransitioning ||
                             raiseInputInvalid
                           }
-                          onClick={() =>
-                            void handleHeroAction(
-                              "raise",
-                              parsedRaiseInput,
-                            )
-                          }
+                          onClick={() => {
+                            const amount = cappedActionAmount(raiseInput, maxHeroRaiseTo, "Raise", setRaiseInput);
+                            if (amount !== null) void handleHeroAction("raise", amount);
+                          }}
                         >
                           Raise
                         </button>
                       </div>
+                      {actionInputMessage ? <div className="screen3-bet-warning">{actionInputMessage}</div> : null}
                     </div>
                   )}
                 </div>
@@ -2527,6 +2572,13 @@ var(--bg);
           font-weight: 850;
           min-width: 68px;
           white-space: nowrap;
+        }
+
+        .screen3-bet-warning {
+          color: var(--accent);
+          font-size: 12px;
+          font-weight: 850;
+          line-height: 1.45;
         }
 
         .screen3-left-actions,

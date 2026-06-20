@@ -73,7 +73,19 @@ export function HandMatrix(props: Props) {
   const cells = useMemo(() => make13x13Grid(), []);
   const [hoverToken, setHoverToken] = useState<string | null>(null);
   const [showChangesOnly, setShowChangesOnly] = useState<boolean>(false);
-  const effectiveShowChangesOnly = forceShowChangesOnly ?? showChangesOnly;
+  const isShowChangesForced = forceShowChangesOnly === true;
+  const effectiveShowChangesOnly = isShowChangesForced || showChangesOnly;
+  const changeCount = useMemo(
+    () =>
+      cells.reduce((count, cell) => {
+        const token = cell.token;
+        return count + ((defaultActions[token] ?? "FOLD") !== (currentActions[token] ?? "FOLD") ? 1 : 0);
+      }, 0),
+    [cells, currentActions, defaultActions],
+  );
+  const showChangesLabel = effectiveShowChangesOnly
+    ? `Showing ${changeCount} Change${changeCount === 1 ? "" : "s"}`
+    : "Show Changes";
 
   function handleClick(token: string) {
     if (readOnly) return;
@@ -128,6 +140,10 @@ export function HandMatrix(props: Props) {
 
   const toggleBtnStyle = (on: boolean): React.CSSProperties => ({
     ...smallBtnStyle,
+    position: "relative",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
     background: on ? "#6A9E72" : "transparent",
     border: on ? "1px solid #6A9E72" : "1px solid var(--border)",
     color: on ? "var(--bg)" : "var(--text)",
@@ -166,17 +182,28 @@ export function HandMatrix(props: Props) {
         </div>
 
         <div style={headerRightStyle}>
-          <button
+          <label
             style={toggleBtnStyle(effectiveShowChangesOnly)}
-            onClick={() => {
-              if (!forceShowChangesOnly) setShowChangesOnly((v) => !v);
-            }}
             title="Dim unchanged tiles so only deviations pop"
-            type="button"
-            disabled={Boolean(forceShowChangesOnly)}
+            aria-label={showChangesLabel}
           >
-            Show Changes
-          </button>
+            <input
+              type="checkbox"
+              checked={effectiveShowChangesOnly}
+              disabled={isShowChangesForced}
+              onChange={(event) => setShowChangesOnly(event.currentTarget.checked)}
+              style={{
+                position: "absolute",
+                inset: 0,
+                width: "100%",
+                height: "100%",
+                opacity: 0,
+                cursor: isShowChangesForced ? "default" : "pointer",
+                zIndex: 1,
+              }}
+            />
+            <span style={{ position: "relative", zIndex: 0 }}>{showChangesLabel}</span>
+          </label>
 
           {!readOnly ? (
             <button
@@ -202,7 +229,7 @@ export function HandMatrix(props: Props) {
             const isHover = hoverToken === token;
             const isChanged = def !== cur;
             const dimTile = effectiveShowChangesOnly && !isChanged;
-            const cornerSize = 20;
+            const cornerSize = effectiveShowChangesOnly && isChanged ? 24 : 20;
 
             const tileStyle: React.CSSProperties = {
               position: "relative",
@@ -221,10 +248,17 @@ export function HandMatrix(props: Props) {
               fontWeight: 800,
               transition: "transform 90ms ease, box-shadow 120ms ease, filter 120ms ease, opacity 120ms ease",
               transform: isHover ? "translateY(-1px)" : "translateY(0)",
-              filter: isHover ? "brightness(1.05)" : "brightness(1)",
-              opacity: dimTile ? 0.28 : 1,
-              boxShadow: isHover ? "0 14px 26px rgba(20,18,16,0.42)" : "0 10px 18px rgba(20,18,16,0.28)",
+              filter: dimTile ? "grayscale(1) saturate(0.2) brightness(0.58)" : isHover ? "brightness(1.05)" : "brightness(1)",
+              opacity: dimTile ? 0.12 : 1,
+              outline: effectiveShowChangesOnly && isChanged ? "2px solid rgba(240,235,224,0.92)" : undefined,
+              outlineOffset: -2,
+              boxShadow: effectiveShowChangesOnly && isChanged
+                ? "0 0 0 3px rgba(231,111,81,0.38), 0 18px 30px rgba(20,18,16,0.50)"
+                : isHover
+                  ? "0 14px 26px rgba(20,18,16,0.42)"
+                  : "0 10px 18px rgba(20,18,16,0.28)",
               overflow: "hidden",
+              zIndex: effectiveShowChangesOnly && isChanged ? 1 : 0,
             };
 
             const showRaiseGhost = showDefaultOverlay && !isChanged && def === "RAISE";
@@ -264,7 +298,6 @@ export function HandMatrix(props: Props) {
                 style={tileStyle}
                 title={tooltip}
                 onClick={() => handleClick(token)}
-                onMouseDown={(e) => e.preventDefault()}
                 onMouseEnter={() => setHoverToken(token)}
                 onMouseLeave={() => setHoverToken(null)}
               >

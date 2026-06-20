@@ -1553,7 +1553,7 @@ function Screen1PageContent() {
                       defaultActions={defaultActions}
                       currentActions={currentActions}
                       showDefaultOverlay
-                      forceShowChangesOnly={isReplayMode}
+                      forceShowChangesOnly={isReplayMode ? true : undefined}
                       highlightShowChanges={isReplayMode}
                       readOnly={isReplayMode}
                       maxWidth={820}

@@ -22,21 +22,39 @@ type OverviewPayload = {
   recent_results: DashboardResult[];
   trend_points: Array<{ label: string; ranging_score: number | null; response_score: number | null }>;
 };
+type CoachAnalyticsPayload = {
+  summary: { completed_hands: number; avg_ranging_score: number | null; avg_response_score: number | null };
+};
 
 export default function DashboardPage() {
   const { user, isAuthLoading, authError } = useRequireAuth();
   const [overview, setOverview] = useState<OverviewPayload | null>(null);
+  const [coachAnalytics, setCoachAnalytics] = useState<CoachAnalyticsPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
+    const activeUser = user;
     let cancelled = false;
     async function loadOverview() {
       try {
-        const res = await apiFetch(`${API_BASE}/dashboard/overview`, { cache: "no-store" });
+        const isCoachRole = activeUser.role === "owner" || activeUser.role === "admin" || activeUser.role === "coach";
+        const [res, coachRes] = await Promise.all([
+          apiFetch(`${API_BASE}/dashboard/overview`, { cache: "no-store" }),
+          isCoachRole
+            ? apiFetch(`${API_BASE}/admin/analytics`, { cache: "no-store" }).catch(() => null)
+            : Promise.resolve(null),
+        ]);
         const data = await res.json();
         if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to load home.");
-        if (!cancelled) setOverview(data as OverviewPayload);
+        let analyticsData: CoachAnalyticsPayload | null = null;
+        if (coachRes?.ok) {
+          analyticsData = (await coachRes.json()) as CoachAnalyticsPayload;
+        }
+        if (!cancelled) {
+          setOverview(data as OverviewPayload);
+          setCoachAnalytics(analyticsData);
+        }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Unable to load home.");
       }
@@ -48,6 +66,7 @@ export default function DashboardPage() {
   const suggestion = overview?.suggested_practice?.[0] ?? null;
   const topAssignment = overview?.assignments?.[0] ?? null;
   const isCoach = user?.role === "owner" || user?.role === "admin" || user?.role === "coach";
+  const coachSummary = coachAnalytics?.summary ?? overview?.summary;
   const cleanedSuggestionReason = cleanTrainCopy(suggestion?.reason);
 
   return (
@@ -61,15 +80,15 @@ export default function DashboardPage() {
             <HomeLinkCard href="/account" icon={<PersonIcon />} title="Account" copy={`Signed in as ${user?.display_name || user?.email || "your account"}. Update profile, password, and access settings.`} extra={<span className="badge badge-primary">{user?.role}</span>} />
             {isCoach ? (
               <>
-                <HomeLinkCard href="/results" icon={<ChartIcon />} title="Results" copy="Pool and member score trends, filters, and debrief history." extra={<div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}><span className="badge badge-success">Range Score {formatScore(overview.summary.avg_ranging_score)}</span><span className="badge badge-primary">Action Score {formatScore(overview.summary.avg_response_score)}</span></div>} />
-                <HomeLinkCard href="/review" icon={<ReviewIcon />} title="Review" copy="Flagged member hands for replay, notes, and coaching follow-up." extra={<span className="badge badge-muted">Flagged hands</span>} />
-                <HomeLinkCard href="/admin" icon={<CoachIcon />} title="Coach" copy={topAssignment ? `Active assignment: ${topAssignment.title}. Review analytics and assign the next reps.` : "Analytics, assignments, cohorts, and member oversight."} extra={<span className="badge badge-primary">{overview.summary.completed_hands} finished hands</span>} />
+                <HomeLinkCard href="/results" icon={<ChartIcon />} title="Results" copy="Pool and member score trends, filters, and debrief history." extra={<div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}><span className="badge badge-success">Range Score {formatScore(coachSummary?.avg_ranging_score ?? null)}</span><span className="badge badge-primary">Action Score {formatScore(coachSummary?.avg_response_score ?? null)}</span></div>} />
+                <HomeLinkCard href="/review" icon={<ReviewIcon />} title="Review" copy="Flagged member hands for replay, notes, and coaching follow-up." extra={<span className="badge badge-primary">Flagged hands</span>} />
+                <HomeLinkCard href="/admin" icon={<CoachIcon />} title="Coach" copy={topAssignment ? `Active assignment: ${topAssignment.title}. Review analytics and assign the next reps.` : "Analytics, assignments, cohorts, and member oversight."} extra={<span className="badge badge-primary">{coachSummary?.completed_hands ?? overview.summary.completed_hands} finished hands</span>} />
               </>
             ) : (
               <>
                 <HomeLinkCard href={suggestion?.quick_start_url || "/screen-1"} icon={<TableIcon />} title="Train" copy={cleanedSuggestionReason || "Open the trainer and run the next live rep."} extra={suggestion ? <span className="badge badge-primary">Start next rep</span> : null} />
-                <HomeLinkCard href="/study" icon={<StudyIcon />} title="Study" copy="Review default charts and adjustment points before live reps." extra={<span className="badge badge-muted">Preflop charts</span>} />
-                <HomeLinkCard href="/assignments" icon={<ClipboardIcon />} title="Assignments" copy={topAssignment ? `${topAssignment.title} · ${topAssignment.progress.progress_count}/${topAssignment.progress.repetition_target} reps complete.` : "Coach work and guided practice appear here."} extra={<span className="badge badge-muted">{overview.summary.assignments_active} active</span>} />
+                <HomeLinkCard href="/study" icon={<StudyIcon />} title="Study" copy="Review default charts and adjustment points before live reps." extra={<span className="badge badge-primary">Preflop charts</span>} />
+                <HomeLinkCard href="/assignments" icon={<ClipboardIcon />} title="Assignments" copy={topAssignment ? `${topAssignment.title} · ${topAssignment.progress.progress_count}/${topAssignment.progress.repetition_target} reps complete.` : "Coach work and guided practice appear here."} extra={<span className="badge badge-primary">{overview.summary.assignments_active} active</span>} />
               </>
             )}
           </section>
