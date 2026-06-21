@@ -390,11 +390,14 @@ def _query_member_user_ids(*, visible_user_ids: Sequence[str] | None = None, vis
     with get_connection() as conn:
         rows = conn.execute(
             f'''
-            SELECT DISTINCT u.user_id
+            SELECT
+                u.user_id,
+                lower(COALESCE(u.display_name, u.email)) AS sort_key
             FROM users u
             {join_sql}
             WHERE {' AND '.join(clauses)}
-            ORDER BY lower(COALESCE(u.display_name, u.email)) ASC
+            GROUP BY u.user_id, u.display_name, u.email
+            ORDER BY sort_key ASC
             ''',
             tuple(params),
         ).fetchall()

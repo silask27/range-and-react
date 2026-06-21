@@ -17,19 +17,16 @@ type SuggestedPractice = { title: string; description: string; reason: string; q
 type DashboardResult = { hand_id: string; scenario_display_name?: string | null; villain_display_name?: string | null; ranging_score: number | null; response_score: number | null; completed_at: string | null };
 type OverviewPayload = {
   summary: { completed_hands: number; avg_ranging_score: number | null; avg_response_score: number | null; assignments_active: number };
+  coach_summary?: { completed_hands: number; avg_ranging_score: number | null; avg_response_score: number | null } | null;
   assignments: DashboardAssignment[];
   suggested_practice: SuggestedPractice[];
   recent_results: DashboardResult[];
   trend_points: Array<{ label: string; ranging_score: number | null; response_score: number | null }>;
 };
-type CoachAnalyticsPayload = {
-  summary: { completed_hands: number; avg_ranging_score: number | null; avg_response_score: number | null };
-};
 
 export default function DashboardPage() {
   const { user, isAuthLoading, authError } = useRequireAuth();
   const [overview, setOverview] = useState<OverviewPayload | null>(null);
-  const [coachAnalytics, setCoachAnalytics] = useState<CoachAnalyticsPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -38,22 +35,11 @@ export default function DashboardPage() {
     let cancelled = false;
     async function loadOverview() {
       try {
-        const isCoachRole = activeUser.role === "owner" || activeUser.role === "admin" || activeUser.role === "coach";
-        const [res, coachRes] = await Promise.all([
-          apiFetch(`${API_BASE}/dashboard/overview`, { cache: "no-store" }),
-          isCoachRole
-            ? apiFetch(`${API_BASE}/admin/analytics?refresh=true`, { cache: "no-store" }).catch(() => null)
-            : Promise.resolve(null),
-        ]);
+        const res = await apiFetch(`${API_BASE}/dashboard/overview`, { cache: "no-store" });
         const data = await res.json();
         if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to load home.");
-        let analyticsData: CoachAnalyticsPayload | null = null;
-        if (coachRes?.ok) {
-          analyticsData = (await coachRes.json()) as CoachAnalyticsPayload;
-        }
         if (!cancelled) {
           setOverview(data as OverviewPayload);
-          setCoachAnalytics(analyticsData);
         }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Unable to load home.");
@@ -66,7 +52,7 @@ export default function DashboardPage() {
   const suggestion = overview?.suggested_practice?.[0] ?? null;
   const topAssignment = overview?.assignments?.[0] ?? null;
   const isCoach = user?.role === "owner" || user?.role === "admin" || user?.role === "coach";
-  const coachSummary = coachAnalytics?.summary ?? overview?.summary;
+  const coachSummary = overview?.coach_summary ?? overview?.summary;
   const cleanedSuggestionReason = cleanTrainCopy(suggestion?.reason);
 
   return (
@@ -86,7 +72,7 @@ export default function DashboardPage() {
               </>
             ) : (
               <>
-                <HomeLinkCard href={suggestion?.quick_start_url || "/screen-1"} icon={<TableIcon />} title="Train" copy={cleanedSuggestionReason || "Open the trainer and run the next live rep."} extra={suggestion ? <span className="badge badge-primary">Start next rep</span> : null} />
+                <HomeLinkCard href={suggestion?.quick_start_url || "/screen-1"} icon={<TableIcon />} title="Train" copy={cleanedSuggestionReason || "Open the trainer and run the next live rep."} extra={<span className="badge badge-primary">{suggestion ? "Start next rep" : "Train"}</span>} />
                 <HomeLinkCard href="/study" icon={<StudyIcon />} title="Study" copy="Review default charts and adjustment points before live reps." extra={<span className="badge badge-primary">Preflop charts</span>} />
                 <HomeLinkCard href="/assignments" icon={<ClipboardIcon />} title="Assignments" copy={topAssignment ? `${topAssignment.title} · ${topAssignment.progress.progress_count}/${topAssignment.progress.repetition_target} reps complete.` : "Coach work and guided practice appear here."} extra={<span className="badge badge-primary">{overview.summary.assignments_active} active</span>} />
               </>
@@ -112,10 +98,10 @@ function HomeLinkCard({ href, icon, title, copy, extra }: { href: string; icon: 
   return (
     <Link href={href} style={cardStyle}>
       <div style={iconWrapStyle}>{icon}</div>
-      <div style={{ display: "grid", gap: 8 }}>
+      <div style={cardBodyStyle}>
         <div style={titleStyle}>{title}</div>
         <div style={copyStyle}>{copy}</div>
-        {extra ? <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 4 }}>{extra}</div> : null}
+        {extra ? <div style={extraRowStyle}>{extra}</div> : null}
       </div>
     </Link>
   );
@@ -133,8 +119,10 @@ function StudyIcon() { return iconShell(<><path d="M5 6.5h6a3 3 0 0 1 3 3V19H8a3
 function ReviewIcon() { return iconShell(<><path d="M6 5h12v14H6z" /><path d="M9 9h6" /><path d="M9 13h4" /><path d="M15.5 14.5l1.2 1.2 2.1-2.4" /></>); }
 function formatScore(value: number | null | undefined): string { return value == null ? "—" : `${Math.round(value)}`; }
 
-const cardStyle: CSSProperties = { display: "grid", gap: 14, alignContent: "start", paddingTop: 18, borderTop: "1px solid var(--line-soft)", minHeight: 210 };
+const cardStyle: CSSProperties = { display: "flex", flexDirection: "column", gap: 14, paddingTop: 18, borderTop: "1px solid var(--line-soft)", minHeight: 210 };
 const iconWrapStyle: CSSProperties = { width: 56, height: 56, borderRadius: 999, background: "rgba(20,18,16,1)", color: "var(--text)", display: "grid", placeItems: "center", border: "1px solid var(--line)" };
+const cardBodyStyle: CSSProperties = { display: "flex", flexDirection: "column", gap: 8, flex: 1 };
+const extraRowStyle: CSSProperties = { display: "flex", gap: 10, flexWrap: "wrap", marginTop: "auto", paddingTop: 4 };
 const titleStyle: CSSProperties = { fontSize: 34, fontWeight: 780, letterSpacing: "-.04em" };
 const copyStyle: CSSProperties = { color: "var(--text-65)", lineHeight: 1.7, fontSize: 16 };
 const errorStyle: CSSProperties = { color: "var(--accent)", fontWeight: 700 };
