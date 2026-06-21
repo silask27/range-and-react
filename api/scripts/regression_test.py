@@ -493,6 +493,58 @@ class RegressionTestCase(unittest.TestCase):
         self.assertIn("member@example.com", emails)
         self.assertNotIn("outsider@example.com", emails)
 
+    def test_coach_analytics_scores_are_org_scoped(self) -> None:
+        alpha_session_id = f"coach-analytics-alpha-{uuid4()}"
+        beta_session_id = f"coach-analytics-beta-{uuid4()}"
+        self._create_session_fixture(session_id=alpha_session_id, user_id=self.member_user_id)
+        self._create_session_fixture(session_id=beta_session_id, user_id=self.outsider_user_id)
+
+        for hand_id, session_id, user_id, ranging_score, response_score in (
+            (f"coach-analytics-alpha-hand-{uuid4()}", alpha_session_id, self.member_user_id, 82.0, 64.0),
+            (f"coach-analytics-beta-hand-{uuid4()}", beta_session_id, self.outsider_user_id, 100.0, 100.0),
+        ):
+            hand = HandState(
+                hand_id=hand_id,
+                session_id=session_id,
+                user_id=user_id,
+                scenario_id="srp_ip_btn_vs_bb",
+                villain_profile_id="tag",
+                pot=40.0,
+                hero_stack=90.0,
+                villain_stack=90.0,
+                hero_hand=("Ah", "Kd"),
+                villain_hand=("Qs", "Qd"),
+                board=["2h", "4d", "Qh", "8c", "9s"],
+                street=Street.RIVER,
+                betting_round=BettingRoundState(),
+                hero_tokens_saved=["AA", "AKs"],
+                villain_range_matrix_saved={"QQ": True},
+                villain_range_combos_live={"QQ": [["Qs", "Qd"]]},
+                current_actor=Player.HERO,
+                ui_gate=UIGate.HAND_OVER,
+                hand_over=True,
+            )
+            store.create_hand(hand.hand_id, asdict(hand))
+            store.update_hand_result_scores(
+                hand.hand_id,
+                ranging_score=ranging_score,
+                response_score=response_score,
+                overall_score=(ranging_score + response_score) / 2.0,
+                metadata={"score_version": 2, "scoring_ready": True},
+            )
+
+        response = self.client.get(
+            "/admin/analytics?refresh=true",
+            headers={"Authorization": f"Bearer {self.coach_token}"},
+        )
+        self.assertEqual(response.status_code, 200)
+        summary = response.json()["summary"]
+        self.assertEqual(summary["completed_hands"], 1)
+        self.assertEqual(summary["users_tracked"], 1)
+        self.assertEqual(summary["avg_ranging_score"], 82.0)
+        self.assertEqual(summary["avg_response_score"], 64.0)
+        self.assertEqual(len(response.json()["trend_points"]), 1)
+
     def test_org_admin_user_visibility_is_scoped(self) -> None:
         response = self.client.get(
             "/admin/users",

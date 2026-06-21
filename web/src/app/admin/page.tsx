@@ -367,7 +367,7 @@ export default function AdminPage() {
   async function loadAll() {
     setError(null);
     const analyticsData = await loadOptional(
-      () => loadJson<AnalyticsPayload>("/admin/analytics", "Unable to load analytics."),
+      () => loadJson<AnalyticsPayload>("/admin/analytics?refresh=true", "Unable to load analytics."),
       EMPTY_ANALYTICS,
     );
     setAnalytics(analyticsData);

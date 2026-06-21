@@ -616,9 +616,13 @@ def admin_audit_logs_route(
 
 
 @router.get('/analytics')
-def admin_analytics_route(background_tasks: BackgroundTasks, current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> dict:
+def admin_analytics_route(
+    background_tasks: BackgroundTasks,
+    current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH)),
+    refresh: bool = Query(default=False),
+) -> dict:
     org_scope, user_scope = _scope(current_user)
-    return get_admin_analytics(visible_user_ids=user_scope, visible_organization_ids=org_scope, background_tasks=background_tasks)
+    return get_admin_analytics(visible_user_ids=user_scope, visible_organization_ids=org_scope, background_tasks=background_tasks, force_refresh=refresh)
 
 
 @router.get('/member-results.csv')

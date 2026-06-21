@@ -42,7 +42,7 @@ export default function DashboardPage() {
         const [res, coachRes] = await Promise.all([
           apiFetch(`${API_BASE}/dashboard/overview`, { cache: "no-store" }),
           isCoachRole
-            ? apiFetch(`${API_BASE}/admin/analytics`, { cache: "no-store" }).catch(() => null)
+            ? apiFetch(`${API_BASE}/admin/analytics?refresh=true`, { cache: "no-store" }).catch(() => null)
             : Promise.resolve(null),
         ]);
         const data = await res.json();

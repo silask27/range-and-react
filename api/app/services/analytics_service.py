@@ -178,6 +178,16 @@ def _query_summary(*, visible_user_ids: Sequence[str] | None = None) -> dict[str
     }
 
 
+def _summary_from_user_rows(user_rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    members_with_results = [row for row in user_rows if int(row.get('completed_hands') or 0) > 0]
+    return {
+        'completed_hands': sum(int(row.get('completed_hands') or 0) for row in user_rows),
+        'avg_overall_score': _avg([float(row['avg_overall_score']) for row in members_with_results if row.get('avg_overall_score') is not None]),
+        'avg_ranging_score': _avg([float(row['avg_ranging_score']) for row in members_with_results if row.get('avg_ranging_score') is not None]),
+        'avg_response_score': _avg([float(row['avg_response_score']) for row in members_with_results if row.get('avg_response_score') is not None]),
+    }
+
+
 
 def _query_trend_points(*, visible_user_ids: Sequence[str] | None = None, limit: int = 12) -> list[dict[str, Any]]:
     where_sql, params = _build_results_where(visible_user_ids=visible_user_ids)
@@ -363,6 +373,8 @@ def _query_user_organization_names(*, visible_user_ids: Sequence[str] | None = N
 def _query_member_user_ids(*, visible_user_ids: Sequence[str] | None = None, visible_organization_ids: Sequence[str] | None = None) -> list[str]:
     clean_user_ids = _clean_ids(visible_user_ids)
     clean_org_ids = _clean_ids(visible_organization_ids)
+    if visible_user_ids is not None and not clean_user_ids:
+        return []
     clauses = ["u.role = 'member'"]
     params: list[Any] = []
     join_sql = ''
@@ -557,11 +569,11 @@ def _compute_admin_analytics(*, visible_user_ids: Iterable[str] | None = None, v
     org_scope = _clean_ids(visible_organization_ids) or None
     member_user_scope = _query_member_user_ids(visible_user_ids=user_scope, visible_organization_ids=org_scope)
 
-    summary = _query_summary(visible_user_ids=member_user_scope)
     scenario_rows = _query_group_scores(column='scenario_id', visible_user_ids=member_user_scope)
     villain_rows = _query_group_scores(column='villain_profile_id', visible_user_ids=member_user_scope)
     pair_rows = _query_pair_scores(visible_user_ids=member_user_scope)
     user_rows = _query_user_rows(visible_user_ids=member_user_scope)
+    summary = _summary_from_user_rows(user_rows)
     assignments = list_assignments_with_progress(limit=2000, organization_ids=org_scope, target_user_ids=member_user_scope)
     cohort_completion = _build_cohort_completion_rows(visible_user_ids=member_user_scope, visible_organization_ids=org_scope)
 
@@ -636,7 +648,9 @@ def get_admin_analytics(*, visible_user_ids: Iterable[str] | None = None, visibl
     scope_key = _scope_key(scope_type='admin_analytics', visible_user_ids=visible_user_ids, visible_organization_ids=visible_organization_ids)
     cached = None if force_refresh else _load_snapshot(scope_type='admin_analytics', scope_key=scope_key)
     if cached and cached.get('_cache', {}).get('is_fresh'):
-        return cached
+        if int((cached.get('summary') or {}).get('completed_hands') or 0) > 0:
+            return cached
+        cached = None
     if cached and background_tasks is not None:
         background_tasks.add_task(
             _refresh_admin_analytics_snapshot,
