@@ -79,11 +79,13 @@ type DebriefPayload = {
     bucket_level_scores?: Array<{
       bucket: string;
       predicted: string | null;
+      best_response?: string | null;
       probabilities: Record<string, number>;
       selected_probability: number;
       best_probability: number;
       score: number | null;
       combo_count: number;
+      combos_scored?: number;
     }>;
   }>;
   recommendations: string[];
@@ -436,13 +438,17 @@ function ResponseRow({ item }: { item: DebriefPayload["response_evaluations"][nu
   const score = item.score == null ? null : Number(item.score);
   const status = !item.supported ? "Unscored" : score != null && score >= 85 ? "Strong" : score != null && score >= 65 ? "Close" : "Review";
   const tone = !item.supported ? neutralTagStyle : score != null && score >= 85 ? successTagStyle : score != null && score >= 65 ? neutralTagStyle : dangerTagStyle;
+  const actualBucketScore = item.bucket_level_scores?.find((bucket) => bucket.bucket === item.actual_bucket);
+  const probabilityLine = actualBucketScore
+    ? `Selected ${formatResponseCode(actualBucketScore.predicted)} was ${formatProbability(actualBucketScore.selected_probability)} for this bucket; top response ${formatResponseCode(actualBucketScore.best_response)} was ${formatProbability(actualBucketScore.best_probability)}.`
+    : "Scored by bucket-level model probability closeness.";
   return (
     <div style={compactRowStyle}>
       <div style={{ minWidth: 0 }}>
         <div style={rowTitleStyle}>{formatStreet(item.street)} · Hero {formatAction(item.hero_action)}</div>
         <div style={rowMetaStyle}>{item.actual_bucket} · {item.actual_display_subgroup ?? item.actual_subgroup}</div>
-        <div style={rowMetaStyle}>Selected {formatResponseCode(item.predicted)} · Villain actually {formatResponseCode(item.actual)}</div>
-        <div style={rowMetaStyle}>Scored by bucket-level model probability closeness.</div>
+        <div style={rowMetaStyle}>Sampled action: villain {formatResponseCode(item.actual)}</div>
+        <div style={rowMetaStyle}>{probabilityLine}</div>
       </div>
       <div style={rowRightStyle}>
         <span style={{ ...tagStyle, ...tone }}>{status}</span>
@@ -493,6 +499,12 @@ function summarizeResponses(items: DebriefPayload["response_evaluations"]) {
 
 function formatScore(value: number | null | undefined) {
   return value == null ? "—" : `${Math.round(value)}`;
+}
+
+function formatProbability(value: number | null | undefined) {
+  if (value == null) return "—";
+  const percent = value <= 1 ? value * 100 : value;
+  return `${Math.round(percent)}%`;
 }
 
 function formatStreet(value: string) {

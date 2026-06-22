@@ -14,6 +14,7 @@ from api.app.services.review_state import review_state_from_metadata
 from api.app.storage.memory_store import store
 
 FAST_INTERACTIVE_ITERS = 8
+MAX_FAST_RESPONSE_SCORE_COMBOS_PER_BUCKET = 32
 
 
 def _is_fast_interactive_scoring(iters: int | None) -> bool:
@@ -161,6 +162,24 @@ def _response_probs_from_model_probs(column: str, model_probs: dict[str, float])
     return {}
 
 
+def _probability_closeness_score(*, selected_probability: float, best_probability: float) -> float | None:
+    if best_probability <= 0:
+        return None
+    return max(0.0, min(100.0, selected_probability / best_probability * 100.0))
+
+
+def _bucket_score_combos(row: dict[str, Any], *, max_combos: int | None) -> list[list[str]]:
+    combos: list[list[str]] = []
+    for hand_entry in row.get("hands", []):
+        for combo in hand_entry.get("combo_cards", []):
+            combos.append(list(combo))
+    if max_combos is None or len(combos) <= max_combos:
+        return combos
+    step = max(1, len(combos) // max_combos)
+    sampled = combos[::step][:max_combos]
+    return sampled or combos[:max_combos]
+
+
 def _stable_combo_seed(hand: HandState, combo: list[str] | tuple[str, str], offset: int = 0) -> int:
     combo_text = "".join(sorted(str(card) for card in combo))
     return int(hand.bucket_seed) + offset + sum(ord(ch) for ch in combo_text)
@@ -216,6 +235,7 @@ def _model_probabilities_for_combo(hand: HandState, *, combo: list[str] | tuple[
 def _bucket_level_response_scores(hand: HandState, *, column: str, selections: dict[str, dict[str, str]], hero_action_type: ActionType, hero_amount: float | None, pot_before_action: float | None, iters: int | None) -> tuple[float | None, list[dict[str, Any]]]:
     context = _decision_context_for_response_score(hand, hero_action_type=hero_action_type, hero_amount=hero_amount, pot_before_action=pot_before_action)
     bucket_view = _bucket_view(hand, iters=iters)
+    max_combos = MAX_FAST_RESPONSE_SCORE_COMBOS_PER_BUCKET if _is_fast_interactive_scoring(iters) else None
     bucket_rows: list[dict[str, Any]] = []
     weighted_total = 0.0
     total_weight = 0.0
@@ -226,35 +246,37 @@ def _bucket_level_response_scores(hand: HandState, *, column: str, selections: d
             continue
         accum: dict[str, float] = defaultdict(float)
         seen = 0
-        for hand_entry in row.get("hands", []):
-            for combo in hand_entry.get("combo_cards", []):
-                probs = _model_probabilities_for_combo(hand, combo=combo, context=context, iters=iters, seed_offset=3100)
-                if probs is None:
-                    continue
-                response_probs = _response_probs_from_model_probs(column, probs)
-                if not response_probs:
-                    continue
-                for key, value in response_probs.items():
-                    accum[key] += float(value)
-                seen += 1
+        for combo in _bucket_score_combos(row, max_combos=max_combos):
+            probs = _model_probabilities_for_combo(hand, combo=combo, context=context, iters=iters, seed_offset=3100)
+            if probs is None:
+                continue
+            response_probs = _response_probs_from_model_probs(column, probs)
+            if not response_probs:
+                continue
+            for key, value in response_probs.items():
+                accum[key] += float(value)
+            seen += 1
         if seen <= 0:
             continue
         averaged = {key: value / seen for key, value in accum.items()}
         max_prob = max(averaged.values()) if averaged else 0.0
+        best_response = max(averaged.items(), key=lambda item: item[1])[0] if averaged else None
         predicted = (selections.get(bucket_name) or {}).get(column)
         selected_prob = float(averaged.get(predicted, 0.0)) if predicted else 0.0
-        bucket_score = (selected_prob / max_prob * 100.0) if max_prob > 0 else None
+        bucket_score = _probability_closeness_score(selected_probability=selected_prob, best_probability=max_prob)
         if bucket_score is not None:
             weighted_total += bucket_score * combo_count
             total_weight += combo_count
         bucket_rows.append({
             "bucket": bucket_name,
             "predicted": predicted,
+            "best_response": best_response,
             "probabilities": {k: round(v, 4) for k, v in averaged.items()},
             "selected_probability": round(selected_prob, 4),
             "best_probability": round(max_prob, 4),
             "score": round(bucket_score, 2) if bucket_score is not None else None,
             "combo_count": combo_count,
+            "combos_scored": seen,
         })
     if total_weight <= 0:
         return None, bucket_rows
@@ -427,17 +449,6 @@ def record_response_matrix_evaluation(
         if actual_code is None:
             supported = False
             reason = 'The villain action did not map cleanly to this response column.'
-        elif _is_fast_interactive_scoring(iters):
-            predicted_actual_bucket = (selections.get(actual['bucket_label']) or {}).get(column)
-            correct = predicted_actual_bucket == actual_code
-            score = 100.0 if correct else 0.0
-            bucket_scores = [{
-                "bucket": actual['bucket_label'],
-                "predicted": predicted_actual_bucket,
-                "actual": actual_code,
-                "score": score,
-                "combo_count": 1,
-            }]
         else:
             score, bucket_scores = _bucket_level_response_scores(
                 hand,
@@ -474,7 +485,7 @@ def record_response_matrix_evaluation(
         'score': score,
         'correct': correct,
         'bucket_level_scores': bucket_scores,
-        'score_method': 'fast_actual_bucket_response' if _is_fast_interactive_scoring(iters) else 'bucket_probability_decision_quality',
+        'score_method': 'bucket_probability_decision_quality',
         'reason': reason,
     })
     _persist_metadata(hand.hand_id, metadata)

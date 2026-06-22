@@ -4,6 +4,7 @@ from dataclasses import asdict
 import os
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from uuid import uuid4
 
 os.environ.setdefault("VRT_DATABASE_PATH", str(Path("./data/regression_test.db").resolve()))
@@ -22,6 +23,7 @@ from api.app.models.state import HandState, SessionState
 from api.app.services.action_service import apply_hero_action
 from api.app.services.assignment_service import create_assignment, list_assignments_with_progress
 from api.app.services.prune_service import _advance_to_next_street as _advance_to_next_street_after_prune
+from api.app.services.scoring_service import FAST_INTERACTIVE_ITERS, record_response_matrix_evaluation
 from api.app.services.response_matrix_service import save_response_matrix
 from api.app.services.response_matrix_prefill import prepare_response_matrix_for_new_node
 from api.app.storage.db import get_connection, init_db
@@ -790,6 +792,76 @@ class RegressionTestCase(unittest.TestCase):
         prepare_response_matrix_for_new_node(hand, iters=10)
 
         self.assertEqual(hand.response_matrix_saved, {})
+
+    def test_fast_response_matrix_scoring_uses_bucket_probability_not_sampled_action(self) -> None:
+        self._create_session_fixture(session_id="fast-probability-score-session")
+        hand = HandState(
+            hand_id="fast-probability-score-hand",
+            session_id="fast-probability-score-session",
+            user_id=self.owner_user_id,
+            scenario_id="srp_ip_btn_vs_bb",
+            villain_profile_id="tag",
+            pot=34.0,
+            hero_stack=100.0,
+            villain_stack=100.0,
+            hero_hand=("Jc", "Js"),
+            villain_hand=("Kd", "Jh"),
+            board=["8h", "8d", "2d"],
+            street=Street.FLOP,
+            betting_round=BettingRoundState(),
+            hero_tokens_saved=["AA", "KK", "QQ", "JJ", "AKs", "AKo"],
+            villain_range_combos_live={"KJo": [["Kd", "Jh"], ["Ac", "Js"]]},
+            current_actor=Player.HERO,
+            ui_gate=UIGate.MUST_FILL_RESPONSE_MATRIX,
+            response_matrix_columns=["bet_big"],
+            response_matrix_saved={
+                "street": "flop",
+                "columns": ["bet_big"],
+                "row_order": ["SDV"],
+                "selections": {"SDV": {"bet_big": "C"}},
+                "complete": True,
+                "allow_partial": False,
+                "save_reason": "manual",
+            },
+        )
+        store.create_hand(hand.hand_id, asdict(hand))
+
+        bucket_view = {
+            "rows": [{
+                "bucket_name": "SDV",
+                "combo_count": 2,
+                "hands": [{"combo_cards": [["Kd", "Jh"], ["Ac", "Js"]]}],
+            }],
+        }
+        actual_bucket = {
+            "bucket_label": "SDV",
+            "subgroup_label": "High Card",
+            "equity_vs_hero": 0.24,
+            "current_strength_vs_hero": 0.2,
+            "hero_range_source": "scenario",
+        }
+
+        with (
+            patch("api.app.services.scoring_service._bucket_view", return_value=bucket_view),
+            patch("api.app.services.scoring_service._actual_bucket_info", return_value=actual_bucket),
+            patch("api.app.services.scoring_service._model_probabilities_for_combo", return_value={"f": 0.5, "c": 0.3, "r": 0.2}),
+        ):
+            record_response_matrix_evaluation(
+                hand,
+                hero_action_type=ActionType.BET,
+                hero_amount=14.0,
+                pot_before_action=20.0,
+                villain_action_type=ActionType.FOLD,
+                iters=FAST_INTERACTIVE_ITERS,
+            )
+
+        result = store.get_hand_result(hand.hand_id)
+        evaluation = result["metadata"]["response_evaluations"][0]
+        self.assertEqual(evaluation["score_method"], "bucket_probability_decision_quality")
+        self.assertFalse(evaluation["correct"])
+        self.assertEqual(evaluation["score"], 60.0)
+        self.assertEqual(evaluation["bucket_level_scores"][0]["best_response"], "F")
+        self.assertEqual(evaluation["bucket_level_scores"][0]["selected_probability"], 0.3)
 
     def test_river_terminal_response_matrix_accepts_showdown_results(self) -> None:
         self._create_session_fixture(session_id="river-call-showdown-matrix-session", pot=80.0, hero_stack=80.0, villain_stack=100.0)
