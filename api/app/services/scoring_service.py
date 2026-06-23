@@ -15,6 +15,7 @@ from api.app.storage.memory_store import store
 
 FAST_INTERACTIVE_ITERS = 8
 MAX_FAST_RESPONSE_SCORE_COMBOS_PER_BUCKET = 32
+ACTION_SCORE_SMALL_BET_MAX_POT_FRACTION = 0.60
 
 
 def _is_fast_interactive_scoring(iters: int | None) -> bool:
@@ -405,7 +406,7 @@ def _hero_column_for_action(*, action_type: ActionType, amount: float | None, po
         if amount is None or not pot_before_action or pot_before_action <= 0:
             return ResponseColumnType.BET_SMALL.value
         frac = float(amount) / float(pot_before_action)
-        return ResponseColumnType.BET_SMALL.value if frac <= 0.66 else ResponseColumnType.BET_BIG.value
+        return ResponseColumnType.BET_SMALL.value if frac <= ACTION_SCORE_SMALL_BET_MAX_POT_FRACTION else ResponseColumnType.BET_BIG.value
     return None
 
 

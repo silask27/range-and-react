@@ -23,7 +23,7 @@ from api.app.models.state import HandState, SessionState
 from api.app.services.action_service import apply_hero_action
 from api.app.services.assignment_service import create_assignment, list_assignments_with_progress
 from api.app.services.prune_service import _advance_to_next_street as _advance_to_next_street_after_prune
-from api.app.services.scoring_service import FAST_INTERACTIVE_ITERS, record_response_matrix_evaluation
+from api.app.services.scoring_service import FAST_INTERACTIVE_ITERS, _hero_column_for_action, record_response_matrix_evaluation
 from api.app.services.response_matrix_service import save_response_matrix
 from api.app.services.response_matrix_prefill import prepare_response_matrix_for_new_node
 from api.app.storage.db import get_connection, init_db
@@ -792,6 +792,16 @@ class RegressionTestCase(unittest.TestCase):
         prepare_response_matrix_for_new_node(hand, iters=10)
 
         self.assertEqual(hand.response_matrix_saved, {})
+
+    def test_action_score_bet_size_column_uses_sixty_percent_boundary(self) -> None:
+        self.assertEqual(
+            _hero_column_for_action(action_type=ActionType.BET, amount=12.0, pot_before_action=20.0),
+            "bet_small",
+        )
+        self.assertEqual(
+            _hero_column_for_action(action_type=ActionType.BET, amount=12.01, pot_before_action=20.0),
+            "bet_big",
+        )
 
     def test_fast_response_matrix_scoring_uses_bucket_probability_not_sampled_action(self) -> None:
         self._create_session_fixture(session_id="fast-probability-score-session")
