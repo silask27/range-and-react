@@ -7,13 +7,13 @@ import { useRequireAuth } from "../../lib/hooks/useRequireAuth";
 const GUIDE_SECTIONS = [
   {
     title: "Range Score",
-    copy: "Range Score measures how well a member kept the real hand, bucket, and hand family alive while narrowing villain down. A high score means the member did not cut the truth too early and still removed enough unlikely hands to make the range useful.",
-    example: "Example: villain actually has a set. If the member keeps sets in the range on flop and turn, they get credit. If they remove every set after a small bet, the score drops because the real answer was no longer possible.",
+    copy: "Range Score measures the quality of the range left after a prune. Most of the score comes from keeping hands the model thinks are likely after villain's action. The rest comes from removing hands the model thinks are unlikely.",
+    example: "The exact hand is still a guardrail. If the member removes the exact combo, the score is capped. Keeping the exact combo helps, but it does not automatically make the score 100 if too much junk remains.",
   },
   {
     title: "Action Score",
-    copy: "Action Score measures how well the member predicted how villain's current range would respond to hero's available action. It is about the reaction, not whether hero personally liked the line.",
-    example: "Example: hero bets small and a calling-station villain continues with a flush draw. If the member marked that draw bucket as call, they get credit. If they marked fold, the Action Score drops.",
+    copy: "Action Score measures how close the member's bucket reaction reads were to the model's response probabilities. A selected response gets more credit when it is close to the bucket's most likely response.",
+    example: "If the top response for SDV versus a big bet is fold, but call is still a common response, choosing call can still earn partial credit. For Action Score, a small bet is 60% pot or less; a big bet is more than 60% pot.",
   },
   {
     title: "Overall Score",
