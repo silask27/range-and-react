@@ -57,7 +57,10 @@ type DebriefPayload = {
       posterior_mass_kept?: number;
       low_posterior_junk_removed?: number;
       overall_score?: number;
+      raw_overall_score?: number;
+      survival_cap?: number;
       prior_combo_count?: number;
+      scored_combo_count?: number;
       kept_combo_count?: number;
     } | null;
   }>;
@@ -416,15 +419,18 @@ function PruneRow({ item }: { item: DebriefPayload["prune_evaluations"][number] 
   const tone = score >= 85 ? successTagStyle : score >= 65 ? neutralTagStyle : dangerTagStyle;
   const posterior = item.posterior_scoring;
   const posteriorLine = posterior
-    ? `Posterior kept ${formatScore(posterior.posterior_mass_kept)} · Low-likelihood removed ${formatScore(posterior.low_posterior_junk_removed)}`
+    ? `Model-likely kept ${formatScore(posterior.posterior_mass_kept)} · Unlikely removed ${formatScore(posterior.low_posterior_junk_removed)}`
     : `Live combos ${item.start_live_combos} → ${item.end_live_combos}`;
+  const capLine = posterior?.survival_cap != null && posterior.survival_cap < 100
+    ? `Score capped at ${formatScore(posterior.survival_cap)} because the exact combo was removed.`
+    : null;
   return (
     <div style={compactRowStyle}>
       <div style={{ minWidth: 0 }}>
         <div style={rowTitleStyle}>{formatStreet(item.street)} · {item.villain_action ?? "Villain action"}</div>
         <div style={rowMetaStyle}>{item.actual_bucket} · {item.actual_display_subgroup ?? item.actual_subgroup}</div>
         <div style={rowMetaStyle}>{posteriorLine}</div>
-        {!item.combo_alive ? <div style={rowMetaStyle}>Exact combo was removed, but score is based on model-likely range shape.</div> : null}
+        {capLine ? <div style={rowMetaStyle}>{capLine}</div> : null}
       </div>
       <div style={rowRightStyle}>
         <span style={{ ...tagStyle, ...tone }}>{status}</span>

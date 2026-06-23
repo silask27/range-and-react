@@ -23,7 +23,7 @@ from api.app.models.state import HandState, SessionState
 from api.app.services.action_service import apply_hero_action
 from api.app.services.assignment_service import create_assignment, list_assignments_with_progress
 from api.app.services.prune_service import _advance_to_next_street as _advance_to_next_street_after_prune
-from api.app.services.scoring_service import FAST_INTERACTIVE_ITERS, _hero_column_for_action, record_response_matrix_evaluation
+from api.app.services.scoring_service import FAST_INTERACTIVE_ITERS, _hero_column_for_action, record_prune_evaluation, record_response_matrix_evaluation
 from api.app.services.response_matrix_service import save_response_matrix
 from api.app.services.response_matrix_prefill import prepare_response_matrix_for_new_node
 from api.app.storage.db import get_connection, init_db
@@ -802,6 +802,131 @@ class RegressionTestCase(unittest.TestCase):
             _hero_column_for_action(action_type=ActionType.BET, amount=12.01, pot_before_action=20.0),
             "bet_big",
         )
+
+    def test_fast_prune_scoring_uses_posterior_quality_instead_of_binary_survival(self) -> None:
+        self._create_session_fixture(session_id="posterior-prune-score-session")
+        hand = HandState(
+            hand_id="posterior-prune-score-hand",
+            session_id="posterior-prune-score-session",
+            user_id=self.owner_user_id,
+            scenario_id="srp_ip_btn_vs_bb",
+            villain_profile_id="tag",
+            pot=34.0,
+            hero_stack=100.0,
+            villain_stack=100.0,
+            hero_hand=("Jc", "Js"),
+            villain_hand=("Kd", "Jh"),
+            board=["8h", "8d", "2d"],
+            street=Street.FLOP,
+            betting_round=BettingRoundState(),
+            hero_tokens_saved=["AA", "KK", "QQ", "JJ", "AKs", "AKo"],
+            prune_range_snapshot={"SDV": [["Kd", "Jh"], ["Ac", "Js"], ["Qs", "Qh"], ["2c", "3c"]]},
+            villain_range_combos_live={"SDV": [["Kd", "Jh"], ["Ac", "Js"]]},
+            current_actor=Player.HERO,
+            ui_gate=UIGate.MUST_PRUNE_RANGE,
+        )
+        hand.history.append(ActionEvent(street=Street.FLOP, actor=Player.VILLAIN, action=ActionType.CALL, amount=14.0))
+        store.create_hand(hand.hand_id, asdict(hand))
+
+        actual_bucket = {
+            "bucket_label": "SDV",
+            "subgroup_label": "High Card",
+            "equity_vs_hero": 0.24,
+            "current_strength_vs_hero": 0.2,
+            "hero_range_source": "scenario",
+        }
+        bucket_view = {
+            "rows": [{
+                "bucket_name": "SDV",
+                "subgroups": [{"subgroup_name": "High Card", "combo_count": 2}],
+            }],
+        }
+        posterior = {
+            "observed_action_key": "c",
+            "posterior_mass_kept": 75.0,
+            "low_posterior_junk_removed": 50.0,
+            "overall_score": 67.5,
+            "prior_combo_count": 4,
+            "scored_combo_count": 4,
+            "kept_combo_count": 2,
+        }
+
+        with (
+            patch("api.app.services.scoring_service._actual_bucket_info", return_value=actual_bucket),
+            patch("api.app.services.scoring_service._bucket_view", return_value=bucket_view),
+            patch("api.app.services.scoring_service._posterior_prune_score", return_value=posterior),
+        ):
+            record_prune_evaluation(hand, iters=FAST_INTERACTIVE_ITERS)
+
+        result = store.get_hand_result(hand.hand_id)
+        evaluation = result["metadata"]["prune_evaluations"][0]
+        self.assertTrue(evaluation["combo_alive"])
+        self.assertEqual(evaluation["score_method"], "posterior_range_quality")
+        self.assertEqual(evaluation["overall_score"], 67.5)
+        self.assertEqual(result["ranging_score"], 67.5)
+
+    def test_prune_scoring_caps_score_when_exact_combo_removed(self) -> None:
+        self._create_session_fixture(session_id="posterior-prune-cap-session")
+        hand = HandState(
+            hand_id="posterior-prune-cap-hand",
+            session_id="posterior-prune-cap-session",
+            user_id=self.owner_user_id,
+            scenario_id="srp_ip_btn_vs_bb",
+            villain_profile_id="tag",
+            pot=34.0,
+            hero_stack=100.0,
+            villain_stack=100.0,
+            hero_hand=("Jc", "Js"),
+            villain_hand=("Kd", "Jh"),
+            board=["8h", "8d", "2d"],
+            street=Street.FLOP,
+            betting_round=BettingRoundState(),
+            hero_tokens_saved=["AA", "KK", "QQ", "JJ", "AKs", "AKo"],
+            prune_range_snapshot={"SDV": [["Kd", "Jh"], ["Ac", "Js"], ["Qs", "Qh"], ["2c", "3c"]]},
+            villain_range_combos_live={"SDV": [["Ac", "Js"], ["Qs", "Qh"]]},
+            current_actor=Player.HERO,
+            ui_gate=UIGate.MUST_PRUNE_RANGE,
+        )
+        hand.history.append(ActionEvent(street=Street.FLOP, actor=Player.VILLAIN, action=ActionType.CALL, amount=14.0))
+        store.create_hand(hand.hand_id, asdict(hand))
+
+        actual_bucket = {
+            "bucket_label": "SDV",
+            "subgroup_label": "High Card",
+            "equity_vs_hero": 0.24,
+            "current_strength_vs_hero": 0.2,
+            "hero_range_source": "scenario",
+        }
+        bucket_view = {
+            "rows": [{
+                "bucket_name": "SDV",
+                "subgroups": [{"subgroup_name": "High Card", "combo_count": 2}],
+            }],
+        }
+        posterior = {
+            "observed_action_key": "c",
+            "posterior_mass_kept": 90.0,
+            "low_posterior_junk_removed": 80.0,
+            "overall_score": 87.0,
+            "prior_combo_count": 4,
+            "scored_combo_count": 4,
+            "kept_combo_count": 2,
+        }
+
+        with (
+            patch("api.app.services.scoring_service._actual_bucket_info", return_value=actual_bucket),
+            patch("api.app.services.scoring_service._bucket_view", return_value=bucket_view),
+            patch("api.app.services.scoring_service._posterior_prune_score", return_value=posterior),
+        ):
+            record_prune_evaluation(hand, iters=FAST_INTERACTIVE_ITERS)
+
+        result = store.get_hand_result(hand.hand_id)
+        evaluation = result["metadata"]["prune_evaluations"][0]
+        self.assertFalse(evaluation["combo_alive"])
+        self.assertTrue(evaluation["subgroup_alive"])
+        self.assertEqual(evaluation["overall_score"], 45.0)
+        self.assertEqual(evaluation["posterior_scoring"]["raw_overall_score"], 87.0)
+        self.assertEqual(evaluation["posterior_scoring"]["survival_cap"], 45.0)
 
     def test_fast_response_matrix_scoring_uses_bucket_probability_not_sampled_action(self) -> None:
         self._create_session_fixture(session_id="fast-probability-score-session")

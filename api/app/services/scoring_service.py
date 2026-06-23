@@ -15,7 +15,12 @@ from api.app.storage.memory_store import store
 
 FAST_INTERACTIVE_ITERS = 8
 MAX_FAST_RESPONSE_SCORE_COMBOS_PER_BUCKET = 32
+MAX_FAST_PRUNE_SCORE_COMBOS = 160
 ACTION_SCORE_SMALL_BET_MAX_POT_FRACTION = 0.60
+RANGE_SCORE_POSTERIOR_MASS_WEIGHT = 0.70
+RANGE_SCORE_LOW_PROBABILITY_REMOVAL_WEIGHT = 0.30
+RANGE_SCORE_SUBGROUP_SURVIVAL_CAP = 45.0
+RANGE_SCORE_BUCKET_SURVIVAL_CAP = 25.0
 
 
 def _is_fast_interactive_scoring(iters: int | None) -> bool:
@@ -181,6 +186,26 @@ def _bucket_score_combos(row: dict[str, Any], *, max_combos: int | None) -> list
     return sampled or combos[:max_combos]
 
 
+def _sample_prune_score_combos(
+    hand: HandState,
+    prior_combos: list[tuple[str, tuple[str, str]]],
+    *,
+    max_combos: int | None,
+) -> list[tuple[str, tuple[str, str]]]:
+    if max_combos is None or len(prior_combos) <= max_combos:
+        return prior_combos
+    step = max(1, len(prior_combos) // max_combos)
+    sampled = prior_combos[::step][:max_combos]
+    actual_combo = tuple(sorted(hand.villain_hand))
+    actual_entry = next((item for item in prior_combos if item[1] == actual_combo), None)
+    if actual_entry is not None and all(item[1] != actual_combo for item in sampled):
+        if len(sampled) >= max_combos:
+            sampled[-1] = actual_entry
+        else:
+            sampled.append(actual_entry)
+    return sampled or prior_combos[:max_combos]
+
+
 def _stable_combo_seed(hand: HandState, combo: list[str] | tuple[str, str], offset: int = 0) -> int:
     combo_text = "".join(sorted(str(card) for card in combo))
     return int(hand.bucket_seed) + offset + sum(ord(ch) for ch in combo_text)
@@ -295,6 +320,12 @@ def _posterior_prune_score(hand: HandState, *, iters: int | None) -> dict[str, A
             prior_combos.append((label, tuple(sorted(combo))))
     if not prior_combos:
         return None
+    original_prior_combo_count = len(prior_combos)
+    prior_combos = _sample_prune_score_combos(
+        hand,
+        prior_combos,
+        max_combos=MAX_FAST_PRUNE_SCORE_COMBOS if _is_fast_interactive_scoring(iters) else None,
+    )
     kept = {tuple(sorted(combo)) for combos in (hand.villain_range_combos_live or {}).values() for combo in combos}
     raw_weights: list[tuple[str, tuple[str, str], float]] = []
     for label, combo in prior_combos:
@@ -313,15 +344,35 @@ def _posterior_prune_score(hand: HandState, *, iters: int | None) -> dict[str, A
         junk_removed = removed_low / len(low_posterior)
     else:
         junk_removed = 1.0
-    overall = (0.75 * posterior_mass_kept + 0.25 * junk_removed) * 100.0
+    overall = (
+        RANGE_SCORE_POSTERIOR_MASS_WEIGHT * posterior_mass_kept
+        + RANGE_SCORE_LOW_PROBABILITY_REMOVAL_WEIGHT * junk_removed
+    ) * 100.0
     return {
         "observed_action_key": action_key,
         "posterior_mass_kept": round(posterior_mass_kept * 100.0, 2),
         "low_posterior_junk_removed": round(junk_removed * 100.0, 2),
         "overall_score": round(overall, 2),
-        "prior_combo_count": len(prior_combos),
+        "prior_combo_count": original_prior_combo_count,
+        "scored_combo_count": len(prior_combos),
         "kept_combo_count": len(kept),
     }
+
+
+def _range_survival_cap(*, combo_alive: bool, subgroup_alive: bool, bucket_alive: bool) -> float:
+    if combo_alive:
+        return 100.0
+    if subgroup_alive:
+        return RANGE_SCORE_SUBGROUP_SURVIVAL_CAP
+    if bucket_alive:
+        return RANGE_SCORE_BUCKET_SURVIVAL_CAP
+    return 0.0
+
+
+def _prune_efficiency_score(*, start_total: int, end_total: int) -> float:
+    if start_total <= 1:
+        return 0.0
+    return max(0.0, min(100.0, (start_total - end_total) / (start_total - 1) * 100.0))
 
 def record_prune_evaluation(hand: HandState, *, iters: int | None) -> None:
     if not hand.prune_range_snapshot:
@@ -331,28 +382,6 @@ def record_prune_evaluation(hand: HandState, *, iters: int | None) -> None:
     actual = _actual_bucket_info(hand, iters=iters)
     combo_alive, live_labels = _combo_alive(hand)
 
-    if _is_fast_interactive_scoring(iters):
-        latest_villain_event = _latest_villain_event(hand)
-        metadata = _metadata_for_hand(hand.hand_id)
-        metadata['prune_evaluations'].append({
-            'street': hand.street.value,
-            'villain_action': latest_villain_event.action.value if latest_villain_event else None,
-            'actual_bucket': actual['bucket_label'],
-            'actual_subgroup': actual['subgroup_label'],
-            'start_live_combos': start_total,
-            'end_live_combos': end_total,
-            'combo_alive': combo_alive,
-            'bucket_alive': None,
-            'subgroup_alive': None,
-            'remaining_labels_for_true_combo': live_labels,
-            'posterior_scoring': None,
-            'efficiency_score': None,
-            'overall_score': 100.0 if combo_alive else 0.0,
-            'score_method': 'fast_combo_survival',
-        })
-        _persist_metadata(hand.hand_id, metadata)
-        return
-
     bucket_alive, subgroup_alive = _row_flags(
         _bucket_view(hand, iters=iters),
         actual_bucket=actual['bucket_label'],
@@ -360,21 +389,27 @@ def record_prune_evaluation(hand: HandState, *, iters: int | None) -> None:
     )
 
     posterior_result = _posterior_prune_score(hand, iters=iters)
+    survival_cap = _range_survival_cap(combo_alive=combo_alive, subgroup_alive=subgroup_alive, bucket_alive=bucket_alive)
     if posterior_result is not None:
-        overall = float(posterior_result['overall_score'])
+        raw_overall = float(posterior_result['overall_score'])
+        overall = min(raw_overall, survival_cap)
+        posterior_result = dict(posterior_result)
+        posterior_result['raw_overall_score'] = round(raw_overall, 2)
+        posterior_result['survival_cap'] = round(survival_cap, 2)
+        posterior_result['overall_score'] = round(overall, 2)
         efficiency = None
+        score_method = 'posterior_range_quality'
     else:
-        efficiency = 0.0
-        if combo_alive and start_total > 1:
-            efficiency = max(0.0, min(1.0, (start_total - end_total) / (start_total - 1)))
+        efficiency = _prune_efficiency_score(start_total=start_total, end_total=end_total)
         if combo_alive:
-            overall = 70.0 + (30.0 * efficiency)
+            overall = 70.0 + (0.30 * efficiency)
         elif subgroup_alive:
-            overall = 35.0
+            overall = min(35.0, survival_cap)
         elif bucket_alive:
-            overall = 20.0
+            overall = min(20.0, survival_cap)
         else:
             overall = 0.0
+        score_method = 'range_survival_efficiency'
 
     latest_villain_event = _latest_villain_event(hand)
     metadata = _metadata_for_hand(hand.hand_id)
@@ -390,8 +425,9 @@ def record_prune_evaluation(hand: HandState, *, iters: int | None) -> None:
         'subgroup_alive': subgroup_alive,
         'remaining_labels_for_true_combo': live_labels,
         'posterior_scoring': posterior_result,
-        'efficiency_score': round(efficiency * 100.0, 2) if efficiency is not None else None,
+        'efficiency_score': round(efficiency, 2) if efficiency is not None else None,
         'overall_score': round(overall, 2),
+        'score_method': score_method,
     })
     _persist_metadata(hand.hand_id, metadata)
 
