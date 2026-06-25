@@ -302,7 +302,7 @@ export default function ResultsPage() {
 
   const breakdownRows = useMemo(() => buildBreakdownRows(filteredResults, breakdown, filters.street), [filteredResults, breakdown, filters.street]);
   const driverInsights = useMemo(() => buildDriverInsights(filteredResults), [filteredResults]);
-  const debriefRows = filteredResults.slice().sort((a, b) => (b.completed_at || "").localeCompare(a.completed_at || "")).slice(0, 6);
+  const debriefRows = filteredResults.slice().sort((a, b) => (b.completed_at || "").localeCompare(a.completed_at || "")).slice(0, 5);
   const canSendFlagged = !isCoachResultsView && Boolean(payload?.completed_results.some((row) => row.review?.flagged && !row.review.sent_to_coaches));
 
   const headerStats = (
@@ -410,7 +410,7 @@ export default function ResultsPage() {
               ) : null}
             </div>
             {debriefRows.length ? (
-              <div style={tableStackStyle}>
+              <div style={scrollTableStackStyle}>
                 {debriefRows.map((result) => (
                   <div key={result.hand_id} style={rowStyle}>
                     <div style={{ minWidth: 0 }}>

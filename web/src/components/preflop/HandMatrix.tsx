@@ -58,6 +58,11 @@ function textForAction(action: MatrixAction): string {
   return "rgba(240,235,224, 0.92)";
 }
 
+function cornerBgForDelta(def: MatrixAction, cur: MatrixAction): string {
+  if (def === "FOLD" && cur !== "FOLD") return "rgba(150,150,150,0.95)";
+  return bgForAction(def);
+}
+
 export function HandMatrix(props: Props) {
   const {
     allowedActions,
@@ -271,7 +276,7 @@ export function HandMatrix(props: Props) {
               left: 0,
               width: cornerSize,
               height: cornerSize,
-              background: bgForAction(def),
+              background: cornerBgForDelta(def, cur),
               clipPath: "polygon(0 0, 100% 0, 0 100%)",
               pointerEvents: "none",
               opacity: 1,

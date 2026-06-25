@@ -902,6 +902,7 @@ function Screen3PageContent() {
     action: string,
     amount?: number,
   ): Promise<HandState> {
+    const roundedAmount = amount == null ? undefined : round2(amount);
     let res: Response;
     try {
       res = await apiFetchWithRetry(`${API_BASE}/actions/hero`, {
@@ -912,7 +913,7 @@ function Screen3PageContent() {
         body: JSON.stringify({
           hand_id: handId,
           action,
-          amount,
+          amount: roundedAmount,
           iters: SCREEN3_ITERS,
         }),
       });
@@ -1214,7 +1215,11 @@ function Screen3PageContent() {
       setActionInputMessage(`${actionLabel} capped at effective stack: ${formatBb(maxAmount)}.`);
       return maxAmount;
     }
-    return parsedValue;
+    const roundedValue = round2(parsedValue);
+    if (roundedValue !== parsedValue) {
+      setValue(formatActionInputAmount(roundedValue));
+    }
+    return roundedValue;
   }
 
   async function saveReplayReviewNote(markReviewed = false) {

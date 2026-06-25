@@ -126,7 +126,7 @@ export default function ReviewPage() {
 function ReviewList({ rows, emptyCopy }: { rows: ReviewEntry[]; emptyCopy: string }) {
   if (!rows.length) return <div style={emptyStyle}>{emptyCopy}</div>;
   return (
-    <div style={listStyle}>
+    <div style={scrollListStyle}>
       {rows.map((row) => (
         <div key={row.hand_id} style={rowStyle}>
           <div style={{ minWidth: 0 }}>
@@ -184,6 +184,7 @@ const headerStatStyle: CSSProperties = { width: 174, minHeight: 86, borderRadius
 const headerStatLabelStyle: CSSProperties = { color: "inherit", opacity: 0.9, fontSize: 11, textTransform: "uppercase", letterSpacing: 1.1, fontWeight: 800 };
 const headerStatValueStyle: CSSProperties = { marginTop: 6, fontSize: 28, fontWeight: 900, color: "inherit" };
 const listStyle: CSSProperties = { display: "grid", gap: 12 };
+const scrollListStyle: CSSProperties = { ...listStyle, maxHeight: 560, overflowY: "auto", paddingRight: 6 };
 const rowStyle: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 16, alignItems: "center", padding: "15px 0", borderTop: "1px solid var(--line-soft)" };
 const rowTitleStyle: CSSProperties = { color: "var(--text)", fontWeight: 900, lineHeight: 1.35 };
 const rowMetaStyle: CSSProperties = { color: "var(--text-45)", fontSize: 13, lineHeight: 1.55, marginTop: 4 };
