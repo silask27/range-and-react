@@ -727,7 +727,7 @@ def _query_dashboard_summary(*, user_id: str) -> dict[str, Any]:
 def _compute_dashboard_overview(*, user_id: str) -> dict[str, Any]:
     sessions = store.list_sessions(user_id=user_id, limit=8)
     hands = store.list_hands(user_id=user_id, limit=8)
-    results = [item for item in store.list_hand_results(user_id=user_id, limit=50) if item.get('hand_over')]
+    results = store.list_hand_results(user_id=user_id, hand_over=True, limit=50)
     assignment_queue = build_user_assignment_queue(user_id=user_id, limit=20)
     summary = _query_dashboard_summary(user_id=user_id)
     recent_trend = list(reversed(results[:12]))

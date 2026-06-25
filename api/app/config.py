@@ -58,6 +58,7 @@ class Settings:
     password_reset_returns_token: bool = _get_bool("VRT_PASSWORD_RESET_RETURNS_TOKEN", not _is_production())
     require_signup_invite: bool = _get_bool("VRT_REQUIRE_SIGNUP_INVITE", _is_production())
     trusted_hosts: list[str] = None  # type: ignore[assignment]
+    trust_proxy_headers: bool = _get_bool("VRT_TRUST_PROXY_HEADERS", False)
     admin_analytics_cache_ttl_seconds: int = int(os.getenv("VRT_ADMIN_ANALYTICS_CACHE_TTL_SECONDS", "300"))
     dashboard_overview_cache_ttl_seconds: int = int(os.getenv("VRT_DASHBOARD_OVERVIEW_CACHE_TTL_SECONDS", "120"))
     auth_cookie_name: str = os.getenv("VRT_AUTH_COOKIE_NAME", "rr_auth").strip() or "rr_auth"

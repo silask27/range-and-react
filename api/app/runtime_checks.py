@@ -112,6 +112,10 @@ def _check_production_runtime() -> list[RuntimeCheckResult]:
         checks.append(RuntimeCheckResult("production_trusted_hosts", "warn", "Trusted hosts are not configured", required=False))
     else:
         checks.append(RuntimeCheckResult("production_trusted_hosts", "ok", f"Trusted hosts configured: {settings.trusted_hosts}", required=False))
+    if settings.trust_proxy_headers:
+        checks.append(RuntimeCheckResult("production_proxy_headers", "warn", "Proxy headers are trusted; ensure the edge proxy strips client-supplied X-Forwarded-For/X-Real-IP", required=False))
+    else:
+        checks.append(RuntimeCheckResult("production_proxy_headers", "ok", "Client-supplied proxy headers are ignored for rate limiting", required=False))
     localhost_origins = [origin for origin in settings.allowed_origins if any(marker in origin.lower() for marker in _LOCAL_HOST_MARKERS)]
     if localhost_origins:
         checks.append(RuntimeCheckResult("production_allowed_origins", "error", f"Allowed origins include localhost entries: {localhost_origins}"))

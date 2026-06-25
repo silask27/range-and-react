@@ -175,6 +175,8 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         ranging_score REAL,
         response_score REAL,
         overall_score REAL,
+        review_flagged INTEGER NOT NULL DEFAULT 0,
+        review_sent_to_coaches INTEGER NOT NULL DEFAULT 0,
         metadata_json TEXT NOT NULL DEFAULT \'{}\',
         FOREIGN KEY(hand_id) REFERENCES hands(hand_id) ON DELETE CASCADE,
         FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE SET NULL,
@@ -185,7 +187,13 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     'CREATE INDEX IF NOT EXISTS idx_hand_results_session_id ON hand_results(session_id)',
     'CREATE INDEX IF NOT EXISTS idx_hand_results_status ON hand_results(status)',
     'CREATE INDEX IF NOT EXISTS idx_hand_results_user_completed ON hand_results(user_id, hand_over, completed_at)',
+    'CREATE INDEX IF NOT EXISTS idx_hand_results_user_hand_over_updated ON hand_results(user_id, hand_over, updated_at)',
+    'CREATE INDEX IF NOT EXISTS idx_hand_results_hand_over_updated ON hand_results(hand_over, updated_at)',
     'CREATE INDEX IF NOT EXISTS idx_hand_results_user_scenario_villain_completed ON hand_results(user_id, scenario_id, villain_profile_id, hand_over, completed_at)',
+    'CREATE INDEX IF NOT EXISTS idx_hand_results_user_hand_over_scenario ON hand_results(user_id, hand_over, scenario_id)',
+    'CREATE INDEX IF NOT EXISTS idx_hand_results_user_hand_over_villain ON hand_results(user_id, hand_over, villain_profile_id)',
+    'CREATE INDEX IF NOT EXISTS idx_hand_results_review_queue ON hand_results(review_flagged, review_sent_to_coaches, hand_over, completed_at)',
+    'CREATE INDEX IF NOT EXISTS idx_hand_results_user_review ON hand_results(user_id, review_flagged, hand_over, completed_at)',
     '''
     CREATE TABLE IF NOT EXISTS assignments (
         assignment_id TEXT PRIMARY KEY,
@@ -441,6 +449,15 @@ def init_db() -> None:
         _ensure_column(conn, 'users', 'deactivated_at', 'TEXT')
         _ensure_column(conn, 'users', 'metadata_json', "TEXT NOT NULL DEFAULT '{}'" )
         _ensure_column(conn, 'assignments', 'organization_id', 'TEXT')
+        _ensure_column(conn, 'hand_results', 'review_flagged', 'INTEGER NOT NULL DEFAULT 0')
+        _ensure_column(conn, 'hand_results', 'review_sent_to_coaches', 'INTEGER NOT NULL DEFAULT 0')
+        conn.execute(
+            '''
+            UPDATE hand_results
+            SET review_flagged = CASE WHEN metadata_json LIKE '%"flagged":true%' THEN 1 ELSE 0 END,
+                review_sent_to_coaches = CASE WHEN metadata_json LIKE '%"sent_to_coaches":true%' THEN 1 ELSE 0 END
+            '''
+        )
 
         for statement in index_statements:
             conn.execute(statement)

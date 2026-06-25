@@ -136,7 +136,7 @@ def update_hand_review_note(hand_id: str, *, user: UserAccount, member_note: str
 def send_flagged_hands_to_coaches(*, user: UserAccount, hand_ids: list[str] | None = None) -> dict[str, Any]:
     requested = set(clean_ids(hand_ids))
     rows = []
-    for row in store.list_hand_results(user_id=user.user_id, limit=1000):
+    for row in store.list_hand_results(user_id=user.user_id, hand_over=True, limit=1000):
         review = review_state_from_metadata(row.get("metadata"))
         if not row.get("hand_over") or not review.get("flagged"):
             continue
@@ -231,13 +231,13 @@ def _serialize_result_row(row: Any) -> dict[str, Any]:
     }
 
 
-def _list_review_candidate_results(*, user: UserAccount, limit: int = 5000) -> list[dict[str, Any]]:
+def _list_review_candidate_results(*, user: UserAccount, limit: int = 250) -> list[dict[str, Any]]:
     if user.role == UserRole.MEMBER:
         candidate_user_ids: list[str] | None = [user.user_id]
     else:
         candidate_user_ids = get_visible_user_ids(user)
     params: list[Any] = []
-    where = ["hand_over = 1"]
+    where = ["hand_over = 1", "review_flagged = 1"]
     if candidate_user_ids is not None:
         user_ids = clean_ids(candidate_user_ids)
         if not user_ids:
@@ -245,7 +245,10 @@ def _list_review_candidate_results(*, user: UserAccount, limit: int = 5000) -> l
         placeholders = ", ".join("?" for _ in user_ids)
         where.append(f"user_id IN ({placeholders})")
         params.extend(user_ids)
-    params.append(max(1, min(int(limit), 5000)))
+    if user.role in {UserRole.ADMIN, UserRole.COACH}:
+        where.append('(review_sent_to_coaches = 1 OR user_id = ?)')
+        params.append(user.user_id)
+    params.append(max(1, min(int(limit), 500)))
     with get_connection() as conn:
         rows = conn.execute(
             f"""
@@ -262,8 +265,8 @@ def _list_review_candidate_results(*, user: UserAccount, limit: int = 5000) -> l
     return [_serialize_result_row(row) for row in rows]
 
 
-def list_review_queue(*, user: UserAccount) -> dict[str, Any]:
-    records = _list_review_candidate_results(user=user)
+def list_review_queue(*, user: UserAccount, limit: int = 250) -> dict[str, Any]:
+    records = _list_review_candidate_results(user=user, limit=limit)
 
     rows = [
         _review_queue_context(row)
@@ -278,7 +281,7 @@ def list_review_queue(*, user: UserAccount) -> dict[str, Any]:
             or str(row.get("owner_user_id") or "") == str(user.user_id)
         ]
     rows.sort(key=lambda item: item.get("review", {}).get("sent_at") or item.get("review", {}).get("flagged_at") or item.get("completed_at") or "", reverse=True)
-    return {"review_queue": rows}
+    return {"review_queue": rows, "meta": {"limit": max(1, min(int(limit), 500)), "returned": len(rows)}}
 
 
 def _review_queue_context(result: dict[str, Any]) -> dict[str, Any]:

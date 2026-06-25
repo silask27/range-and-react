@@ -306,7 +306,7 @@ def summarize_assignments(*, target_user_id: str | None = None, organization_ids
 
 
 def build_suggested_practice(*, user_id: str, limit: int = 4) -> list[dict[str, Any]]:
-    records = [item for item in store.list_hand_results(user_id=user_id, limit=1000) if item.get('hand_over')]
+    records = store.list_hand_results(user_id=user_id, hand_over=True, limit=1000)
     suggestions: list[dict[str, Any]] = []
     if not records:
         return [{

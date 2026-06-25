@@ -24,12 +24,14 @@ router = APIRouter(prefix='/results', tags=['results'])
 @router.get('/overview')
 def results_overview_route(
     user_id: str | None = Query(default=None),
+    limit: int = Query(250, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     current_user: UserAccount = Depends(get_current_user),
 ) -> dict:
     target_user_id = (user_id or current_user.user_id).strip()
     if target_user_id != current_user.user_id:
         ensure_user_access(current_user, target_user_id)
-    return build_results_overview(user_id=target_user_id)
+    return build_results_overview(user_id=target_user_id, limit=limit, offset=offset)
 
 
 @router.get('/hand/{hand_id}')
@@ -86,8 +88,11 @@ def send_flagged_hands_route(
 
 
 @router.get('/review-queue')
-def review_queue_route(current_user: UserAccount = Depends(get_current_user)) -> dict:
-    return list_review_queue(user=current_user)
+def review_queue_route(
+    current_user: UserAccount = Depends(get_current_user),
+    limit: int = Query(250, ge=1, le=500),
+) -> dict:
+    return list_review_queue(user=current_user, limit=limit)
 
 
 @router.get('/hand/{hand_id}/replay')

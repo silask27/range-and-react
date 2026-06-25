@@ -47,6 +47,13 @@ type ResultsPayload = {
     response_score: number | null;
     overall_score: number | null;
   };
+  meta?: {
+    limit: number;
+    offset: number;
+    returned: number;
+    total_completed: number;
+    has_more: boolean;
+  };
   filter_options: {
     scenarios: Option[];
     villains: Option[];
@@ -100,6 +107,7 @@ const PALETTE = {
 
 const MEMBER_PAGE_SIZE = 1000;
 const MEMBER_OPTION_CAP = 2500;
+const RESULTS_OVERVIEW_LIMIT = 250;
 
 async function loadMemberOptions(): Promise<Option[]> {
   const options: Option[] = [];
@@ -191,7 +199,12 @@ export default function ResultsPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const query = selectedMemberId ? `?user_id=${encodeURIComponent(selectedMemberId)}` : "";
+      const params = new URLSearchParams({
+        limit: String(RESULTS_OVERVIEW_LIMIT),
+        offset: "0",
+      });
+      if (selectedMemberId) params.set("user_id", selectedMemberId);
+      const query = `?${params.toString()}`;
       const res = await apiFetch(`${API_BASE}/results/overview${query}`, { cache: "no-store" });
       const data = await res.json();
       if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to load results.");
@@ -277,11 +290,21 @@ export default function ResultsPage() {
     });
   }, [payload, filters]);
 
-  const filteredSummary = useMemo(() => ({
-    hands: filteredResults.length,
-    ranging: average(filteredResults.map((row) => row.ranging_score)),
-    response: average(filteredResults.map((row) => row.response_score)),
-  }), [filteredResults]);
+  const hasActiveFilters = filters.scenario !== "all" || filters.villain !== "all" || filters.street !== "all" || filters.position !== "all" || filters.timer !== "all";
+  const filteredSummary = useMemo(() => {
+    if (!hasActiveFilters && payload) {
+      return {
+        hands: payload.summary.completed_hands,
+        ranging: payload.summary.ranging_score,
+        response: payload.summary.response_score,
+      };
+    }
+    return {
+      hands: filteredResults.length,
+      ranging: average(filteredResults.map((row) => row.ranging_score)),
+      response: average(filteredResults.map((row) => row.response_score)),
+    };
+  }, [filteredResults, hasActiveFilters, payload]);
 
   const trendPoints = useMemo(() => {
     const ordered = [...filteredResults]
@@ -314,18 +337,21 @@ export default function ResultsPage() {
   );
 
   return (
-    <AppShell title="Results" subtitle="Finished hands only. Filter by the spot, then see the clearest score drivers and debriefs." headerContent={headerStats}>
+    <AppShell title="Results" subtitle="Full-history score totals with fast recent-hand exploration for filters, trends, and debriefs." headerContent={headerStats}>
       {isAuthLoading || isLoading ? <div style={panelStyle}>Loading results…</div> : null}
       {authError ? <div style={errorStyle}>{authError}</div> : null}
       {error ? <div style={errorStyle}>{error}</div> : null}
       {reviewMessage ? <div style={noticeStyle}>{reviewMessage}</div> : null}
+      {payload?.meta?.has_more ? (
+        <div style={noticeStyle}>Loaded the latest {payload.meta.returned} of {payload.meta.total_completed} finished hands for fast filtering and breakdowns. Headline scores use the full history.</div>
+      ) : null}
       {payload ? (
         <>
           <section style={panelStyle}>
             <div style={barHeaderStyle}>
               <div>
                 <div style={eyebrowStyle}>Filters</div>
-                <h2 style={sectionTitleStyle}>Filter the data, then choose one breakdown</h2>
+                <h2 style={sectionTitleStyle}>Filter recent hands, then choose one breakdown</h2>
               </div>
               <button type="button" onClick={() => { setFilters(EMPTY_FILTERS); setBreakdown("villain"); }} style={ghostButtonStyle}>Clear</button>
             </div>
@@ -353,7 +379,7 @@ export default function ResultsPage() {
               <div style={sectionHeaderStyle}>
                 <div>
                   <div style={eyebrowStyle}>Trend</div>
-                  <h2 style={sectionTitleStyle}>Metric progression over time</h2>
+                  <h2 style={sectionTitleStyle}>Recent metric progression</h2>
                 </div>
               </div>
               {trendPoints.length ? <TrendChart points={trendPoints} /> : <EmptyState copy="Finish more hands to unlock your trend line." />}
@@ -363,7 +389,7 @@ export default function ResultsPage() {
               <div style={sectionHeaderStyle}>
                 <div>
                   <div style={eyebrowStyle}>Breakdown</div>
-                  <h2 style={sectionTitleStyle}>Scores by {labelForBreakdown(breakdown).toLowerCase()}</h2>
+                  <h2 style={sectionTitleStyle}>Recent scores by {labelForBreakdown(breakdown).toLowerCase()}</h2>
                 </div>
               </div>
               {breakdownRows.length ? (
@@ -389,7 +415,7 @@ export default function ResultsPage() {
             <div style={sectionHeaderStyle}>
               <div>
                 <div style={eyebrowStyle}>Insights</div>
-                <h2 style={sectionTitleStyle}>What matters most right now</h2>
+                <h2 style={sectionTitleStyle}>Recent score drivers</h2>
               </div>
             </div>
             <div style={insightGridStyle}>

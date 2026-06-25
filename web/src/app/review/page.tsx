@@ -29,6 +29,8 @@ type ReviewEntry = {
   review?: ReviewState;
 };
 
+const REVIEW_QUEUE_LIMIT = 250;
+
 export default function ReviewPage() {
   const { user, isAuthLoading, authError } = useRequireAuth();
   const [rows, setRows] = useState<ReviewEntry[]>([]);
@@ -43,7 +45,7 @@ export default function ReviewPage() {
       setIsLoading(true);
       setError(null);
       try {
-        const res = await apiFetch(`${API_BASE}/results/review-queue`, { cache: "no-store" });
+        const res = await apiFetch(`${API_BASE}/results/review-queue?limit=${REVIEW_QUEUE_LIMIT}`, { cache: "no-store" });
         const data = await res.json();
         if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to load review queue.");
         if (!cancelled) setRows((data as { review_queue?: ReviewEntry[] }).review_queue ?? []);

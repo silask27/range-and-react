@@ -11,6 +11,7 @@ from api.app.engine.villain_hand_bucket import bucket_villain_hand
 from api.app.models.enums import ActionType, Player, ResponseColumnType
 from api.app.models.state import HandState
 from api.app.services.review_state import review_state_from_metadata
+from api.app.storage.db import get_connection
 from api.app.storage.memory_store import store
 
 FAST_INTERACTIVE_ITERS = 8
@@ -678,8 +679,33 @@ def _result_context(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_results_overview(*, user_id: str) -> dict[str, Any]:
-    records = [item for item in store.list_hand_results(user_id=user_id, limit=2000) if item.get('hand_over')]
+def _results_summary_for_user(*, user_id: str) -> dict[str, Any]:
+    with get_connection() as conn:
+        row = conn.execute(
+            '''
+            SELECT
+                COUNT(*) AS completed_hands,
+                AVG(ranging_score) AS ranging_score,
+                AVG(response_score) AS response_score,
+                AVG(overall_score) AS overall_score
+            FROM hand_results
+            WHERE user_id = ? AND hand_over = 1
+            ''',
+            (user_id,),
+        ).fetchone()
+    return {
+        'completed_hands': int(row['completed_hands'] or 0) if row is not None else 0,
+        'ranging_score': round(float(row['ranging_score']), 2) if row is not None and row['ranging_score'] is not None else None,
+        'response_score': round(float(row['response_score']), 2) if row is not None and row['response_score'] is not None else None,
+        'overall_score': round(float(row['overall_score']), 2) if row is not None and row['overall_score'] is not None else None,
+    }
+
+
+def build_results_overview(*, user_id: str, limit: int = 250, offset: int = 0) -> dict[str, Any]:
+    page_limit = max(1, min(int(limit), 500))
+    page_offset = max(0, int(offset))
+    total_completed = store.count_hand_results(user_id=user_id, hand_over=True)
+    records = store.list_hand_results(user_id=user_id, hand_over=True, limit=page_limit, offset=page_offset)
     completed = [_result_context(item) for item in records]
 
     scenario_options = sorted({(item['scenario_id'], item['scenario_display_name']) for item in completed if item.get('scenario_id')}, key=lambda pair: pair[1])
@@ -709,11 +735,13 @@ def build_results_overview(*, user_id: str) -> dict[str, Any]:
     by_street.sort(key=lambda row: ['flop', 'turn', 'river'].index(row['key']) if row['key'] in {'flop', 'turn', 'river'} else 99)
 
     return {
-        'summary': {
-            'completed_hands': len(completed),
-            'ranging_score': _avg([item.get('ranging_score') for item in completed]),
-            'response_score': _avg([item.get('response_score') for item in completed]),
-            'overall_score': _avg([item.get('overall_score') for item in completed]),
+        'summary': _results_summary_for_user(user_id=user_id),
+        'meta': {
+            'limit': page_limit,
+            'offset': page_offset,
+            'returned': len(completed),
+            'total_completed': total_completed,
+            'has_more': page_offset + len(completed) < total_completed,
         },
         'filter_options': {
             'scenarios': [{'id': sid, 'display_name': label} for sid, label in scenario_options],

@@ -138,6 +138,13 @@ def _summarize_hand_row(row) -> dict[str, Any]:
     }
 
 
+def _review_flags_from_metadata(metadata: dict[str, Any]) -> tuple[int, int]:
+    review = metadata.get('review') if isinstance(metadata, dict) else None
+    if not isinstance(review, dict):
+        return 0, 0
+    return (1 if bool(review.get('flagged')) else 0, 1 if bool(review.get('sent_to_coaches')) else 0)
+
+
 def _hand_results_snapshot(payload: dict[str, Any], *, now: str) -> tuple:
     live_combos = payload.get('villain_range_combos_live') or {}
     total_live_combos = 0
@@ -167,6 +174,8 @@ def _hand_results_snapshot(payload: dict[str, Any], *, now: str) -> tuple:
         None,
         None,
         None,
+        0,
+        0,
         json_dumps(metadata),
     )
 
@@ -214,6 +223,8 @@ class SqliteStore:
     def list_sessions(self, *, user_id: str | None = None, user_ids: list[str] | None = None, limit: int = 25) -> list[dict[str, Any]]:
         limit = max(1, min(int(limit), 100))
         scoped_user_ids = [str(value).strip() for value in (user_ids or []) if str(value).strip()]
+        if user_ids is not None and not scoped_user_ids:
+            return []
         with get_connection() as conn:
             if scoped_user_ids:
                 placeholders = ', '.join('?' for _ in scoped_user_ids)
@@ -255,8 +266,9 @@ class SqliteStore:
                 INSERT INTO hand_results (
                     hand_id, user_id, session_id, scenario_id, villain_profile_id, status,
                     street, ui_gate, hand_over, total_live_combos, started_at, updated_at,
-                    completed_at, ranging_score, response_score, overall_score, metadata_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    completed_at, ranging_score, response_score, overall_score,
+                    review_flagged, review_sent_to_coaches, metadata_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (hand_id)
                 DO UPDATE SET user_id = EXCLUDED.user_id,
                               session_id = EXCLUDED.session_id,
@@ -273,6 +285,8 @@ class SqliteStore:
                               ranging_score = EXCLUDED.ranging_score,
                               response_score = EXCLUDED.response_score,
                               overall_score = EXCLUDED.overall_score,
+                              review_flagged = EXCLUDED.review_flagged,
+                              review_sent_to_coaches = EXCLUDED.review_sent_to_coaches,
                               metadata_json = EXCLUDED.metadata_json
                 ''',
                 _hand_results_snapshot(payload, now=now),
@@ -298,6 +312,7 @@ class SqliteStore:
         metadata = dict(existing_result.get('metadata') or {})
         metadata.setdefault('score_version', 2)
         metadata.setdefault('scoring_ready', True)
+        review_flagged, review_sent_to_coaches = _review_flags_from_metadata(metadata)
 
         with get_connection() as conn:
             conn.execute(
@@ -325,6 +340,8 @@ class SqliteStore:
                     total_live_combos = ?,
                     updated_at = ?,
                     completed_at = COALESCE(?, completed_at),
+                    review_flagged = ?,
+                    review_sent_to_coaches = ?,
                     metadata_json = ?
                 WHERE hand_id = ?
                 ''',
@@ -340,6 +357,8 @@ class SqliteStore:
                     sum(len(combos) for combos in (current.get('villain_range_combos_live') or {}).values()),
                     now,
                     completed_at,
+                    review_flagged,
+                    review_sent_to_coaches,
                     json_dumps(metadata),
                     hand_id,
                 ),
@@ -351,6 +370,8 @@ class SqliteStore:
         clauses: list[str] = []
         params: list[Any] = []
         scoped_user_ids = [str(value).strip() for value in (user_ids or []) if str(value).strip()]
+        if user_ids is not None and not scoped_user_ids:
+            return []
         if scoped_user_ids:
             placeholders = ', '.join('?' for _ in scoped_user_ids)
             clauses.append(f'user_id IN ({placeholders})')
@@ -379,34 +400,46 @@ class SqliteStore:
             return None
         return _summarize_hand_row(row)
 
-    def list_hand_results(self, *, user_id: str | None = None, limit: int = 25) -> list[dict[str, Any]]:
+    def list_hand_results(
+        self,
+        *,
+        user_id: str | None = None,
+        user_ids: list[str] | None = None,
+        hand_over: bool | None = None,
+        limit: int = 25,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
         limit = max(1, min(int(limit), 1000))
+        offset = max(0, int(offset))
+        clauses: list[str] = []
+        params: list[Any] = []
+        scoped_user_ids = [str(value).strip() for value in (user_ids or []) if str(value).strip()]
+        if user_ids is not None and not scoped_user_ids:
+            return []
+        if scoped_user_ids:
+            placeholders = ', '.join('?' for _ in scoped_user_ids)
+            clauses.append(f'user_id IN ({placeholders})')
+            params.extend(scoped_user_ids)
+        if user_id:
+            clauses.append('user_id = ?')
+            params.append(user_id)
+        if hand_over is not None:
+            clauses.append('hand_over = ?')
+            params.append(1 if hand_over else 0)
+        where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ''
         with get_connection() as conn:
-            if user_id:
-                rows = conn.execute(
-                    '''
-                    SELECT hand_id, user_id, session_id, scenario_id, villain_profile_id, status, street, ui_gate,
-                           hand_over, total_live_combos, started_at, updated_at, completed_at,
-                           ranging_score, response_score, overall_score, metadata_json
-                    FROM hand_results
-                    WHERE user_id = ?
-                    ORDER BY updated_at DESC
-                    LIMIT ?
-                    ''',
-                    (user_id, limit),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    '''
-                    SELECT hand_id, user_id, session_id, scenario_id, villain_profile_id, status, street, ui_gate,
-                           hand_over, total_live_combos, started_at, updated_at, completed_at,
-                           ranging_score, response_score, overall_score, metadata_json
-                    FROM hand_results
-                    ORDER BY updated_at DESC
-                    LIMIT ?
-                    ''',
-                    (limit,),
-                ).fetchall()
+            rows = conn.execute(
+                f'''
+                SELECT hand_id, user_id, session_id, scenario_id, villain_profile_id, status, street, ui_gate,
+                       hand_over, total_live_combos, started_at, updated_at, completed_at,
+                       ranging_score, response_score, overall_score, metadata_json
+                FROM hand_results
+                {where_sql}
+                ORDER BY COALESCE(completed_at, updated_at) DESC
+                LIMIT ? OFFSET ?
+                ''',
+                (*params, limit, offset),
+            ).fetchall()
         return [
             {
                 'hand_id': row['hand_id'],
@@ -429,6 +462,33 @@ class SqliteStore:
             }
             for row in rows
         ]
+
+    def count_hand_results(
+        self,
+        *,
+        user_id: str | None = None,
+        user_ids: list[str] | None = None,
+        hand_over: bool | None = None,
+    ) -> int:
+        clauses: list[str] = []
+        params: list[Any] = []
+        scoped_user_ids = [str(value).strip() for value in (user_ids or []) if str(value).strip()]
+        if user_ids is not None and not scoped_user_ids:
+            return 0
+        if scoped_user_ids:
+            placeholders = ', '.join('?' for _ in scoped_user_ids)
+            clauses.append(f'user_id IN ({placeholders})')
+            params.extend(scoped_user_ids)
+        if user_id:
+            clauses.append('user_id = ?')
+            params.append(user_id)
+        if hand_over is not None:
+            clauses.append('hand_over = ?')
+            params.append(1 if hand_over else 0)
+        where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ''
+        with get_connection() as conn:
+            row = conn.execute(f'SELECT COUNT(*) AS count FROM hand_results {where_sql}', tuple(params)).fetchone()
+        return int(row['count'] or 0) if row is not None else 0
 
     def get_hand_result(self, hand_id: str) -> dict[str, Any] | None:
         with get_connection() as conn:
@@ -473,14 +533,30 @@ class SqliteStore:
         overall_score: float | None,
         metadata: dict[str, Any],
     ) -> None:
+        review_flagged, review_sent_to_coaches = _review_flags_from_metadata(metadata)
         with get_connection() as conn:
             conn.execute(
                 """
                 UPDATE hand_results
-                SET ranging_score = ?, response_score = ?, overall_score = ?, metadata_json = ?, updated_at = ?
+                SET ranging_score = ?,
+                    response_score = ?,
+                    overall_score = ?,
+                    review_flagged = ?,
+                    review_sent_to_coaches = ?,
+                    metadata_json = ?,
+                    updated_at = ?
                 WHERE hand_id = ?
                 """,
-                (ranging_score, response_score, overall_score, json_dumps(metadata), _utcnow_iso(), hand_id),
+                (
+                    ranging_score,
+                    response_score,
+                    overall_score,
+                    review_flagged,
+                    review_sent_to_coaches,
+                    json_dumps(metadata),
+                    _utcnow_iso(),
+                    hand_id,
+                ),
             )
 
     def reset(self) -> None:

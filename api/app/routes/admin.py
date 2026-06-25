@@ -143,7 +143,7 @@ def admin_overview_route(background_tasks: BackgroundTasks, current_user: UserAc
     user_counts = count_users_by_role(organization_ids=org_scope, user_ids=user_scope)
     recent_sessions = _filter_recent(store.list_sessions(limit=50), visible_user_ids)[:10]
     recent_hands = _filter_recent(store.list_hands(limit=50), visible_user_ids)[:10]
-    recent_results = _filter_recent(store.list_hand_results(limit=50), visible_user_ids)[:10]
+    recent_results = _filter_recent(store.list_hand_results(hand_over=True, limit=50), visible_user_ids)[:10]
     assignment_summary = summarize_assignments(organization_ids=org_scope, target_user_ids=user_scope)
     analytics = get_admin_analytics(visible_user_ids=user_scope, visible_organization_ids=org_scope, background_tasks=background_tasks)
 
