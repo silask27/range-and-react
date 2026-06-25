@@ -454,9 +454,10 @@ def init_db() -> None:
         conn.execute(
             '''
             UPDATE hand_results
-            SET review_flagged = CASE WHEN metadata_json LIKE '%"flagged":true%' THEN 1 ELSE 0 END,
-                review_sent_to_coaches = CASE WHEN metadata_json LIKE '%"sent_to_coaches":true%' THEN 1 ELSE 0 END
-            '''
+            SET review_flagged = CASE WHEN metadata_json LIKE ? THEN 1 ELSE 0 END,
+                review_sent_to_coaches = CASE WHEN metadata_json LIKE ? THEN 1 ELSE 0 END
+            ''',
+            ('%"flagged":true%', '%"sent_to_coaches":true%'),
         )
 
         for statement in index_statements:
