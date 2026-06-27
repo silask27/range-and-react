@@ -293,6 +293,9 @@ function Screen3PageContent() {
   const [reviewDraft, setReviewDraft] = useState({ member_note: "", coach_note: "" });
   const [reviewMessage, setReviewMessage] = useState<string | null>(null);
   const [isSavingReview, setIsSavingReview] = useState(false);
+  const [flaggedHandIds, setFlaggedHandIds] = useState<Set<string>>(() => new Set());
+  const [isFlaggingHand, setIsFlaggingHand] = useState(false);
+  const [trainFlagMessage, setTrainFlagMessage] = useState<string | null>(null);
   const [storedUser, setStoredUser] = useState<AuthUser | null>(null);
 
   const [responseSelections, setResponseSelections] = useState<
@@ -342,6 +345,7 @@ function Screen3PageContent() {
     [hand, replayPayload, replayStepIndex],
   );
   const activeHand = replayHand ?? hand;
+  const activeHandIsFlagged = Boolean(activeHand && flaggedHandIds.has(activeHand.hand_id));
   const activeResponseSelections = useMemo(() => {
     if (isReplayMode && replayPayload) {
       return getReplayVisibleResponseSelections(replayPayload, replayStepIndex);
@@ -1402,6 +1406,38 @@ function Screen3PageContent() {
     }
   }
 
+  async function handleFlagCompletedHand() {
+    if (!activeHand || !activeHand.hand_over || isReplayMode) return;
+
+    setIsFlaggingHand(true);
+    setTrainFlagMessage(null);
+    setError(null);
+
+    try {
+      const res = await apiFetchWithRetry(`${API_BASE}/results/hand/${encodeURIComponent(activeHand.hand_id)}/flag`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ flagged: true }),
+      });
+
+      if (!res.ok) {
+        const detail = await safeReadError(res);
+        throw new Error(detail || `Failed to flag hand (${res.status})`);
+      }
+
+      setFlaggedHandIds((current) => {
+        const next = new Set(current);
+        next.add(activeHand.hand_id);
+        return next;
+      });
+      setTrainFlagMessage("Hand flagged for review.");
+    } catch (err) {
+      setTrainFlagMessage(err instanceof Error ? err.message : "Unable to flag this hand.");
+    } finally {
+      setIsFlaggingHand(false);
+    }
+  }
+
   const topActor = useMemo(() => {
     if (!scenario || !villain) return null;
     return scenario.oop_player === "hero"
@@ -1741,6 +1777,17 @@ function Screen3PageContent() {
                       {isRevealBusy ? "Revealing..." : "Reveal Villain Hand"}
                     </button>
                   ) : null}
+
+                  {activeHand.hand_over && !isReplayMode ? (
+                    <button
+                      className="btn btn-ghost"
+                      type="button"
+                      onClick={() => void handleFlagCompletedHand()}
+                      disabled={isFlaggingHand || activeHandIsFlagged || isTimeoutTransitioning}
+                    >
+                      {activeHandIsFlagged ? "Flagged" : isFlaggingHand ? "Flagging..." : "Flag hand"}
+                    </button>
+                  ) : null}
                 </div>
 
                 <div className="screen3-status-text">
@@ -1953,6 +2000,12 @@ function Screen3PageContent() {
                   </div>
                 ) : null}
 
+                {trainFlagMessage ? (
+                  <div className="soft-block screen3-flag-note">
+                    <p className="tight">{trainFlagMessage}</p>
+                  </div>
+                ) : null}
+
                 {reveal ? (
                   <div className="soft-block">
                     <p className="soft-block-title">Villain Hand</p>
@@ -2074,14 +2127,14 @@ function Screen3PageContent() {
         }
 
         .screen3-preview-metric.is-ranging {
-          background: var(--accent);
-          border-color: var(--accent);
-        }
-
-        .screen3-preview-metric.is-action {
           background: var(--success);
           border-color: var(--success);
           color: var(--bg);
+        }
+
+        .screen3-preview-metric.is-action {
+          background: var(--accent);
+          border-color: var(--accent);
         }
 
         .screen3-preview-label {
@@ -2097,6 +2150,11 @@ function Screen3PageContent() {
         }
 
         .screen3-preview-metric.is-action .screen3-preview-label {
+          color: rgba(20,18,16,0.78);
+        }
+
+        .screen3-preview-metric.is-ranging strong,
+        .screen3-preview-metric.is-ranging .screen3-preview-label {
           color: rgba(20,18,16,0.78);
         }
 

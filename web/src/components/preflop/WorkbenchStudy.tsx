@@ -214,11 +214,11 @@ const STUDY_CHARTS: Record<string, ChartDef> = {
   // BB Defend
   bb_defend_hu: {
     id: "bb_defend_hu",
-    label: "BB Defend HU — BB vs single RFI",
+    label: "BB Defend HU — vs single RFI",
     raise_tokens: ["AA", "KK", "QQ", "JJ", "AKs", "AKo", "AQs"],
     call_tokens: [
       "22", "33", "44", "55", "66", "77", "88", "99",
-      "AJs", "ATs", "KQs", "KJs", "KTs", "AQo", "QTs", "JTs",
+      "AJs", "ATs", "KQs", "KJs", "KTs", "AQo", "QJs", "QTs", "JTs",
       "A9s", "K9s", "Q9s", "J9s", "T9s",
       "87s", "76s", "65s", "54s", "43s",
       "75s", "74s", "64s", "53s",
@@ -227,14 +227,14 @@ const STUDY_CHARTS: Record<string, ChartDef> = {
   },
   bb_defend_mw: {
     id: "bb_defend_mw",
-    label: "BB Defend MW — BB vs EP/MP RFI + callers",
+    label: "BB Defend MW — vs EP/MP RFI + callers",
     raise_tokens: [
       "AA", "KK", "QQ", "JJ", "AKs", "AKo", "AQs",
       "AJs", "TT", "ATs", "KTs", "KJs", "KQs",
     ],
     call_tokens: [
       "22", "33", "44", "55", "66", "77", "88", "99",
-      "54s", "43s", "74s", "64s", "53s",
+      "54s", "43s", "64s", "53s",
       "A5s", "A4s", "A3s",
     ],
   },
@@ -346,11 +346,11 @@ const DEV_BB_DEFEND_HU: DeviationGroup[] = [
   },
   {
     title: "When to call wider",
-    bullets: ["Larger post-flop edge vs villain", "Deep stack depth"],
+    bullets: ["Larger post-flop edge vs villain", "Deep stack depth", "Better implied odds"],
   },
   {
     title: "When to fold more",
-    bullets: ["Smaller post-flop edge vs villain", "Stronger opponent range", "Shallow stack depth"],
+    bullets: ["Smaller post-flop edge vs villain", "Stronger opponent range", "Shallow stack depth", "Facing a larger RFI"],
   },
 ];
 
@@ -361,11 +361,11 @@ const DEV_BB_DEFEND_MW: DeviationGroup[] = [
   },
   {
     title: "When to call wider",
-    bullets: ["Larger post-flop edge vs villains", "Deep stack depth"],
+    bullets: ["Larger post-flop edge vs villains", "Deep stack depth", "Better implied odds"],
   },
   {
     title: "When to fold more",
-    bullets: ["Smaller post-flop edge vs villains", "Stronger opponent ranges", "Shallow stack depth"],
+    bullets: ["Smaller post-flop edge vs villains", "Stronger opponent ranges", "Shallow stack depth", "Facing a larger RFI"],
   },
 ];
 

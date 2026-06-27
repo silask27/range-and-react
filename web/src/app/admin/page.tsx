@@ -780,8 +780,8 @@ export default function AdminPage() {
 
   const headerStats = analytics ? (
     <>
-      <HeaderStat label="Avg Range Score" value={formatScore(analytics.summary.avg_ranging_score)} tone="coral" />
-      <HeaderStat label="Avg Action Score" value={formatScore(analytics.summary.avg_response_score)} tone="green" />
+      <HeaderStat label="Avg Range Score" value={formatScore(analytics.summary.avg_ranging_score)} tone="green" />
+      <HeaderStat label="Avg Action Score" value={formatScore(analytics.summary.avg_response_score)} tone="coral" />
       <HeaderStat label="Assignments" value={analytics.summary.assignments_tracked} tone="neutral" />
     </>
   ) : null;
@@ -831,10 +831,10 @@ export default function AdminPage() {
                 <section style={panelStyle}>
                   <SectionHeader eyebrow="Insights" title="What is driving the pool scores" />
                   <div style={stackStyle}>
-                    <InsightCard tone="coral" title="Range Score struggle" copy={analytics.insight_drivers.ranging.low} />
+                    <InsightCard tone="green" title="Range Score struggle" copy={analytics.insight_drivers.ranging.low} />
                     <InsightCard tone="green" title="Range Score strength" copy={analytics.insight_drivers.ranging.high} />
                     <InsightCard tone="coral" title="Action Score struggle" copy={analytics.insight_drivers.response.low} />
-                    <InsightCard tone="green" title="Action Score strength" copy={analytics.insight_drivers.response.high} />
+                    <InsightCard tone="coral" title="Action Score strength" copy={analytics.insight_drivers.response.high} />
                   </div>
                 </section>
               </div>
@@ -1162,7 +1162,7 @@ function InsightCard({ tone, title, copy }: { tone: "coral" | "green"; title: st
   );
 }
 function MemberRow({ title, subtitle, ranging, response }: { title: string; subtitle: string; ranging: number | null; response: number | null }) {
-  return <div style={rowStyle}><div style={{ minWidth: 0 }}><div style={rowTitleStyle}>{title}</div><div style={rowMetaStyle}>{subtitle}</div></div><div style={memberMetricWrapStyle}><MetricPill label="Range" value={ranging} tone="coral" /><MetricPill label="Action" value={response} tone="green" /></div></div>;
+  return <div style={rowStyle}><div style={{ minWidth: 0 }}><div style={rowTitleStyle}>{title}</div><div style={rowMetaStyle}>{subtitle}</div></div><div style={memberMetricWrapStyle}><MetricPill label="Range" value={ranging} tone="green" /><MetricPill label="Action" value={response} tone="coral" /></div></div>;
 }
 function MemberDetailRow({ title, hands, ranging, response, activeAssignments, overdueAssignments, isActive }: { title: string; hands: number; ranging: number | null; response: number | null; activeAssignments?: number; overdueAssignments?: number; isActive?: boolean }) {
   const assignmentCopy = activeAssignments != null || overdueAssignments != null
@@ -1176,8 +1176,8 @@ function MemberDetailRow({ title, hands, ranging, response, activeAssignments, o
         {isActive === false ? <div style={{ ...rowMetaStyle, color: PALETTE.coral }}>Inactive account</div> : null}
       </div>
       <div style={memberDetailScoreWrapStyle}>
-        <MetricPill label="Range" value={ranging} tone="coral" />
-        <MetricPill label="Action" value={response} tone="green" />
+        <MetricPill label="Range" value={ranging} tone="green" />
+        <MetricPill label="Action" value={response} tone="coral" />
       </div>
     </div>
   );

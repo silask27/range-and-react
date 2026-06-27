@@ -66,6 +66,7 @@ type ResultsPayload = {
 };
 
 type BreakdownDimension = "scenario" | "villain" | "street" | "position" | "timer";
+type MetricKey = "ranging" | "response";
 
 type Filters = {
   scenario: string;
@@ -108,6 +109,10 @@ const PALETTE = {
 const MEMBER_PAGE_SIZE = 1000;
 const MEMBER_OPTION_CAP = 2500;
 const RESULTS_OVERVIEW_LIMIT = 250;
+const MIN_DRIVER_SAMPLES = 3;
+const MIN_DRIVER_DELTA = 3;
+const MIN_DRIVER_SAMPLE_SHARE = 0.15;
+const MAX_DRIVER_SAMPLE_SHARE = 0.85;
 
 async function loadMemberOptions(): Promise<Option[]> {
   const options: Option[] = [];
@@ -301,10 +306,10 @@ export default function ResultsPage() {
     }
     return {
       hands: filteredResults.length,
-      ranging: average(filteredResults.map((row) => row.ranging_score)),
-      response: average(filteredResults.map((row) => row.response_score)),
+      ranging: average(filteredResults.map((row) => metricScoreForResult(row, "ranging", filters.street))),
+      response: average(filteredResults.map((row) => metricScoreForResult(row, "response", filters.street))),
     };
-  }, [filteredResults, hasActiveFilters, payload]);
+  }, [filteredResults, filters.street, hasActiveFilters, payload]);
 
   const trendPoints = useMemo(() => {
     const ordered = [...filteredResults]
@@ -313,25 +318,27 @@ export default function ResultsPage() {
     const seenRanges: number[] = [];
     const seenResponses: number[] = [];
     return ordered.map((row, index) => {
-      if (row.ranging_score != null) seenRanges.push(row.ranging_score);
-      if (row.response_score != null) seenResponses.push(row.response_score);
+      const rangingScore = metricScoreForResult(row, "ranging", filters.street);
+      const responseScore = metricScoreForResult(row, "response", filters.street);
+      if (rangingScore != null) seenRanges.push(rangingScore);
+      if (responseScore != null) seenResponses.push(responseScore);
       return {
         label: row.completed_at ? compactTrendLabel(row.completed_at, index) : `Rep ${index + 1}`,
         ranging: average(seenRanges),
         response: average(seenResponses),
       };
     });
-  }, [filteredResults]);
+  }, [filteredResults, filters.street]);
 
   const breakdownRows = useMemo(() => buildBreakdownRows(filteredResults, breakdown, filters.street), [filteredResults, breakdown, filters.street]);
-  const driverInsights = useMemo(() => buildDriverInsights(filteredResults), [filteredResults]);
+  const driverInsights = useMemo(() => buildDriverInsights(filteredResults, filters), [filteredResults, filters]);
   const debriefRows = filteredResults.slice().sort((a, b) => (b.completed_at || "").localeCompare(a.completed_at || "")).slice(0, 5);
   const canSendFlagged = !isCoachResultsView && Boolean(payload?.completed_results.some((row) => row.review?.flagged && !row.review.sent_to_coaches));
 
   const headerStats = (
     <>
-      <HeaderStat label="Range Score" value={formatScore(filteredSummary.ranging)} tone="coral" />
-      <HeaderStat label="Action Score" value={formatScore(filteredSummary.response)} tone="green" />
+      <HeaderStat label="Range Score" value={formatScore(filteredSummary.ranging)} tone="green" />
+      <HeaderStat label="Action Score" value={formatScore(filteredSummary.response)} tone="coral" />
       <HeaderStat label="Finished hands" value={filteredSummary.hands} tone="neutral" />
     </>
   );
@@ -401,8 +408,8 @@ export default function ResultsPage() {
                         <div style={rowMetaStyle}>{row.hands} samples</div>
                       </div>
                       <div style={railColumnStyle}>
-                        <ScoreRail label="Range" value={row.ranging_score} color={PALETTE.coral} />
-                        <ScoreRail label="Action" value={row.response_score} color={PALETTE.green} />
+                        <ScoreRail label="Range" value={row.ranging_score} color={PALETTE.green} />
+                        <ScoreRail label="Action" value={row.response_score} color={PALETTE.coral} />
                       </div>
                     </div>
                   ))}
@@ -510,8 +517,10 @@ function buildBreakdownRows(results: ResultEntry[], dimension: BreakdownDimensio
           ? result.position
           : result.timer_label;
     const current = groups.get(key) || { label, hands: 0, ranging: [], response: [] };
-    if (result.ranging_score != null) current.ranging.push(result.ranging_score);
-    if (result.response_score != null) current.response.push(result.response_score);
+    const rangingScore = metricScoreForResult(result, "ranging", streetFilter);
+    const responseScore = metricScoreForResult(result, "response", streetFilter);
+    if (rangingScore != null) current.ranging.push(rangingScore);
+    if (responseScore != null) current.response.push(responseScore);
     current.hands += 1;
     groups.set(key, current);
   }
@@ -519,45 +528,68 @@ function buildBreakdownRows(results: ResultEntry[], dimension: BreakdownDimensio
   return Array.from(groups.entries()).map(([key, value]) => ({ key, label: value.label, hands: value.hands, ranging_score: average(value.ranging), response_score: average(value.response) })).sort((a, b) => b.hands - a.hands || a.label.localeCompare(b.label));
 }
 
-function buildDriverInsights(results: ResultEntry[]): InsightCardData[] {
+function buildDriverInsights(results: ResultEntry[], filters: Filters): InsightCardData[] {
   return [
-    bestDriverInsight(results, "ranging", "low"),
-    bestDriverInsight(results, "ranging", "high"),
-    bestDriverInsight(results, "response", "low"),
-    bestDriverInsight(results, "response", "high"),
+    bestDriverInsight(results, "ranging", "low", filters),
+    bestDriverInsight(results, "ranging", "high", filters),
+    bestDriverInsight(results, "response", "low", filters),
+    bestDriverInsight(results, "response", "high", filters),
   ];
 }
 
-function bestDriverInsight(results: ResultEntry[], metric: "ranging" | "response", direction: "low" | "high"): InsightCardData {
-  const titlePrefix = metric === "ranging" ? "Range Score" : "Action Score";
+function bestDriverInsight(results: ResultEntry[], metric: MetricKey, direction: "low" | "high", filters: Filters): InsightCardData {
+  const titlePrefix = metricLabel(metric);
+  const tone = metricTone(metric);
   if (!results.length) {
     return {
       key: `${metric}-${direction}`,
       title: `${titlePrefix} ${direction === "low" ? "struggle" : "strength"}`,
-      tone: direction === "low" ? "coral" : "green",
+      tone,
       focus: "Need more finished hands",
       detail: "Complete more finished hands to unlock a reliable insight.",
     };
   }
-  const baseline = average(results.map((row) => metric === "ranging" ? row.ranging_score : row.response_score));
+  const scoreValues = results.map((row) => metricScoreForResult(row, metric, filters.street));
+  const scoreableSampleCount = scoreValues.filter((value): value is number => value != null).length;
+  const baseline = average(scoreValues);
   if (baseline == null) {
     return {
       key: `${metric}-${direction}`,
       title: `${titlePrefix} ${direction === "low" ? "struggle" : "strength"}`,
-      tone: direction === "low" ? "coral" : "green",
+      tone,
       focus: "No scoreable sample yet",
       detail: "The current filtered sample does not contain enough scoreable nodes yet.",
     };
   }
+  if (scoreableSampleCount < MIN_DRIVER_SAMPLES) {
+    return {
+      key: `${metric}-${direction}`,
+      title: `${titlePrefix} ${direction === "low" ? "struggle" : "strength"}`,
+      tone,
+      focus: "Need more matching hands",
+      detail: `Only ${scoreableSampleCount} matching scored hand${scoreableSampleCount === 1 ? "" : "s"} are available. Add more reps before calling a driver reliable.`,
+    };
+  }
 
   const candidates: Array<{ focus: string; delta: number; samples: number }> = [];
-  const dimensions: BreakdownDimension[] = ["villain", "scenario", "position", "timer", "street"];
+  const dimensions: BreakdownDimension[] = ["villain", "scenario", "position", "timer", "street"].filter((dimension) => {
+    if (dimension === "villain" && filters.villain !== "all") return false;
+    if (dimension === "scenario" && filters.scenario !== "all") return false;
+    if (dimension === "position" && filters.position !== "all") return false;
+    if (dimension === "timer" && filters.timer !== "all") return false;
+    if (dimension === "street" && filters.street !== "all") return false;
+    return true;
+  }) as BreakdownDimension[];
+  const minSamples = Math.max(MIN_DRIVER_SAMPLES, Math.ceil(scoreableSampleCount * MIN_DRIVER_SAMPLE_SHARE));
   for (const dimension of dimensions) {
-    for (const row of buildBreakdownRows(results, dimension, "all")) {
+    for (const row of buildBreakdownRows(results, dimension, filters.street)) {
       const score = metric === "ranging" ? row.ranging_score : row.response_score;
-      if (score == null || row.hands < 2) continue;
+      if (score == null || row.hands < minSamples) continue;
+      if (row.hands / scoreableSampleCount > MAX_DRIVER_SAMPLE_SHARE) continue;
       const focusLabel = `${labelForBreakdown(dimension)}: ${row.label}`;
-      candidates.push({ focus: focusLabel, delta: round(score - baseline), samples: row.hands });
+      const delta = round(score - baseline);
+      if (Math.abs(delta) < MIN_DRIVER_DELTA) continue;
+      candidates.push({ focus: focusLabel, delta, samples: row.hands });
     }
   }
 
@@ -566,9 +598,9 @@ function bestDriverInsight(results: ResultEntry[], metric: "ranging" | "response
     return {
       key: `${metric}-${direction}`,
       title: `${titlePrefix} ${direction === "low" ? "struggle" : "strength"}`,
-      tone: direction === "low" ? "coral" : "green",
+      tone,
       focus: direction === "low" ? "No clear weakness" : "No clear strength",
-      detail: direction === "low" ? "Nothing is dragging this score down in a meaningful way yet." : "Nothing is lifting this score above baseline in a meaningful way yet.",
+      detail: direction === "low" ? "No filtered group has enough sample and score gap to call a reliable drag yet." : "No filtered group has enough sample and score gap to call a reliable lift yet.",
     };
   }
   filtered.sort((a, b) => direction === "low" ? a.delta - b.delta : b.delta - a.delta);
@@ -577,12 +609,28 @@ function bestDriverInsight(results: ResultEntry[], metric: "ranging" | "response
   return {
     key: `${metric}-${direction}`,
     title: `${titlePrefix} ${direction === "low" ? "struggle" : "strength"}`,
-    tone: direction === "low" ? "coral" : "green",
+    tone,
     focus: best.focus,
     detail: direction === "low"
-      ? `This is lowering the score by about ${points} points across ${best.samples} finished hands.`
-      : `This is lifting the score by about ${points} points across ${best.samples} finished hands.`,
+      ? `Within the current filters, this is lowering the score by about ${points} points across ${best.samples} matching hands.`
+      : `Within the current filters, this is lifting the score by about ${points} points across ${best.samples} matching hands.`,
   };
+}
+
+function metricScoreForResult(result: ResultEntry, metric: MetricKey, streetFilter: string) {
+  if (streetFilter !== "all") {
+    const streetRow = result.street_scores.find((row) => row.street === streetFilter);
+    return metric === "ranging" ? streetRow?.ranging_score ?? null : streetRow?.response_score ?? null;
+  }
+  return metric === "ranging" ? result.ranging_score : result.response_score;
+}
+
+function metricLabel(metric: MetricKey) {
+  return metric === "ranging" ? "Range Score" : "Action Score";
+}
+
+function metricTone(metric: MetricKey): "coral" | "green" {
+  return metric === "ranging" ? "green" : "coral";
 }
 
 function SelectField({ label, value, onChange, options, compact }: { label: string; value: string; onChange: (value: string) => void; options: Array<{ id: string; display_name: string }>; compact?: boolean }) {

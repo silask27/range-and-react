@@ -11,6 +11,11 @@ from api.app.storage.db import get_connection, json_dumps, json_loads
 from api.app.storage.memory_store import store
 
 
+SUGGESTION_MIN_SAMPLES = 3
+SUGGESTION_MIN_SCORE_GAP = 7
+SUGGESTION_MAX_SAMPLE_SHARE = 0.85
+
+
 
 def _utcnow_iso() -> str:
     return datetime.now(UTC).isoformat()
@@ -323,6 +328,21 @@ def build_suggested_practice(*, user_id: str, limit: int = 4) -> list[dict[str, 
         vals = [float(row[key]) for row in rows if row.get(key) is not None]
         return round(sum(vals) / len(vals), 2) if vals else None
 
+    def quick_start_url(*, scenario_id: str | None = None, villain_id: str | None = None) -> str:
+        params: list[str] = []
+        if scenario_id:
+            params.append(f"scenario_id={scenario_id}")
+        if villain_id:
+            params.append(f"villain_profile_id={villain_id}")
+        return f"/screen-1?{'&'.join(params)}" if params else "/screen-1"
+
+    def reliable_count(items: list[dict[str, Any]]) -> bool:
+        if len(items) < SUGGESTION_MIN_SAMPLES:
+            return False
+        if len(records) >= SUGGESTION_MIN_SAMPLES and (len(items) / len(records)) > SUGGESTION_MAX_SAMPLE_SHARE:
+            return False
+        return True
+
     by_scenario: dict[str | None, list[dict[str, Any]]] = defaultdict(list)
     by_villain: dict[str | None, list[dict[str, Any]]] = defaultdict(list)
     by_pair: dict[tuple[str | None, str | None], list[dict[str, Any]]] = defaultdict(list)
@@ -331,7 +351,7 @@ def build_suggested_practice(*, user_id: str, limit: int = 4) -> list[dict[str, 
         by_villain[row.get('villain_profile_id')].append(row)
         by_pair[(row.get('scenario_id'), row.get('villain_profile_id'))].append(row)
 
-    scenario_rows = [(scenario_id, avg(items, 'overall_score'), len(items), avg(items, 'ranging_score'), avg(items, 'response_score')) for scenario_id, items in by_scenario.items() if scenario_id and len(items) >= 2]
+    scenario_rows = [(scenario_id, avg(items, 'overall_score'), len(items), avg(items, 'ranging_score'), avg(items, 'response_score')) for scenario_id, items in by_scenario.items() if scenario_id and reliable_count(items)]
     scenario_rows = [row for row in scenario_rows if row[1] is not None]
     scenario_rows.sort(key=lambda item: (item[1], -item[2]))
     if scenario_rows:
@@ -342,13 +362,13 @@ def build_suggested_practice(*, user_id: str, limit: int = 4) -> list[dict[str, 
             'reason': f'Average Overall Score: {overall}',
             'scenario_id': scenario_id,
             'villain_profile_id': None,
-            'quick_start_url': f'/screen-1?scenario_id={scenario_id}',
+            'quick_start_url': quick_start_url(scenario_id=scenario_id),
             'focus': 'scenario',
             'ranging_score': ranging_avg,
             'response_score': response_avg,
         })
 
-    villain_rows = [(villain_id, avg(items, 'overall_score'), len(items), avg(items, 'ranging_score'), avg(items, 'response_score')) for villain_id, items in by_villain.items() if villain_id and len(items) >= 2]
+    villain_rows = [(villain_id, avg(items, 'overall_score'), len(items), avg(items, 'ranging_score'), avg(items, 'response_score')) for villain_id, items in by_villain.items() if villain_id and reliable_count(items)]
     villain_rows = [row for row in villain_rows if row[1] is not None]
     villain_rows.sort(key=lambda item: (item[1], -item[2]))
     if villain_rows:
@@ -359,53 +379,81 @@ def build_suggested_practice(*, user_id: str, limit: int = 4) -> list[dict[str, 
             'reason': f'Average Overall Score: {overall}',
             'scenario_id': None,
             'villain_profile_id': villain_id,
-            'quick_start_url': f'/screen-1?villain_profile_id={villain_id}',
+            'quick_start_url': quick_start_url(villain_id=villain_id),
             'focus': 'villain',
             'ranging_score': ranging_avg,
             'response_score': response_avg,
         })
 
-    pair_rows = [(scenario_id, villain_id, avg(items, 'overall_score'), len(items), avg(items, 'response_score')) for (scenario_id, villain_id), items in by_pair.items() if scenario_id and villain_id and len(items) >= 2]
+    pair_rows = [(scenario_id, villain_id, avg(items, 'overall_score'), len(items), avg(items, 'ranging_score'), avg(items, 'response_score')) for (scenario_id, villain_id), items in by_pair.items() if scenario_id and villain_id and reliable_count(items)]
     pair_rows = [row for row in pair_rows if row[2] is not None]
     pair_rows.sort(key=lambda item: (item[2], -item[3]))
     if pair_rows:
-        scenario_id, villain_id, overall, hands, response_avg = pair_rows[0]
+        scenario_id, villain_id, overall, hands, ranging_avg, response_avg = pair_rows[0]
         suggestions.append({
             'title': 'Drill your weakest exact matchup',
             'description': f"Your toughest pairing so far is {(SCENARIOS[scenario_id].display_name if scenario_id in SCENARIOS else scenario_id)} vs {(VILLAIN_PROFILES[villain_id].meta.display_name if villain_id in VILLAIN_PROFILES else villain_id)}.",
             'reason': f'Average Overall Score: {overall} across {hands} hands',
             'scenario_id': scenario_id,
             'villain_profile_id': villain_id,
-            'quick_start_url': f'/screen-1?scenario_id={scenario_id}&villain_profile_id={villain_id}',
+            'quick_start_url': quick_start_url(scenario_id=scenario_id, villain_id=villain_id),
             'focus': 'pair',
+            'ranging_score': ranging_avg,
             'response_score': response_avg,
         })
 
     overall_ranging = avg(records, 'ranging_score')
     overall_response = avg(records, 'response_score')
     if overall_ranging is not None and overall_response is not None:
-        if overall_ranging + 7 < overall_response:
-            focus_target = scenario_rows[0][0] if scenario_rows else None
-            suggestions.append({
-                'title': 'Tighten your pruning discipline',
-                'description': 'Your ranging score trails your response score. Keep more plausible combos alive before cutting deeper.',
-                'reason': f'Avg Villain Ranging {overall_ranging} vs Action Response {overall_response}',
-                'scenario_id': focus_target,
-                'villain_profile_id': None,
-                'quick_start_url': f'/screen-1?scenario_id={focus_target}' if focus_target else '/screen-1',
-                'focus': 'ranging',
-            })
-        elif overall_response + 7 < overall_ranging:
-            focus_target = villain_rows[0][0] if villain_rows else None
-            suggestions.append({
-                'title': 'Sharpen bucket response prediction',
-                'description': 'Your response-matrix score trails your range pruning. Focus on the single most likely reaction for each bucket before you act.',
-                'reason': f'Avg response {overall_response} vs ranging {overall_ranging}',
-                'scenario_id': None,
-                'villain_profile_id': focus_target,
-                'quick_start_url': f'/screen-1?villain_profile_id={focus_target}' if focus_target else '/screen-1',
-                'focus': 'response',
-            })
+        if overall_ranging + SUGGESTION_MIN_SCORE_GAP < overall_response:
+            pair_target = pair_rows[0] if pair_rows else None
+            scenario_target = pair_target[0] if pair_target else scenario_rows[0][0] if scenario_rows else None
+            villain_target = pair_target[1] if pair_target else None
+            if scenario_target or villain_target:
+                scope_label = SCENARIOS[scenario_target].display_name if scenario_target and scenario_target in SCENARIOS else "your most reliable scoped sample"
+                if villain_target:
+                    villain_label = VILLAIN_PROFILES[villain_target].meta.display_name if villain_target in VILLAIN_PROFILES else villain_target
+                    scope_label = f"{scope_label} vs {villain_label}"
+                suggestions.append({
+                    'title': 'Tighten your Range Score reps',
+                    'description': f'Your Range Score trails your Action Score. Start with {scope_label}, where the sample is large enough to trust.',
+                    'reason': f'Avg Range Score {overall_ranging} vs Action Score {overall_response}',
+                    'scenario_id': scenario_target,
+                    'villain_profile_id': villain_target,
+                    'quick_start_url': quick_start_url(scenario_id=scenario_target, villain_id=villain_target),
+                    'focus': 'ranging',
+                })
+        elif overall_response + SUGGESTION_MIN_SCORE_GAP < overall_ranging:
+            pair_target = pair_rows[0] if pair_rows else None
+            scenario_target = pair_target[0] if pair_target else None
+            villain_target = pair_target[1] if pair_target else villain_rows[0][0] if villain_rows else None
+            if scenario_target or villain_target:
+                scope_parts = []
+                if scenario_target:
+                    scope_parts.append(SCENARIOS[scenario_target].display_name if scenario_target in SCENARIOS else scenario_target)
+                if villain_target:
+                    scope_parts.append(VILLAIN_PROFILES[villain_target].meta.display_name if villain_target in VILLAIN_PROFILES else villain_target)
+                scope_label = " vs ".join(scope_parts) if scope_parts else "your most reliable scoped sample"
+                suggestions.append({
+                    'title': 'Sharpen your Action Score reads',
+                    'description': f'Your Action Score trails your Range Score. Start with {scope_label}, where the sample is large enough to trust.',
+                    'reason': f'Avg Action Score {overall_response} vs Range Score {overall_ranging}',
+                    'scenario_id': scenario_target,
+                    'villain_profile_id': villain_target,
+                    'quick_start_url': quick_start_url(scenario_id=scenario_target, villain_id=villain_target),
+                    'focus': 'response',
+                })
+
+    if not suggestions:
+        suggestions.append({
+            'title': 'Build a more reliable baseline',
+            'description': f'Complete at least {SUGGESTION_MIN_SAMPLES} scored hands in a few different scenarios or villain matchups before the app calls a specific weak spot.',
+            'reason': f'{len(records)} completed hand{"" if len(records) == 1 else "s"} logged; no reliable scoped driver yet',
+            'scenario_id': None,
+            'villain_profile_id': None,
+            'quick_start_url': '/screen-1',
+            'focus': 'baseline',
+        })
 
     deduped: list[dict[str, Any]] = []
     seen: set[tuple[Any, ...]] = set()

@@ -9,8 +9,8 @@ type Point = {
 };
 
 const COLORS = {
-  range: "#E76F51",
-  response: "#6A9E72",
+  range: "#6A9E72",
+  response: "#E76F51",
   panel: "rgba(240,235,224,0.02)",
   border: "rgba(240,235,224,0.08)",
   text: "#F0EBE0",

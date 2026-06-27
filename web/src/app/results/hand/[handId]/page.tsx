@@ -205,13 +205,13 @@ export default function HandDebriefPage() {
               eyebrow="Range Score"
               title={formatScore(payload.summary.ranging_score)}
               copy={rangeTakeaway?.headline ?? "No ranging steps were scored."}
-              tone="coral"
+              tone="green"
             />
             <ScoreCard
               eyebrow="Action Score"
               title={formatScore(payload.summary.response_score)}
               copy={responseTakeaway?.headline ?? "No Action Score nodes were scored."}
-              tone="green"
+              tone="coral"
             />
           </section>
 
@@ -298,7 +298,7 @@ export default function HandDebriefPage() {
               eyebrow="Ranging"
               title="How close was your remaining range?"
               score={payload.summary.ranging_score}
-              accent={PALETTE.coral}
+              accent={PALETTE.green}
               headline={rangeTakeaway?.detail ?? "No prune evaluations were recorded for this hand."}
             >
               <div style={compactListStyle}>
@@ -312,7 +312,7 @@ export default function HandDebriefPage() {
               eyebrow="Action Score"
               title="How close were your bucket reads?"
               score={payload.summary.response_score}
-              accent={PALETTE.green}
+              accent={PALETTE.coral}
               headline={responseTakeaway?.detail ?? "No response evaluations were recorded for this hand."}
             >
               <div style={compactListStyle}>
