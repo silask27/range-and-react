@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import csv
+import io
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from api.app.models.auth import UserAccount
 from api.app.security import get_current_user
@@ -16,7 +18,7 @@ from api.app.services.review_service import (
     set_hand_review_flag,
     update_hand_review_note,
 )
-from api.app.services.scoring_service import build_hand_debrief, build_results_overview
+from api.app.services.scoring_service import build_hand_debrief, build_results_export_rows, build_results_overview
 
 router = APIRouter(prefix='/results', tags=['results'])
 
@@ -32,6 +34,57 @@ def results_overview_route(
     if target_user_id != current_user.user_id:
         ensure_user_access(current_user, target_user_id)
     return build_results_overview(user_id=target_user_id, limit=limit, offset=offset)
+
+
+@router.get('/overview.csv')
+def results_overview_csv_route(
+    user_id: str | None = Query(default=None),
+    scenario: str | None = Query(default=None),
+    villain: str | None = Query(default=None),
+    street: str | None = Query(default=None),
+    position: str | None = Query(default=None),
+    timer: str | None = Query(default=None),
+    limit: int = Query(10000, ge=1, le=10000),
+    current_user: UserAccount = Depends(get_current_user),
+) -> Response:
+    target_user_id = (user_id or current_user.user_id).strip()
+    if target_user_id != current_user.user_id:
+        ensure_user_access(current_user, target_user_id)
+    rows = build_results_export_rows(
+        user_id=target_user_id,
+        scenario_id=scenario,
+        villain_profile_id=villain,
+        street=street,
+        position=position,
+        timer_label=timer,
+        limit=limit,
+    )
+    fieldnames = [
+        'completed_at',
+        'hand_id',
+        'session_id',
+        'scenario',
+        'villain',
+        'position',
+        'timer',
+        'final_street',
+        'streets_played',
+        'range_score',
+        'action_score',
+        'overall_score',
+        'review_status',
+        'flagged_for_review',
+        'sent_to_coaches',
+    ]
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(rows)
+    return Response(
+        content=buffer.getvalue(),
+        media_type='text/csv',
+        headers={'Content-Disposition': 'attachment; filename="range-and-react-results.csv"'},
+    )
 
 
 @router.get('/hand/{hand_id}')

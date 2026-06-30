@@ -52,7 +52,7 @@ type AnalyticsPayload = {
   strongest_users: Array<{ user_id: string; display_name: string; completed_hands: number; avg_ranging_score: number | null; avg_response_score: number | null }>;
   weakest_scenarios: ScoreBreakdown[];
   weakest_villains: ScoreBreakdown[];
-  cohort_completion: Array<{ cohort_id: string; organization_id: string; name: string; member_count: number; assignment_count: number; completed_assignments: number; active_assignments: number; overdue_assignments: number; completion_rate: number | null; completed_reps: number; target_reps: number; rep_completion_rate: number | null }>;
+  cohort_completion: Array<{ cohort_id: string; organization_id: string; name: string; coach_user_ids?: string[]; coach_names?: string[]; member_count: number; assignment_count: number; completed_assignments: number; active_assignments: number; overdue_assignments: number; completion_rate: number | null; completed_reps: number; target_reps: number; rep_completion_rate: number | null }>;
   overdue_assignments: AssignmentEntry[];
   assignment_status_counts: Record<string, number>;
   insight_drivers: {
@@ -81,7 +81,7 @@ type AccountabilityDigest = {
 type AuditEntry = { audit_log_id: string; action_type: string; created_at: string; target_user_id: string | null };
 type OrganizationEntry = { organization_id: string; name: string; slug: string; external_provider: string | null; metadata?: { logo_url?: string; invite_landing_copy?: string; brand_accent?: string; coach_roster_note?: string }; members: Array<{ user_id: string; display_name: string | null; email: string; membership_role: string }> };
 type InviteEntry = { invite_id: string; invite_code: string; email: string | null; role: string; organization_id: string | null; membership_role: string; expires_at: string | null; consumed_at: string | null; status: string; invite_url?: string; email_delivery?: { status?: string; detail?: string | null } | null };
-type CohortEntry = { cohort_id: string; organization_id: string; name: string; description: string | null; status: string; member_count: number };
+type CohortEntry = { cohort_id: string; organization_id: string; name: string; description: string | null; status: string; member_count: number; coach_user_ids?: string[]; coaches?: Array<{ user_id: string; email: string; display_name: string | null; role: string; is_active: boolean }> };
 type CohortMemberEntry = { user_id: string; email: string; display_name: string | null; role: string; is_active: boolean };
 type TabKey = "analytics" | "assignments" | "members";
 
@@ -211,7 +211,7 @@ export default function AdminPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("analytics");
   const [createState, setCreateState] = useState({ target_type: "member", target_user_id: "", cohort_id: "", title: "", description: "", scenario_id: "", villain_profile_id: "", repetition_target: 20, minimum_overall_score: "", due_at: "" });
-  const [cohortState, setCohortState] = useState({ name: "", description: "", organization_id: "", member_user_ids: [] as string[] });
+  const [cohortState, setCohortState] = useState({ name: "", description: "", organization_id: "", member_user_ids: [] as string[], coach_user_ids: [] as string[] });
   const [externalState, setExternalState] = useState({ user_id: "", provider: "", external_user_id: "", external_email: "" });
   const [orgState, setOrgState] = useState({ name: "", slug: "", logo_url: "", invite_landing_copy: "", brand_accent: "", coach_roster_note: "", external_provider: "", external_org_id: "" });
   const [orgMemberState, setOrgMemberState] = useState({ organization_id: "", user_id: "", membership_role: "member" });
@@ -221,6 +221,8 @@ export default function AdminPage() {
   const [cohortMemberIds, setCohortMemberIds] = useState<string[]>([]);
   const [savedCohortMemberIds, setSavedCohortMemberIds] = useState<string[]>([]);
   const [isCohortMembersBusy, setIsCohortMembersBusy] = useState(false);
+  const [cohortCoachIds, setCohortCoachIds] = useState<string[]>([]);
+  const [isCohortCoachesBusy, setIsCohortCoachesBusy] = useState(false);
 
   const canManageRoles = user?.role === "owner" || user?.role === "admin";
   const canCreateOrganizations = user?.role === "owner";
@@ -279,6 +281,10 @@ export default function AdminPage() {
 
   const memberUsers = useMemo(
     () => users.filter((entry) => entry.role === "member" && entry.is_active),
+    [users],
+  );
+  const coachUsers = useMemo(
+    () => users.filter((entry) => ["coach", "admin", "owner"].includes(entry.role) && entry.is_active),
     [users],
   );
 
@@ -450,11 +456,12 @@ export default function AdminPage() {
           description: cohortState.description || undefined,
           organization_id: cohortState.organization_id || undefined,
           user_ids: cohortState.member_user_ids,
+          coach_user_ids: cohortState.coach_user_ids,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to create cohort.");
-      setCohortState({ name: "", description: "", organization_id: "", member_user_ids: [] });
+      setCohortState({ name: "", description: "", organization_id: "", member_user_ids: [], coach_user_ids: [] });
       setNotice("Cohort created.");
       await loadAll();
     } catch (err) {
@@ -482,10 +489,34 @@ export default function AdminPage() {
     setSelectedCohortId(cohortId);
     setError(null);
     setNotice(null);
+    const selected = cohorts.find((cohort) => cohort.cohort_id === cohortId);
+    setCohortCoachIds(selected?.coach_user_ids ?? []);
     try {
       await loadCohortMembers(cohortId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load cohort members.");
+    }
+  }
+
+  async function handleSaveCohortCoaches() {
+    if (!selectedCohortId) return;
+    setIsCohortCoachesBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await apiFetch(`${API_BASE}/admin/cohorts/${encodeURIComponent(selectedCohortId)}/coaches`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_ids: cohortCoachIds }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to update cohort coaches.");
+      setNotice("Cohort coaches updated.");
+      await loadAll();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update cohort coaches.");
+    } finally {
+      setIsCohortCoachesBusy(false);
     }
   }
 
@@ -646,6 +677,50 @@ export default function AdminPage() {
       setNotice("Member results CSV downloaded.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to download member results.");
+    }
+  }
+
+  async function handleDownloadCohortSummaryCsv() {
+    setError(null); setNotice(null);
+    try {
+      const res = await apiFetch(`${API_BASE}/admin/cohort-summary.csv`, { cache: "no-store" });
+      const blob = await res.blob();
+      if (!res.ok) throw new Error("Unable to download cohort summary.");
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "range-and-react-cohort-summary.csv";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setNotice("Cohort summary CSV downloaded.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to download cohort summary.");
+    }
+  }
+
+  async function handleSendCohortSummaries() {
+    setError(null); setNotice(null);
+    try {
+      const res = await apiFetch(`${API_BASE}/admin/cohort-summary/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days: 7 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to email cohort summaries.");
+      const recipientCount = Number((data as { recipient_count?: number }).recipient_count ?? 0);
+      const skippedCount = Number((data as { skipped_cohorts?: number }).skipped_cohorts ?? 0);
+      if (recipientCount <= 0) {
+        setNotice(skippedCount ? "No cohort summaries were emailed because cohorts need assigned coaches/admins." : "No cohort summary recipients were found.");
+      } else {
+        setNotice((data as { queued?: boolean }).queued === false
+          ? `Prepared ${recipientCount} cohort summary email${recipientCount === 1 ? "" : "s"}. Email delivery is not configured in this environment.`
+          : `Queued ${recipientCount} cohort summary email${recipientCount === 1 ? "" : "s"}.`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to email cohort summaries.");
     }
   }
 
@@ -811,7 +886,14 @@ export default function AdminPage() {
           {activeTab === "analytics" ? (
             <div style={{ display: "grid", gap: 24 }}>
               <section style={panelStyle}>
-                <SectionHeader eyebrow={workspaceName} title="Pool-wide performance" />
+                <div style={splitSectionHeaderStyle}>
+                  <SectionHeader eyebrow={workspaceName} title="Pool-wide performance" />
+                  <div style={actionClusterStyle}>
+                    <button type="button" onClick={() => void handleDownloadMemberResultsCsv()} style={secondaryButtonStyle}>Member results CSV</button>
+                    <button type="button" onClick={() => void handleDownloadCohortSummaryCsv()} style={secondaryButtonStyle}>Cohort summary CSV</button>
+                    <button type="button" onClick={() => void handleSendCohortSummaries()} style={primaryButtonStyle}>Email cohort summaries</button>
+                  </div>
+                </div>
                 <div style={digestStatGridStyle}>
                   <DigestStat label="Range Score" value={formatScore(analytics.summary.avg_ranging_score)} />
                   <DigestStat label="Action Score" value={formatScore(analytics.summary.avg_response_score)} />
@@ -907,6 +989,13 @@ export default function AdminPage() {
                     selectedIds={cohortState.member_user_ids}
                     onChange={(ids) => setCohortState((current) => ({ ...current, member_user_ids: ids }))}
                   />
+                  <MemberCheckboxList
+                    label="Assigned coaches/admins"
+                    users={coachUsers}
+                    selectedIds={cohortState.coach_user_ids}
+                    onChange={(ids) => setCohortState((current) => ({ ...current, coach_user_ids: ids }))}
+                    emptyCopy="No active coaches or admins are available."
+                  />
                   <label style={labelStyle}>Description<textarea value={cohortState.description} onChange={(event) => setCohortState((current) => ({ ...current, description: event.target.value }))} style={{ ...inputStyle, minHeight: 76 }} placeholder="Optional internal note" /></label>
                   <button type="submit" style={secondaryButtonStyle}>Create cohort</button>
                 </form>
@@ -916,6 +1005,7 @@ export default function AdminPage() {
                       <div style={{ minWidth: 0 }}>
                         <div style={rowTitleStyle}>{cohort.name}</div>
                         <div style={rowMetaStyle}>{inviteOrganizationName.get(cohort.organization_id) || "Organization"} · {cohort.member_count} members</div>
+                        <div style={rowHelperStyle}>{cohort.coaches?.length ? `Coaches: ${cohort.coaches.map((coach) => coach.display_name || coach.email).join(", ")}` : "No assigned coach/admin yet"}</div>
                       </div>
                       <span style={tagStyle}>{cohort.status}</span>
                     </div>
@@ -937,6 +1027,16 @@ export default function AdminPage() {
                       />
                       <button type="button" onClick={() => void handleSaveCohortMembers()} disabled={isCohortMembersBusy} style={primaryButtonStyle}>
                         {isCohortMembersBusy ? "Saving members…" : "Save cohort members"}
+                      </button>
+                      <MemberCheckboxList
+                        label="Assigned coaches/admins"
+                        users={coachUsers}
+                        selectedIds={cohortCoachIds}
+                        onChange={setCohortCoachIds}
+                        emptyCopy="No active coaches or admins are available."
+                      />
+                      <button type="button" onClick={() => void handleSaveCohortCoaches()} disabled={isCohortCoachesBusy} style={secondaryButtonStyle}>
+                        {isCohortCoachesBusy ? "Saving coaches…" : "Save assigned coaches"}
                       </button>
                     </>
                   ) : <EmptyState copy="Select a cohort to edit its member list." />}
@@ -1216,11 +1316,13 @@ function MemberCheckboxList({
   users,
   selectedIds,
   onChange,
+  emptyCopy = "No active members are available.",
 }: {
   label: string;
   users: UserEntry[];
   selectedIds: string[];
   onChange: (ids: string[]) => void;
+  emptyCopy?: string;
 }) {
   const selected = new Set(selectedIds);
 
@@ -1245,7 +1347,7 @@ function MemberCheckboxList({
             />
             <span>{entry.display_name || entry.email}</span>
           </label>
-        )) : <div style={helperCopyStyle}>No active members are available.</div>}
+        )) : <div style={helperCopyStyle}>{emptyCopy}</div>}
       </div>
     </div>
   );
@@ -1446,6 +1548,7 @@ const workspacePreviewStyle: CSSProperties = { display: "grid", gridTemplateColu
 const workspaceLogoStyle: CSSProperties = { width: 52, height: 52, borderRadius: 14, objectFit: "contain", border: "1px solid var(--line)", background: "rgba(240,235,224,0.04)", padding: 6 };
 const workspaceLogoFallbackStyle: CSSProperties = { width: 52, height: 52, borderRadius: 14, display: "grid", placeItems: "center", border: "1px solid var(--line)", background: "rgba(231,111,81,0.16)", color: PALETTE.cream, fontWeight: 900 };
 const sectionHeaderStyle: CSSProperties = { display: "grid", gap: 8, marginBottom: 16 };
+const splitSectionHeaderStyle: CSSProperties = { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 16 };
 const eyebrowStyle: CSSProperties = { color: PALETTE.coral, fontSize: 12, textTransform: "uppercase", letterSpacing: 1.3, fontWeight: 900 };
 const sectionTitleStyle: CSSProperties = { margin: 0, fontSize: 26, lineHeight: 1.08 };
 const headerStatStyle: CSSProperties = { width: 188, minHeight: 92, borderRadius: 18, padding: "14px 16px", border: "1px solid var(--line)", background: "rgba(20,18,16,1)", display: "flex", flexDirection: "column", justifyContent: "space-between" };

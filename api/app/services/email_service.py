@@ -240,6 +240,8 @@ def send_accountability_digest_email(*, email: str, digest: dict[str, Any], disp
     first_name = escape((display_name or "coach").strip() or "coach")
     summary = digest.get("summary", {}) if isinstance(digest, dict) else {}
     period = digest.get("period", {}) if isinstance(digest, dict) else {}
+    cohort = digest.get("cohort", {}) if isinstance(digest, dict) else {}
+    cohort_name = str(cohort.get("name") or "").strip() if isinstance(cohort, dict) else ""
 
     def stat(label: str, key: str) -> str:
         return f"<li><strong>{escape(label)}:</strong> {escape(str(summary.get(key, 0)))}</li>"
@@ -270,11 +272,16 @@ def send_accountability_digest_email(*, email: str, digest: dict[str, Any], disp
         formatter=lambda item: f"{escape(str(item.get('title') or 'Assignment'))}: {escape(str((item.get('progress') or {}).get('progress_count', 0)))} / {escape(str((item.get('progress') or {}).get('repetition_target', item.get('repetition_target', 0))))} reps",
     )
 
-    subject = "Weekly Range & React accountability digest"
+    subject = f"Weekly Range & React cohort summary: {cohort_name}" if cohort_name else "Weekly Range & React accountability digest"
+    intro = (
+        f"Here is the Range &amp; React accountability snapshot for <strong>{escape(cohort_name)}</strong> over the last {escape(str(period.get('days', 7)))} days."
+        if cohort_name
+        else f"Here is the Range &amp; React accountability snapshot for the last {escape(str(period.get('days', 7)))} days."
+    )
     html = f"""
     <div style=\"font-family:Inter,Arial,sans-serif;line-height:1.6;color:#141210\">
       <p>Hi {first_name},</p>
-      <p>Here is the Range &amp; React accountability snapshot for the last {escape(str(period.get('days', 7)))} days.</p>
+      <p>{intro}</p>
       <ul>
         {stat("Active members", "active_members")}
         {stat("Members trained", "members_trained")}

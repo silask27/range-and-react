@@ -27,6 +27,36 @@ def _clean_ids(values: Iterable[str] | None) -> list[str]:
 
 
 def _serialize_cohort(row, *, member_count: int = 0) -> dict[str, Any]:
+    metadata_raw = json_loads(row["metadata_json"])
+    metadata = metadata_raw if isinstance(metadata_raw, dict) else {}
+    coach_user_ids = _clean_ids(metadata.get("coach_user_ids"))
+    coaches: list[dict[str, Any]] = []
+    if coach_user_ids:
+        placeholders = ", ".join("?" for _ in coach_user_ids)
+        with get_connection() as conn:
+            coach_rows = conn.execute(
+                f"""
+                SELECT DISTINCT u.user_id, u.email, u.display_name, u.role, u.is_active
+                FROM users u
+                JOIN organization_memberships om ON om.user_id = u.user_id
+                WHERE u.user_id IN ({placeholders})
+                  AND om.organization_id = ?
+                  AND u.is_active = 1
+                  AND (u.role IN ('coach', 'admin', 'owner') OR om.membership_role IN ('coach', 'admin', 'owner'))
+                ORDER BY lower(COALESCE(u.display_name, u.email)) ASC
+                """,
+                (*coach_user_ids, row["organization_id"]),
+            ).fetchall()
+        coaches = [
+            {
+                "user_id": coach["user_id"],
+                "email": coach["email"],
+                "display_name": coach["display_name"],
+                "role": coach["role"],
+                "is_active": bool(coach["is_active"]),
+            }
+            for coach in coach_rows
+        ]
     return {
         "cohort_id": row["cohort_id"],
         "organization_id": row["organization_id"],
@@ -34,7 +64,9 @@ def _serialize_cohort(row, *, member_count: int = 0) -> dict[str, Any]:
         "description": row["description"],
         "status": row["status"],
         "created_by_user_id": row["created_by_user_id"],
-        "metadata": json_loads(row["metadata_json"]),
+        "metadata": metadata,
+        "coach_user_ids": coach_user_ids,
+        "coaches": coaches,
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
         "member_count": int(member_count or 0),
@@ -175,6 +207,43 @@ def remove_cohort_member(*, cohort_id: str, user_id: str) -> dict[str, Any]:
             (cohort["cohort_id"], user_id_clean),
         )
     return {"cohort": get_cohort(cohort_id), "removed_user_id": user_id_clean}
+
+
+def set_cohort_coaches(*, cohort_id: str, user_ids: Iterable[str]) -> dict[str, Any]:
+    cohort = get_cohort(cohort_id)
+    if cohort is None:
+        raise ValueError("Unknown cohort_id")
+    ids = _clean_ids(user_ids)
+    valid_ids: set[str] = set()
+    if ids:
+        placeholders = ", ".join("?" for _ in ids)
+        with get_connection() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT DISTINCT u.user_id
+                FROM users u
+                JOIN organization_memberships om ON om.user_id = u.user_id
+                WHERE u.user_id IN ({placeholders})
+                  AND om.organization_id = ?
+                  AND u.is_active = 1
+                  AND (u.role IN ('coach', 'admin', 'owner') OR om.membership_role IN ('coach', 'admin', 'owner'))
+                """,
+                (*ids, cohort["organization_id"]),
+            ).fetchall()
+        valid_ids = {str(row["user_id"]) for row in rows}
+        invalid = [user_id for user_id in ids if user_id not in valid_ids]
+        if invalid:
+            raise ValueError("Cohort coaches must be active coaches/admins in the cohort organization")
+
+    metadata = dict(cohort.get("metadata") or {})
+    metadata["coach_user_ids"] = ids
+    now = _utcnow_iso()
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE cohorts SET metadata_json = ?, updated_at = ? WHERE cohort_id = ?",
+            (json_dumps(metadata), now, cohort["cohort_id"]),
+        )
+    return {"cohort": get_cohort(cohort_id), "coach_user_ids": ids}
 
 
 def list_cohort_members(*, cohort_id: str, active_only: bool = True) -> list[dict[str, Any]]:

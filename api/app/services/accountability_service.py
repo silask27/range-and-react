@@ -53,6 +53,26 @@ def build_weekly_accountability_digest(
     cutoff = now - timedelta(days=day_count)
     user_ids = _clean_ids(visible_user_ids)
     organization_ids = _clean_ids(visible_organization_ids)
+    if visible_user_ids is not None and not user_ids:
+        return {
+            "period": {
+                "days": day_count,
+                "from": cutoff.isoformat(),
+                "to": now.isoformat(),
+            },
+            "summary": {
+                "active_members": 0,
+                "members_trained": 0,
+                "members_missed": 0,
+                "completed_hands": 0,
+                "active_assignments": 0,
+                "overdue_assignments": 0,
+            },
+            "missed_members": [],
+            "weakest_members": [],
+            "weak_spots": [],
+            "overdue_assignments": [],
+        }
     user_filter_sql, user_filter_params = _member_filter_sql(user_ids, alias="u")
 
     with get_connection() as conn:

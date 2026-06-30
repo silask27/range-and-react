@@ -451,13 +451,14 @@ def _query_user_worst_opponents(*, visible_user_ids: Sequence[str] | None = None
 
 
 def _build_cohort_completion_rows(*, visible_user_ids: Iterable[str] | None = None, visible_organization_ids: Iterable[str] | None = None) -> list[dict[str, Any]]:
+    restrict_user_scope = visible_user_ids is not None
     user_scope = set(_clean_ids(visible_user_ids))
     org_scope = _clean_ids(visible_organization_ids)
     rows: list[dict[str, Any]] = []
     for cohort in list_cohorts(organization_ids=org_scope):
         members = [
             member for member in list_cohort_members(cohort_id=cohort['cohort_id'], active_only=True)
-            if member.get('role') == 'member' and (not user_scope or member['user_id'] in user_scope)
+            if member.get('role') == 'member' and (not restrict_user_scope or member['user_id'] in user_scope)
         ]
         member_ids = [member['user_id'] for member in members]
         assignments_raw = list_assignments_with_progress(
@@ -479,6 +480,12 @@ def _build_cohort_completion_rows(*, visible_user_ids: Iterable[str] | None = No
             'cohort_id': cohort['cohort_id'],
             'organization_id': cohort['organization_id'],
             'name': cohort['name'],
+            'coach_user_ids': cohort.get('coach_user_ids') or [],
+            'coach_names': [
+                coach.get('display_name') or coach.get('email')
+                for coach in cohort.get('coaches', [])
+                if coach.get('display_name') or coach.get('email')
+            ],
             'member_count': len(members),
             'assignment_count': len(assignments),
             'completed_assignments': completed,
@@ -525,6 +532,77 @@ def build_member_results_export_rows(*, visible_user_ids: Iterable[str] | None =
             'overdue_assignments': sum(1 for item in user_assignments if item.get('status') == 'overdue'),
         })
     out.sort(key=lambda item: (item['organizations'], item['display_name']))
+    return out
+
+
+def build_cohort_summary_export_rows(*, visible_user_ids: Iterable[str] | None = None, visible_organization_ids: Iterable[str] | None = None) -> list[dict[str, Any]]:
+    restrict_user_scope = visible_user_ids is not None
+    user_scope = set(_clean_ids(visible_user_ids))
+    org_scope = _clean_ids(visible_organization_ids)
+    completion_rows = _build_cohort_completion_rows(visible_user_ids=user_scope, visible_organization_ids=org_scope)
+    org_names: dict[str, str] = {}
+    if org_scope:
+        placeholders = ', '.join('?' for _ in org_scope)
+        with get_connection() as conn:
+            rows = conn.execute(
+                f"SELECT organization_id, name FROM organizations WHERE organization_id IN ({placeholders})",
+                tuple(org_scope),
+            ).fetchall()
+        org_names = {str(row['organization_id']): str(row['name']) for row in rows}
+    else:
+        with get_connection() as conn:
+            rows = conn.execute("SELECT organization_id, name FROM organizations").fetchall()
+        org_names = {str(row['organization_id']): str(row['name']) for row in rows}
+
+    out: list[dict[str, Any]] = []
+    for cohort in list_cohorts(organization_ids=org_scope):
+        completion = next((row for row in completion_rows if row['cohort_id'] == cohort['cohort_id']), {})
+        members = [
+            member for member in list_cohort_members(cohort_id=cohort['cohort_id'], active_only=True)
+            if member.get('role') == 'member' and (not restrict_user_scope or member['user_id'] in user_scope)
+        ]
+        member_ids = [member['user_id'] for member in members]
+        score_row = None
+        if member_ids:
+            placeholders = ', '.join('?' for _ in member_ids)
+            with get_connection() as conn:
+                score_row = conn.execute(
+                    f"""
+                    SELECT
+                        COUNT(*) AS hands,
+                        AVG(ranging_score) AS avg_ranging_score,
+                        AVG(response_score) AS avg_response_score,
+                        AVG(overall_score) AS avg_overall_score,
+                        MAX(completed_at) AS last_completed_at
+                    FROM hand_results
+                    WHERE hand_over = 1
+                      AND completed_at IS NOT NULL
+                      AND user_id IN ({placeholders})
+                    """,
+                    tuple(member_ids),
+                ).fetchone()
+        coaches = cohort.get('coaches') or []
+        out.append({
+            'cohort_id': cohort['cohort_id'],
+            'organization': org_names.get(cohort['organization_id'], cohort['organization_id']),
+            'cohort': cohort['name'],
+            'assigned_coaches': '; '.join(coach.get('display_name') or coach.get('email') or '' for coach in coaches).strip('; '),
+            'assigned_coach_emails': '; '.join(coach.get('email') or '' for coach in coaches).strip('; '),
+            'member_count': len(members),
+            'completed_hands': int(score_row['hands'] or 0) if score_row is not None else 0,
+            'avg_range_score': round(float(score_row['avg_ranging_score']), 2) if score_row is not None and score_row['avg_ranging_score'] is not None else None,
+            'avg_action_score': round(float(score_row['avg_response_score']), 2) if score_row is not None and score_row['avg_response_score'] is not None else None,
+            'avg_overall_score': round(float(score_row['avg_overall_score']), 2) if score_row is not None and score_row['avg_overall_score'] is not None else None,
+            'last_completed_at': score_row['last_completed_at'] if score_row is not None else None,
+            'assignment_count': completion.get('assignment_count', 0),
+            'active_assignments': completion.get('active_assignments', 0),
+            'completed_assignments': completion.get('completed_assignments', 0),
+            'overdue_assignments': completion.get('overdue_assignments', 0),
+            'completed_reps': completion.get('completed_reps', 0),
+            'target_reps': completion.get('target_reps', 0),
+            'rep_completion_rate': completion.get('rep_completion_rate'),
+        })
+    out.sort(key=lambda item: (item['organization'], item['cohort']))
     return out
 
 

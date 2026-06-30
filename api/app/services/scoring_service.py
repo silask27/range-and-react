@@ -11,7 +11,7 @@ from api.app.engine.villain_hand_bucket import bucket_villain_hand
 from api.app.models.enums import ActionType, Player, ResponseColumnType
 from api.app.models.state import HandState
 from api.app.services.review_state import review_state_from_metadata
-from api.app.storage.db import get_connection
+from api.app.storage.db import get_connection, json_loads
 from api.app.storage.memory_store import store
 
 FAST_INTERACTIVE_ITERS = 8
@@ -754,3 +754,94 @@ def build_results_overview(*, user_id: str, limit: int = 250, offset: int = 0) -
         'completed_results': sorted(completed, key=lambda item: item.get('completed_at') or '', reverse=True),
         'recent_results': sorted(completed, key=lambda item: item.get('completed_at') or '', reverse=True)[:20],
     }
+
+
+def build_results_export_rows(
+    *,
+    user_id: str,
+    scenario_id: str | None = None,
+    villain_profile_id: str | None = None,
+    street: str | None = None,
+    position: str | None = None,
+    timer_label: str | None = None,
+    limit: int = 10000,
+) -> list[dict[str, Any]]:
+    page_limit = max(1, min(int(limit or 10000), 10000))
+    clauses = ["user_id = ?", "hand_over = 1"]
+    params: list[Any] = [user_id]
+    if scenario_id and scenario_id != "all":
+        clauses.append("scenario_id = ?")
+        params.append(scenario_id)
+    if villain_profile_id and villain_profile_id != "all":
+        clauses.append("villain_profile_id = ?")
+        params.append(villain_profile_id)
+    where_sql = " AND ".join(clauses)
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT hand_id, user_id, session_id, scenario_id, villain_profile_id, status, street, ui_gate,
+                   hand_over, total_live_combos, started_at, updated_at, completed_at,
+                   ranging_score, response_score, overall_score, metadata_json
+            FROM hand_results
+            WHERE {where_sql}
+            ORDER BY COALESCE(completed_at, updated_at) DESC
+            LIMIT ?
+            """,
+            (*params, page_limit),
+        ).fetchall()
+
+    filters = {
+        "street": None if not street or street == "all" else street,
+        "position": None if not position or position == "all" else position,
+        "timer": None if not timer_label or timer_label == "all" else timer_label,
+    }
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        context = _result_context(
+            {
+                "hand_id": row["hand_id"],
+                "user_id": row["user_id"],
+                "session_id": row["session_id"],
+                "scenario_id": row["scenario_id"],
+                "villain_profile_id": row["villain_profile_id"],
+                "status": row["status"],
+                "street": row["street"],
+                "ui_gate": row["ui_gate"],
+                "hand_over": bool(row["hand_over"]),
+                "total_live_combos": row["total_live_combos"],
+                "started_at": row["started_at"],
+                "updated_at": row["updated_at"],
+                "completed_at": row["completed_at"],
+                "ranging_score": row["ranging_score"],
+                "response_score": row["response_score"],
+                "overall_score": row["overall_score"],
+                "metadata": json_loads(row["metadata_json"]),
+            }
+        )
+        if filters["street"] and filters["street"] not in context.get("streets_played", []):
+            continue
+        if filters["position"] and filters["position"] != context.get("position"):
+            continue
+        if filters["timer"] and filters["timer"] != context.get("timer_label"):
+            continue
+        review = context.get("review") or {}
+        out.append(
+            {
+                "completed_at": context.get("completed_at"),
+                "hand_id": context.get("hand_id"),
+                "session_id": context.get("session_id"),
+                "scenario": context.get("scenario_display_name"),
+                "villain": context.get("villain_display_name"),
+                "position": context.get("position"),
+                "timer": context.get("timer_label"),
+                "final_street": context.get("street"),
+                "streets_played": "; ".join(context.get("streets_played") or []),
+                "range_score": context.get("ranging_score"),
+                "action_score": context.get("response_score"),
+                "overall_score": context.get("overall_score"),
+                "review_status": review.get("status"),
+                "flagged_for_review": "yes" if review.get("flagged") else "no",
+                "sent_to_coaches": "yes" if review.get("sent_to_coaches") else "no",
+            }
+        )
+    return out

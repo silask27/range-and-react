@@ -18,7 +18,7 @@ from api.app.services.access_service import (
     shared_organization_ids,
 )
 from api.app.services.accountability_service import build_weekly_accountability_digest
-from api.app.services.analytics_service import build_member_results_export_rows, get_admin_analytics, invalidate_admin_analytics, invalidate_dashboard_overview
+from api.app.services.analytics_service import build_cohort_summary_export_rows, build_member_results_export_rows, get_admin_analytics, invalidate_admin_analytics, invalidate_dashboard_overview
 from api.app.services.assignment_service import count_assignments_with_progress, create_assignment, list_assignments_with_progress, summarize_assignments
 from api.app.services.audit_service import count_audit_logs, list_audit_logs, log_audit_event
 from api.app.services.cohort_service import (
@@ -29,6 +29,7 @@ from api.app.services.cohort_service import (
     list_cohort_members,
     list_cohorts,
     remove_cohort_member,
+    set_cohort_coaches,
 )
 from api.app.services.email_service import build_signup_invite_url, email_delivery_enabled, send_accountability_digest_email, send_signup_invite_email
 from api.app.services.auth_service import (
@@ -478,6 +479,13 @@ def admin_create_cohort_route(payload: dict = Body(...), current_user: UserAccou
             created_by_user_id=current_user.user_id,
             metadata=payload.get('metadata') if isinstance(payload.get('metadata'), dict) else None,
         )
+        raw_coach_user_ids = payload.get('coach_user_ids')
+        if isinstance(raw_coach_user_ids, list):
+            coach_user_ids = [str(value) for value in raw_coach_user_ids]
+            for coach_user_id in coach_user_ids:
+                ensure_user_access(current_user, coach_user_id)
+            set_cohort_coaches(cohort_id=cohort['cohort_id'], user_ids=coach_user_ids)
+            cohort = get_cohort(cohort['cohort_id']) or cohort
         raw_user_ids = payload.get('user_ids')
         if isinstance(raw_user_ids, list) and raw_user_ids:
             user_ids = [str(value) for value in raw_user_ids]
@@ -489,6 +497,24 @@ def admin_create_cohort_route(payload: dict = Body(...), current_user: UserAccou
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {'cohort': cohort}
+
+
+@router.patch('/cohorts/{cohort_id}/coaches')
+def admin_set_cohort_coaches_route(cohort_id: str, payload: dict = Body(...), current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> dict:
+    cohort = get_cohort(cohort_id)
+    if cohort is None:
+        raise HTTPException(status_code=404, detail='Cohort not found')
+    ensure_organization_access(current_user, cohort['organization_id'])
+    raw_user_ids = payload.get('user_ids')
+    user_ids = [str(value) for value in raw_user_ids] if isinstance(raw_user_ids, list) else []
+    for user_id in user_ids:
+        ensure_user_access(current_user, user_id)
+    try:
+        result = set_cohort_coaches(cohort_id=cohort_id, user_ids=user_ids)
+        log_audit_event(action_type='cohort_coaches_updated', actor=current_user, organization_id=cohort['organization_id'], metadata={'cohort_id': cohort_id, 'coach_count': len(user_ids)})
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result
 
 
 @router.get('/cohorts/{cohort_id}/members')
@@ -655,6 +681,90 @@ def admin_member_results_csv_route(current_user: UserAccount = Depends(require_r
         media_type='text/csv',
         headers={'Content-Disposition': 'attachment; filename="range-and-react-member-results.csv"'},
     )
+
+
+@router.get('/cohort-summary.csv')
+def admin_cohort_summary_csv_route(current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> Response:
+    org_scope, user_scope = _scope(current_user)
+    rows = build_cohort_summary_export_rows(visible_user_ids=user_scope, visible_organization_ids=org_scope)
+    fieldnames = [
+        'cohort_id',
+        'organization',
+        'cohort',
+        'assigned_coaches',
+        'assigned_coach_emails',
+        'member_count',
+        'completed_hands',
+        'avg_range_score',
+        'avg_action_score',
+        'avg_overall_score',
+        'last_completed_at',
+        'assignment_count',
+        'active_assignments',
+        'completed_assignments',
+        'overdue_assignments',
+        'completed_reps',
+        'target_reps',
+        'rep_completion_rate',
+    ]
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(rows)
+    return Response(
+        content=buffer.getvalue(),
+        media_type='text/csv',
+        headers={'Content-Disposition': 'attachment; filename="range-and-react-cohort-summary.csv"'},
+    )
+
+
+@router.post('/cohort-summary/send')
+def admin_send_cohort_summary_route(
+    background_tasks: BackgroundTasks,
+    payload: dict | None = Body(default=None),
+    current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH)),
+) -> dict:
+    org_scope, user_scope = _scope(current_user)
+    days = int((payload or {}).get('days') or 7)
+    recipient_count = 0
+    skipped_cohorts = 0
+    for cohort in list_cohorts(organization_ids=org_scope):
+        ensure_organization_access(current_user, cohort['organization_id'])
+        members = [
+            member for member in list_cohort_members(cohort_id=cohort['cohort_id'], active_only=True)
+            if member.get('role') == UserRole.MEMBER.value and (user_scope is None or member['user_id'] in set(user_scope))
+        ]
+        coaches = cohort.get('coaches') or []
+        if not coaches:
+            skipped_cohorts += 1
+            continue
+        member_ids = [member['user_id'] for member in members]
+        digest = build_weekly_accountability_digest(
+            visible_user_ids=member_ids,
+            visible_organization_ids=[cohort['organization_id']],
+            days=days,
+        )
+        digest['cohort'] = {
+            'cohort_id': cohort['cohort_id'],
+            'name': cohort['name'],
+            'member_count': len(members),
+        }
+        for coach in coaches:
+            email = str(coach.get('email') or '').strip()
+            if not email:
+                continue
+            background_tasks.add_task(
+                send_accountability_digest_email,
+                email=email,
+                display_name=coach.get('display_name') or email,
+                digest=digest,
+            )
+            recipient_count += 1
+    return {
+        'queued': email_delivery_enabled(),
+        'recipient_count': recipient_count,
+        'skipped_cohorts': skipped_cohorts,
+    }
 
 
 @router.get('/organizations')

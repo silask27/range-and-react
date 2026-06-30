@@ -147,6 +147,7 @@ export default function ResultsPage() {
   const [reviewMessage, setReviewMessage] = useState<string | null>(null);
   const [flagBusyHandId, setFlagBusyHandId] = useState<string | null>(null);
   const [sendBusy, setSendBusy] = useState(false);
+  const [csvBusy, setCsvBusy] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState(() => {
     if (typeof window === "undefined") return "";
     return new URLSearchParams(window.location.search).get("member_id") ?? "";
@@ -283,6 +284,36 @@ export default function ResultsPage() {
     }
   }
 
+  async function downloadResultsCsv() {
+    setCsvBusy(true);
+    setReviewMessage(null);
+    try {
+      const params = new URLSearchParams({ limit: "10000" });
+      if (selectedMemberId) params.set("user_id", selectedMemberId);
+      if (filters.scenario !== "all") params.set("scenario", filters.scenario);
+      if (filters.villain !== "all") params.set("villain", filters.villain);
+      if (filters.street !== "all") params.set("street", filters.street);
+      if (filters.position !== "all") params.set("position", filters.position);
+      if (filters.timer !== "all") params.set("timer", filters.timer);
+      const res = await apiFetch(`${API_BASE}/results/overview.csv?${params.toString()}`, { cache: "no-store" });
+      const blob = await res.blob();
+      if (!res.ok) throw new Error("Unable to download results CSV.");
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = selectedMemberId ? "range-and-react-member-results.csv" : "range-and-react-results.csv";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setReviewMessage("Results CSV downloaded.");
+    } catch (err) {
+      setReviewMessage(err instanceof Error ? err.message : "Unable to download results CSV.");
+    } finally {
+      setCsvBusy(false);
+    }
+  }
+
   const filteredResults = useMemo(() => {
     if (!payload) return [];
     return payload.completed_results.filter((row) => {
@@ -360,7 +391,12 @@ export default function ResultsPage() {
                 <div style={eyebrowStyle}>Filters</div>
                 <h2 style={sectionTitleStyle}>Filter recent hands, then choose one breakdown</h2>
               </div>
-              <button type="button" onClick={() => { setFilters(EMPTY_FILTERS); setBreakdown("villain"); }} style={ghostButtonStyle}>Clear</button>
+              <div style={filterActionsStyle}>
+                <button type="button" onClick={downloadResultsCsv} disabled={csvBusy || !payload.completed_results.length} style={primaryButtonStyle}>
+                  {csvBusy ? "Downloading…" : "Download CSV"}
+                </button>
+                <button type="button" onClick={() => { setFilters(EMPTY_FILTERS); setBreakdown("villain"); }} style={ghostButtonStyle}>Clear</button>
+              </div>
             </div>
             {isCoachResultsView ? (
               <div style={memberFilterWrapStyle}>
@@ -723,6 +759,7 @@ const panelStyle: CSSProperties = { borderTop: "1px solid var(--line-soft)", pad
 const errorStyle: CSSProperties = { color: "var(--accent)", fontWeight: 700 };
 const noticeStyle: CSSProperties = { color: PALETTE.cream, border: "1px solid var(--line)", background: "var(--surface-fill-strong)", borderRadius: 14, padding: "12px 14px", fontWeight: 700 };
 const barHeaderStyle: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", marginBottom: 18 };
+const filterActionsStyle: CSSProperties = { display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" };
 const sectionHeaderStyle: CSSProperties = { display: "grid", gap: 8, marginBottom: 16 };
 const eyebrowStyle: CSSProperties = { color: PALETTE.coral, fontSize: 12, textTransform: "uppercase", letterSpacing: 1.3, fontWeight: 900 };
 const sectionTitleStyle: CSSProperties = { margin: 0, fontSize: 26, lineHeight: 1.08 };
