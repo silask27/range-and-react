@@ -60,7 +60,7 @@ export default function TrainingHeader({ stepLabel, title, subtitle, stage, head
         </div>
 
         {stepLabel || stage || headerContent ? (
-          <div style={rightStyle}>
+          <div className="page-header-side" style={rightStyle}>
             {stepLabel || stage ? (
               <div style={badgeRowStyle}>
                 {stepLabel ? <span className="badge badge-muted">{stepLabel}</span> : null}
@@ -78,7 +78,7 @@ export default function TrainingHeader({ stepLabel, title, subtitle, stage, head
 }
 
 const headerStyle: CSSProperties = { padding: "10px 0 14px" };
-const rightStyle: CSSProperties = { display: "grid", gap: 12, justifyItems: "end", alignContent: "start" };
-const badgeRowStyle: CSSProperties = { display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" };
-const headerContentStyle: CSSProperties = { display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center" };
+const rightStyle: CSSProperties = { display: "grid", gap: 12, justifyItems: "end", alignContent: "start", minWidth: 0 };
+const badgeRowStyle: CSSProperties = { display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end", minWidth: 0 };
+const headerContentStyle: CSSProperties = { display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center", minWidth: 0 };
 const dividerStyle: CSSProperties = { borderTop: "1px solid var(--line-soft)" };

@@ -12,6 +12,7 @@ os.environ.setdefault("VRT_PASSWORD_RESET_RETURNS_TOKEN", "true")
 os.environ.setdefault("VRT_REQUIRE_SIGNUP_INVITE", "true")
 os.environ.setdefault("VRT_PUBLIC_STATUS_DETAILED_CHECKS", "false")
 os.environ.setdefault("VRT_PUBLIC_STATUS_SHOW_DEMO_DETAILS", "false")
+os.environ.setdefault("VRT_DATA_DELIVERY_CRON_SECRET", "test-cron-secret")
 
 from fastapi.testclient import TestClient
 
@@ -22,6 +23,7 @@ from api.app.models.enums import ActionType, Player, Street, UIGate
 from api.app.models.state import HandState, SessionState
 from api.app.services.action_service import apply_hero_action
 from api.app.services.assignment_service import create_assignment, list_assignments_with_progress
+from api.app.services.email_service import EmailDeliveryResult
 from api.app.services.prune_service import _advance_to_next_street as _advance_to_next_street_after_prune
 from api.app.services.scoring_service import FAST_INTERACTIVE_ITERS, _hero_column_for_action, record_prune_evaluation, record_response_matrix_evaluation
 from api.app.services.response_matrix_service import save_response_matrix
@@ -95,6 +97,7 @@ class RegressionTestCase(unittest.TestCase):
         )
         assert coach_signup.status_code == 200, coach_signup.text
         cls.coach_token = coach_signup.json()["token"]
+        cls.coach_user_id = coach_signup.json()["user"]["user_id"]
 
         admin_invite = cls.client.post(
             "/admin/signup-invites",
@@ -109,6 +112,7 @@ class RegressionTestCase(unittest.TestCase):
         )
         assert admin_signup.status_code == 200, admin_signup.text
         cls.admin_token = admin_signup.json()["token"]
+        cls.admin_user_id = admin_signup.json()["user"]["user_id"]
 
         member_invite = cls.client.post(
             "/admin/signup-invites",
@@ -353,6 +357,116 @@ class RegressionTestCase(unittest.TestCase):
         )
         self.assertEqual(after.status_code, 200)
         self.assertNotIn(self.member_user_id, {row["user_id"] for row in after.json()["members"]})
+
+    def test_cohort_with_assigned_coach_loads_in_admin_analytics(self) -> None:
+        create_response = self.client.post(
+            "/admin/cohorts",
+            headers={"Authorization": f"Bearer {self.owner_token}"},
+            json={
+                "organization_id": "org-alpha",
+                "name": f"Coach Assigned Cohort {uuid4()}",
+                "user_ids": [self.member_user_id],
+                "coach_user_ids": [self.coach_user_id],
+            },
+        )
+        self.assertEqual(create_response.status_code, 200, create_response.text)
+        cohort = create_response.json()["cohort"]
+        self.assertEqual(cohort["coach_user_ids"], [self.coach_user_id])
+        self.assertEqual([coach["user_id"] for coach in cohort["coaches"]], [self.coach_user_id])
+
+        analytics_response = self.client.get(
+            "/admin/analytics?refresh=true",
+            headers={"Authorization": f"Bearer {self.owner_token}"},
+        )
+        self.assertEqual(analytics_response.status_code, 200, analytics_response.text)
+        cohort_rows = analytics_response.json()["cohort_completion"]
+        analytics_cohort = next((row for row in cohort_rows if row["cohort_id"] == cohort["cohort_id"]), None)
+        self.assertIsNotNone(analytics_cohort)
+        self.assertEqual(analytics_cohort["coach_user_ids"], [self.coach_user_id])
+        self.assertEqual(analytics_cohort["coach_names"], ["Coach"])
+
+        csv_response = self.client.get(
+            "/admin/cohort-summary.csv",
+            headers={"Authorization": f"Bearer {self.owner_token}"},
+        )
+        self.assertEqual(csv_response.status_code, 200, csv_response.text)
+        self.assertIn(cohort["name"], csv_response.text)
+        self.assertIn("Coach", csv_response.text)
+
+        single_csv_response = self.client.get(
+            f"/admin/cohorts/{cohort['cohort_id']}/summary.csv",
+            headers={"Authorization": f"Bearer {self.owner_token}"},
+        )
+        self.assertEqual(single_csv_response.status_code, 200, single_csv_response.text)
+        self.assertIn(cohort["name"], single_csv_response.text)
+        self.assertIn("cohort-summary.csv", single_csv_response.headers.get("content-disposition", ""))
+
+        member_summary_response = self.client.get(
+            "/results/member-summary.csv",
+            headers={"Authorization": f"Bearer {self.member_token}"},
+        )
+        self.assertEqual(member_summary_response.status_code, 200, member_summary_response.text)
+        self.assertIn("member-summary.csv", member_summary_response.headers.get("content-disposition", ""))
+        self.assertIn("Member", member_summary_response.text)
+
+        delivery_get = self.client.get(
+            "/admin/data-delivery-preferences",
+            headers={"Authorization": f"Bearer {self.coach_token}"},
+        )
+        self.assertEqual(delivery_get.status_code, 200, delivery_get.text)
+        self.assertEqual(delivery_get.json()["preference"]["cadence"], "weekly")
+
+        delivery_patch = self.client.patch(
+            "/admin/data-delivery-preferences",
+            headers={"Authorization": f"Bearer {self.coach_token}"},
+            json={
+                "cadence": "biweekly",
+                "include_member_summary": True,
+                "include_cohort_summary": True,
+                "include_org_summary": False,
+                "cohort_id": cohort["cohort_id"],
+            },
+        )
+        self.assertEqual(delivery_patch.status_code, 200, delivery_patch.text)
+        self.assertEqual(delivery_patch.json()["preference"]["cadence"], "biweekly")
+        self.assertEqual(delivery_patch.json()["preference"]["cohort_id"], cohort["cohort_id"])
+
+        delivery_send = self.client.post(
+            "/admin/data-delivery/send",
+            headers={"Authorization": f"Bearer {self.coach_token}"},
+            json=delivery_patch.json()["preference"],
+        )
+        self.assertEqual(delivery_send.status_code, 200, delivery_send.text)
+        sent_filenames = {item["filename"] for item in delivery_send.json()["files"]}
+        self.assertTrue(any(name.endswith("member-summary.csv") for name in sent_filenames))
+        self.assertTrue(any(name.endswith("cohort-summary.csv") for name in sent_filenames))
+
+        forbidden_cron = self.client.post(
+            "/internal/data-delivery/run-due",
+            headers={"X-Cron-Secret": "wrong"},
+        )
+        self.assertEqual(forbidden_cron.status_code, 403)
+
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE data_delivery_preferences SET next_send_at = '2020-01-01T00:00:00+00:00' WHERE user_id = ?",
+                (self.coach_user_id,),
+            )
+
+        with patch("api.app.routes.internal.send_data_delivery_files", return_value=EmailDeliveryResult(status="sent", provider="resend")):
+            due_cron = self.client.post(
+                "/internal/data-delivery/run-due",
+                headers={"X-Cron-Secret": "test-cron-secret"},
+            )
+        self.assertEqual(due_cron.status_code, 200, due_cron.text)
+        self.assertGreaterEqual(due_cron.json()["sent"], 1)
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT last_sent_at, next_send_at FROM data_delivery_preferences WHERE user_id = ?",
+                (self.coach_user_id,),
+            ).fetchone()
+        self.assertIsNotNone(row["last_sent_at"])
+        self.assertGreater(row["next_send_at"], row["last_sent_at"])
 
     def test_unscoped_admin_does_not_see_all_organizations_or_invites(self) -> None:
         invite = self.client.post(

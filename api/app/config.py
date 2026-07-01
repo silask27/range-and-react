@@ -65,6 +65,7 @@ class Settings:
     auth_cookie_secure: bool = _get_bool("VRT_AUTH_COOKIE_SECURE", _is_production())
     auth_cookie_samesite: str = os.getenv("VRT_AUTH_COOKIE_SAMESITE", "none" if _is_production() else "lax").strip().lower() or ("none" if _is_production() else "lax")
     auth_cookie_ttl_days: int = int(os.getenv("VRT_AUTH_TOKEN_TTL_DAYS", "30"))
+    data_delivery_cron_secret: str = os.getenv("VRT_DATA_DELIVERY_CRON_SECRET", "").strip()
 
     demo_mode_enabled: bool = _get_bool("VRT_DEMO_MODE_ENABLED", False)
     demo_public_credentials: bool = _get_bool("VRT_DEMO_PUBLIC_CREDENTIALS", False)

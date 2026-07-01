@@ -8,8 +8,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from api.app.models.auth import UserAccount
 from api.app.security import get_current_user
+from api.app.services.access_service import get_visible_organization_ids
 from api.app.services.access_service import ensure_user_access
 from api.app.services.auth_service import ensure_can_access_owner_resource
+from api.app.services.data_delivery_service import member_summary_csv
 from api.app.services.hand_service import get_hand
 from api.app.services.review_service import (
     build_hand_replay,
@@ -58,6 +60,26 @@ def results_overview_csv_route(
         position=position,
         timer_label=timer,
         limit=limit,
+    )
+
+
+@router.get('/member-summary.csv')
+def results_member_summary_csv_route(
+    user_id: str | None = Query(default=None),
+    current_user: UserAccount = Depends(get_current_user),
+) -> Response:
+    target_user_id = (user_id or current_user.user_id).strip()
+    if target_user_id != current_user.user_id:
+        ensure_user_access(current_user, target_user_id)
+    filename, content, _ = member_summary_csv(
+        user_id=target_user_id,
+        visible_organization_ids=get_visible_organization_ids(current_user),
+    )
+    safe_filename = filename.replace('"', '').replace('\r', '').replace('\n', '')
+    return Response(
+        content=content,
+        media_type='text/csv',
+        headers={'Content-Disposition': f'attachment; filename="{safe_filename}"'},
     )
     fieldnames = [
         'completed_at',

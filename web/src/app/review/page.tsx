@@ -175,22 +175,22 @@ function formatScore(value: number | null | undefined) {
 
 const panelStyle: CSSProperties = { borderTop: "1px solid var(--line-soft)", paddingTop: 18 };
 const errorStyle: CSSProperties = { color: "var(--accent)", fontWeight: 800 };
-const barHeaderStyle: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 16, flexWrap: "wrap", marginBottom: 18 };
+const barHeaderStyle: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 16, flexWrap: "wrap", marginBottom: 18, minWidth: 0 };
 const sectionHeaderStyle: CSSProperties = { display: "grid", gap: 8, marginBottom: 16 };
 const eyebrowStyle: CSSProperties = { color: "#E76F51", fontSize: 12, textTransform: "uppercase", letterSpacing: 1.2, fontWeight: 900 };
 const sectionTitleStyle: CSSProperties = { margin: 0, fontSize: 26, lineHeight: 1.1 };
 const captionStyle: CSSProperties = { color: "var(--text-45)", fontSize: 11, textTransform: "uppercase", letterSpacing: 1.1, fontWeight: 800 };
-const filterLabelStyle: CSSProperties = { minWidth: 240, display: "grid", gap: 8 };
+const filterLabelStyle: CSSProperties = { minWidth: 0, width: "min(100%, 260px)", display: "grid", gap: 8 };
 const selectStyle: CSSProperties = { width: "100%", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface-fill)", color: "var(--text)", padding: "12px 13px", fontWeight: 800 };
-const headerStatStyle: CSSProperties = { width: 174, minHeight: 86, borderRadius: 18, padding: "13px 15px", border: "1px solid var(--line)", display: "flex", flexDirection: "column", justifyContent: "space-between" };
+const headerStatStyle: CSSProperties = { flex: "1 1 150px", minWidth: 0, minHeight: 86, borderRadius: 18, padding: "13px 15px", border: "1px solid var(--line)", display: "flex", flexDirection: "column", justifyContent: "space-between" };
 const headerStatLabelStyle: CSSProperties = { color: "inherit", opacity: 0.9, fontSize: 11, textTransform: "uppercase", letterSpacing: 1.1, fontWeight: 800 };
 const headerStatValueStyle: CSSProperties = { marginTop: 6, fontSize: 28, fontWeight: 900, color: "inherit" };
 const listStyle: CSSProperties = { display: "grid", gap: 12 };
 const scrollListStyle: CSSProperties = { ...listStyle, maxHeight: 560, overflowY: "auto", paddingRight: 6 };
-const rowStyle: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 16, alignItems: "center", padding: "15px 0", borderTop: "1px solid var(--line-soft)" };
+const rowStyle: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center", flexWrap: "wrap", padding: "15px 0", borderTop: "1px solid var(--line-soft)", minWidth: 0 };
 const rowTitleStyle: CSSProperties = { color: "var(--text)", fontWeight: 900, lineHeight: 1.35 };
 const rowMetaStyle: CSSProperties = { color: "var(--text-45)", fontSize: 13, lineHeight: 1.55, marginTop: 4 };
 const rowHelperStyle: CSSProperties = { color: "var(--text-65)", fontSize: 13, lineHeight: 1.55, marginTop: 4 };
 const rowActionsStyle: CSSProperties = { display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" };
-const secondaryLinkStyle: CSSProperties = { padding: "10px 13px", borderRadius: 12, border: "1px solid var(--line)", color: "var(--text)", textDecoration: "none", fontWeight: 850 };
+const secondaryLinkStyle: CSSProperties = { padding: "10px 13px", borderRadius: 12, border: "1px solid var(--line)", color: "var(--text)", textDecoration: "none", fontWeight: 850, textAlign: "center" };
 const emptyStyle: CSSProperties = { color: "var(--text-65)", borderTop: "1px solid var(--line-soft)", paddingTop: 14, lineHeight: 1.6 };

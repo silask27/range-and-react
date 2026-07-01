@@ -454,8 +454,9 @@ def _build_cohort_completion_rows(*, visible_user_ids: Iterable[str] | None = No
     restrict_user_scope = visible_user_ids is not None
     user_scope = set(_clean_ids(visible_user_ids))
     org_scope = _clean_ids(visible_organization_ids)
+    cohort_org_scope = org_scope if visible_organization_ids is not None else None
     rows: list[dict[str, Any]] = []
-    for cohort in list_cohorts(organization_ids=org_scope):
+    for cohort in list_cohorts(organization_ids=cohort_org_scope):
         members = [
             member for member in list_cohort_members(cohort_id=cohort['cohort_id'], active_only=True)
             if member.get('role') == 'member' and (not restrict_user_scope or member['user_id'] in user_scope)
@@ -539,7 +540,8 @@ def build_cohort_summary_export_rows(*, visible_user_ids: Iterable[str] | None =
     restrict_user_scope = visible_user_ids is not None
     user_scope = set(_clean_ids(visible_user_ids))
     org_scope = _clean_ids(visible_organization_ids)
-    completion_rows = _build_cohort_completion_rows(visible_user_ids=user_scope, visible_organization_ids=org_scope)
+    cohort_org_scope = org_scope if visible_organization_ids is not None else None
+    completion_rows = _build_cohort_completion_rows(visible_user_ids=visible_user_ids, visible_organization_ids=visible_organization_ids)
     org_names: dict[str, str] = {}
     if org_scope:
         placeholders = ', '.join('?' for _ in org_scope)
@@ -555,7 +557,7 @@ def build_cohort_summary_export_rows(*, visible_user_ids: Iterable[str] | None =
         org_names = {str(row['organization_id']): str(row['name']) for row in rows}
 
     out: list[dict[str, Any]] = []
-    for cohort in list_cohorts(organization_ids=org_scope):
+    for cohort in list_cohorts(organization_ids=cohort_org_scope):
         completion = next((row for row in completion_rows if row['cohort_id'] == cohort['cohort_id']), {})
         members = [
             member for member in list_cohort_members(cohort_id=cohort['cohort_id'], active_only=True)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import logging
 from dataclasses import asdict, dataclass
@@ -303,3 +304,51 @@ def send_accountability_digest_email(*, email: str, digest: dict[str, Any], disp
     </div>
     """
     return _post_resend({"to": [email], "subject": subject, "html": html})
+
+
+def send_csv_delivery_email(
+    *,
+    email: str,
+    files: list[dict[str, str]],
+    cadence: str,
+    display_name: str | None = None,
+) -> EmailDeliveryResult:
+    if not files:
+        return EmailDeliveryResult(
+            status="skipped",
+            provider=_clean(settings.email_provider) or "disabled",
+            skipped=True,
+            detail="No CSV files selected",
+        )
+
+    first_name = escape((display_name or "there").strip() or "there")
+    cadence_label = {
+        "weekly": "weekly",
+        "biweekly": "every other week",
+        "monthly": "monthly",
+    }.get(cadence, cadence)
+    attachment_names = "".join(f"<li>{escape(item['filename'])}</li>" for item in files)
+    subject = "Range & React CSV delivery"
+    html = f"""
+    <div style=\"font-family:Inter,Arial,sans-serif;line-height:1.6;color:#141210\">
+      <p>Hi {first_name},</p>
+      <p>Your {escape(cadence_label)} Range &amp; React CSV delivery is attached.</p>
+      <ul>{attachment_names}</ul>
+      <p><a href=\"{settings.frontend_url.rstrip('/')}/admin\" style=\"display:inline-block;padding:12px 18px;background:#E57257;color:#fff;text-decoration:none;border-radius:10px;font-weight:700\">Open coach dashboard</a></p>
+      <p style=\"color:#5f5a52\">Support: {settings.support_email}</p>
+    </div>
+    """
+    return _post_resend(
+        {
+            "to": [email],
+            "subject": subject,
+            "html": html,
+            "attachments": [
+                {
+                    "filename": item["filename"],
+                    "content": base64.b64encode(item["content"].encode("utf-8")).decode("ascii"),
+                }
+                for item in files
+            ],
+        }
+    )

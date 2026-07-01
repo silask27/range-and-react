@@ -338,6 +338,22 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     )
     ''',
     'CREATE INDEX IF NOT EXISTS idx_analytics_snapshots_expires_at ON analytics_snapshots(expires_at)',
+    '''
+    CREATE TABLE IF NOT EXISTS data_delivery_preferences (
+        user_id TEXT PRIMARY KEY,
+        cadence TEXT NOT NULL DEFAULT 'weekly',
+        include_member_summary INTEGER NOT NULL DEFAULT 0,
+        include_cohort_summary INTEGER NOT NULL DEFAULT 1,
+        include_org_summary INTEGER NOT NULL DEFAULT 0,
+        cohort_id TEXT,
+        last_sent_at TEXT,
+        next_send_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+        FOREIGN KEY(cohort_id) REFERENCES cohorts(cohort_id) ON DELETE SET NULL
+    )
+    ''',
 )
 
 
@@ -451,6 +467,8 @@ def init_db() -> None:
         _ensure_column(conn, 'assignments', 'organization_id', 'TEXT')
         _ensure_column(conn, 'hand_results', 'review_flagged', 'INTEGER NOT NULL DEFAULT 0')
         _ensure_column(conn, 'hand_results', 'review_sent_to_coaches', 'INTEGER NOT NULL DEFAULT 0')
+        _ensure_column(conn, 'data_delivery_preferences', 'last_sent_at', 'TEXT')
+        _ensure_column(conn, 'data_delivery_preferences', 'next_send_at', 'TEXT')
         conn.execute(
             '''
             UPDATE hand_results

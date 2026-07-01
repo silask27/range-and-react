@@ -288,27 +288,25 @@ export default function ResultsPage() {
     setCsvBusy(true);
     setReviewMessage(null);
     try {
-      const params = new URLSearchParams({ limit: "10000" });
+      const params = new URLSearchParams();
       if (selectedMemberId) params.set("user_id", selectedMemberId);
-      if (filters.scenario !== "all") params.set("scenario", filters.scenario);
-      if (filters.villain !== "all") params.set("villain", filters.villain);
-      if (filters.street !== "all") params.set("street", filters.street);
-      if (filters.position !== "all") params.set("position", filters.position);
-      if (filters.timer !== "all") params.set("timer", filters.timer);
-      const res = await apiFetch(`${API_BASE}/results/overview.csv?${params.toString()}`, { cache: "no-store" });
+      const query = params.toString();
+      const res = await apiFetch(`${API_BASE}/results/member-summary.csv${query ? `?${query}` : ""}`, { cache: "no-store" });
       const blob = await res.blob();
-      if (!res.ok) throw new Error("Unable to download results CSV.");
+      if (!res.ok) throw new Error("Unable to download member summary.");
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = selectedMemberId ? "range-and-react-member-results.csv" : "range-and-react-results.csv";
+      const disposition = res.headers.get("Content-Disposition") || "";
+      const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
+      link.download = filenameMatch?.[1] || "member-summary.csv";
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-      setReviewMessage("Results CSV downloaded.");
+      setReviewMessage("Member summary CSV downloaded.");
     } catch (err) {
-      setReviewMessage(err instanceof Error ? err.message : "Unable to download results CSV.");
+      setReviewMessage(err instanceof Error ? err.message : "Unable to download member summary.");
     } finally {
       setCsvBusy(false);
     }
@@ -392,8 +390,8 @@ export default function ResultsPage() {
                 <h2 style={sectionTitleStyle}>Filter recent hands, then choose one breakdown</h2>
               </div>
               <div style={filterActionsStyle}>
-                <button type="button" onClick={downloadResultsCsv} disabled={csvBusy || !payload.completed_results.length} style={primaryButtonStyle}>
-                  {csvBusy ? "Downloading…" : "Download CSV"}
+                <button type="button" onClick={downloadResultsCsv} disabled={csvBusy} style={primaryButtonStyle}>
+                  {csvBusy ? "Downloading…" : "Member summary CSV"}
                 </button>
                 <button type="button" onClick={() => { setFilters(EMPTY_FILTERS); setBreakdown("villain"); }} style={ghostButtonStyle}>Clear</button>
               </div>
@@ -758,13 +756,13 @@ function replayHref(result: ResultEntry) {
 const panelStyle: CSSProperties = { borderTop: "1px solid var(--line-soft)", paddingTop: 18 };
 const errorStyle: CSSProperties = { color: "var(--accent)", fontWeight: 700 };
 const noticeStyle: CSSProperties = { color: PALETTE.cream, border: "1px solid var(--line)", background: "var(--surface-fill-strong)", borderRadius: 14, padding: "12px 14px", fontWeight: 700 };
-const barHeaderStyle: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", marginBottom: 18 };
+const barHeaderStyle: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 18, minWidth: 0 };
 const filterActionsStyle: CSSProperties = { display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" };
 const sectionHeaderStyle: CSSProperties = { display: "grid", gap: 8, marginBottom: 16 };
 const eyebrowStyle: CSSProperties = { color: PALETTE.coral, fontSize: 12, textTransform: "uppercase", letterSpacing: 1.3, fontWeight: 900 };
 const sectionTitleStyle: CSSProperties = { margin: 0, fontSize: 26, lineHeight: 1.08 };
 const captionStyle: CSSProperties = { color: "var(--text-45)", fontSize: 11, textTransform: "uppercase", letterSpacing: 1.1, fontWeight: 800 };
-const headerStatStyle: CSSProperties = { width: 188, minHeight: 92, borderRadius: 18, padding: "14px 16px", border: "1px solid var(--line)", background: "rgba(20,18,16,1)", display: "flex", flexDirection: "column", justifyContent: "space-between" };
+const headerStatStyle: CSSProperties = { flex: "1 1 150px", minWidth: 0, minHeight: 92, borderRadius: 18, padding: "14px 16px", border: "1px solid var(--line)", background: "rgba(20,18,16,1)", display: "flex", flexDirection: "column", justifyContent: "space-between" };
 const headerStatLabelStyle: CSSProperties = { color: "inherit", opacity: 0.9, fontSize: 11, textTransform: "uppercase", letterSpacing: 1.1, fontWeight: 800 };
 const headerStatValueStyle: CSSProperties = { marginTop: 6, fontSize: 28, fontWeight: 900, color: "inherit" };
 const headerStatHelperStyle: CSSProperties = { marginTop: 4, opacity: 0.88, fontSize: 12, lineHeight: 1.45 };
@@ -781,8 +779,8 @@ const insightFocusStyle: CSSProperties = { marginTop: 8, fontSize: 24, fontWeigh
 const insightCopyStyle: CSSProperties = { marginTop: 8, color: "var(--text-65)", lineHeight: 1.6 };
 const tableStackStyle: CSSProperties = { display: "grid", gap: 18 };
 const scrollTableStackStyle: CSSProperties = { ...tableStackStyle, maxHeight: 560, overflowY: "auto", paddingRight: 6 };
-const breakdownRowStyle: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 180px) minmax(0, 1fr)", gap: 18, alignItems: "center", paddingTop: 14, borderTop: "1px solid var(--line-soft)" };
-const rowStyle: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 14, alignItems: "center", padding: 16, borderRadius: 18, background: "var(--surface-fill)", border: "1px solid var(--line)" };
+const breakdownRowStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 180px), 1fr))", gap: 18, alignItems: "center", paddingTop: 14, borderTop: "1px solid var(--line-soft)" };
+const rowStyle: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 14, alignItems: "center", flexWrap: "wrap", padding: 16, borderRadius: 18, background: "var(--surface-fill)", border: "1px solid var(--line)", minWidth: 0 };
 const rowActionsStyle: CSSProperties = { display: "flex", gap: 10, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap" };
 const rowTitleStyle: CSSProperties = { fontWeight: 800, fontSize: 15, color: PALETTE.cream };
 const rowMetaStyle: CSSProperties = { color: "var(--text-45)", fontSize: 13, marginTop: 4, lineHeight: 1.5 };
@@ -796,5 +794,5 @@ const ghostButtonStyle: CSSProperties = { padding: "10px 14px", borderRadius: 14
 const primaryButtonStyle: CSSProperties = { padding: "10px 14px", borderRadius: 14, border: `1px solid ${PALETTE.coral}`, background: PALETTE.coral, color: PALETTE.cream, fontWeight: 800 };
 const iconButtonStyle: CSSProperties = { width: 42, height: 42, borderRadius: 14, border: "1px solid var(--line)", background: "var(--surface-fill-strong)", color: PALETTE.cream, fontWeight: 900, fontSize: 20, lineHeight: 1, display: "inline-flex", alignItems: "center", justifyContent: "center" };
 const activeIconButtonStyle: CSSProperties = { borderColor: PALETTE.coral, color: PALETTE.coral };
-const secondaryLinkStyle: CSSProperties = { padding: "10px 14px", borderRadius: 14, border: "1px solid var(--line)", color: PALETTE.cream, textDecoration: "none", fontWeight: 700, background: "var(--surface-fill-strong)", whiteSpace: "nowrap" };
+const secondaryLinkStyle: CSSProperties = { padding: "10px 14px", borderRadius: 14, border: "1px solid var(--line)", color: PALETTE.cream, textDecoration: "none", fontWeight: 700, background: "var(--surface-fill-strong)", textAlign: "center" };
 const emptyStateStyle: CSSProperties = { color: "var(--text-65)", padding: "8px 0 4px", lineHeight: 1.6 };

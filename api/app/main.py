@@ -20,6 +20,7 @@ from api.app.routes.auth import router as auth_router
 from api.app.routes.dashboard import router as dashboard_router
 from api.app.routes.debug import router as debug_router
 from api.app.routes.hands import router as hands_router
+from api.app.routes.internal import router as internal_router
 from api.app.routes.platform import router as platform_router
 from api.app.routes.prune import router as prune_router
 from api.app.routes.response_matrix import router as response_matrix_router
@@ -58,6 +59,7 @@ app.add_middleware(
 )
 
 app.include_router(platform_router)
+app.include_router(internal_router)
 app.include_router(auth_router)
 app.include_router(assignments_router)
 app.include_router(dashboard_router)

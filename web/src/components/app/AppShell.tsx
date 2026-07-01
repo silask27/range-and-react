@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { API_BASE, apiFetch } from "../../lib/api";
 import { clearStoredAuth, getStoredAuthUser } from "../../lib/auth";
 import SiteFooter from "./SiteFooter";
@@ -80,8 +80,8 @@ export default function AppShell({ children, title, subtitle, headerContent }: {
               <h1 className="page-title">{title ?? pageLabel}</h1>
               {subtitle ? <p className="page-subtitle">{subtitle}</p> : null}
             </div>
-            <div style={headerRightStyle}>
-              {headerContent ? <div style={headerMetricRowStyle}>{headerContent}</div> : null}
+            <div className="page-header-side">
+              {headerContent ? <div className="page-metric-row">{headerContent}</div> : null}
             </div>
           </header>
           {children}
@@ -91,6 +91,3 @@ export default function AppShell({ children, title, subtitle, headerContent }: {
     </main>
   );
 }
-
-const headerRightStyle: CSSProperties = { display: "flex", gap: 12, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap" };
-const headerMetricRowStyle: CSSProperties = { display: "flex", gap: 12, alignItems: "stretch", flexWrap: "wrap", justifyContent: "flex-end" };

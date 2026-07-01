@@ -31,6 +31,17 @@ from api.app.services.cohort_service import (
     remove_cohort_member,
     set_cohort_coaches,
 )
+from api.app.services.data_delivery_service import (
+    COHORT_SUMMARY_FIELDNAMES,
+    MEMBER_SUMMARY_FIELDNAMES,
+    build_delivery_files,
+    cohort_summary_csv,
+    get_data_delivery_preference,
+    mark_data_delivery_sent,
+    org_cohort_summary_csv,
+    save_data_delivery_preference,
+    send_data_delivery_files,
+)
 from api.app.services.email_service import build_signup_invite_url, email_delivery_enabled, send_accountability_digest_email, send_signup_invite_email
 from api.app.services.auth_service import (
     count_users,
@@ -109,6 +120,52 @@ def _decorate_invite(invite: dict, email_delivery: dict | None = None) -> dict:
     if email_delivery is not None:
         item['email_delivery'] = email_delivery
     return item
+
+
+def _csv_response(filename: str, content: str) -> Response:
+    safe_filename = filename.replace('"', '').replace('\r', '').replace('\n', '')
+    return Response(
+        content=content,
+        media_type='text/csv',
+        headers={'Content-Disposition': f'attachment; filename="{safe_filename}"'},
+    )
+
+
+def _organization_label(current_user: UserAccount, organization_ids: list[str] | None) -> str:
+    if organization_ids and len(organization_ids) == 1:
+        org = get_organization(organization_ids[0])
+        if org is not None:
+            return str(org.get('name') or 'organization')
+    if is_platform_admin(current_user):
+        return 'all-organizations'
+    return 'organization'
+
+
+def _default_delivery_cohort_id(organization_ids: list[str] | None) -> str | None:
+    cohorts = list_cohorts(organization_ids=organization_ids)
+    return str(cohorts[0]['cohort_id']) if cohorts else None
+
+
+def _validate_delivery_cohort(current_user: UserAccount, cohort_id: str | None) -> str | None:
+    clean = str(cohort_id or '').strip() or None
+    if clean is None:
+        return None
+    cohort = get_cohort(clean)
+    if cohort is None:
+        raise HTTPException(status_code=404, detail='Cohort not found')
+    ensure_organization_access(current_user, cohort['organization_id'])
+    return clean
+
+
+def _selected_delivery_files(preference: dict) -> list[str]:
+    files = []
+    if preference.get('include_member_summary'):
+        files.append('member_summary')
+    if preference.get('include_cohort_summary'):
+        files.append('cohort_summary')
+    if preference.get('include_org_summary'):
+        files.append('org_summary')
+    return files
 
 
 def _queue_invite_email(background_tasks: BackgroundTasks, invite: dict, current_user: UserAccount) -> dict:
@@ -655,67 +712,129 @@ def admin_analytics_route(
 def admin_member_results_csv_route(current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> Response:
     org_scope, user_scope = _scope(current_user)
     rows = build_member_results_export_rows(visible_user_ids=user_scope, visible_organization_ids=org_scope)
-    fieldnames = [
-        'member_id',
-        'display_name',
-        'email',
-        'organizations',
-        'is_active',
-        'reps_done',
-        'current_range_score',
-        'current_action_score',
-        'current_overall_score',
-        'worst_opponent',
-        'worst_opponent_hands',
-        'worst_opponent_overall_score',
-        'active_assignments',
-        'completed_assignments',
-        'overdue_assignments',
-    ]
     buffer = io.StringIO()
-    writer = csv.DictWriter(buffer, fieldnames=fieldnames)
+    writer = csv.DictWriter(buffer, fieldnames=MEMBER_SUMMARY_FIELDNAMES)
     writer.writeheader()
     writer.writerows(rows)
-    return Response(
-        content=buffer.getvalue(),
-        media_type='text/csv',
-        headers={'Content-Disposition': 'attachment; filename="range-and-react-member-results.csv"'},
-    )
+    return _csv_response('member-summary.csv', buffer.getvalue())
 
 
 @router.get('/cohort-summary.csv')
 def admin_cohort_summary_csv_route(current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> Response:
     org_scope, user_scope = _scope(current_user)
-    rows = build_cohort_summary_export_rows(visible_user_ids=user_scope, visible_organization_ids=org_scope)
-    fieldnames = [
-        'cohort_id',
-        'organization',
-        'cohort',
-        'assigned_coaches',
-        'assigned_coach_emails',
-        'member_count',
-        'completed_hands',
-        'avg_range_score',
-        'avg_action_score',
-        'avg_overall_score',
-        'last_completed_at',
-        'assignment_count',
-        'active_assignments',
-        'completed_assignments',
-        'overdue_assignments',
-        'completed_reps',
-        'target_reps',
-        'rep_completion_rate',
-    ]
-    buffer = io.StringIO()
-    writer = csv.DictWriter(buffer, fieldnames=fieldnames)
-    writer.writeheader()
-    writer.writerows(rows)
-    return Response(
-        content=buffer.getvalue(),
-        media_type='text/csv',
-        headers={'Content-Disposition': 'attachment; filename="range-and-react-cohort-summary.csv"'},
+    filename, content, _ = org_cohort_summary_csv(
+        organization_label=_organization_label(current_user, org_scope),
+        visible_user_ids=user_scope,
+        visible_organization_ids=org_scope,
     )
+    return _csv_response(filename, content)
+
+
+@router.get('/cohorts/{cohort_id}/summary.csv')
+def admin_single_cohort_summary_csv_route(
+    cohort_id: str,
+    current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH)),
+) -> Response:
+    cohort = get_cohort(cohort_id)
+    if cohort is None:
+        raise HTTPException(status_code=404, detail='Cohort not found')
+    ensure_organization_access(current_user, cohort['organization_id'])
+    org_scope, user_scope = _scope(current_user)
+    filename, content, _ = cohort_summary_csv(
+        cohort_id=cohort_id,
+        visible_user_ids=user_scope,
+        visible_organization_ids=org_scope,
+    )
+    return _csv_response(filename, content)
+
+
+@router.get('/data-delivery-preferences')
+def admin_data_delivery_preferences_route(
+    current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH)),
+) -> dict:
+    org_scope, _ = _scope(current_user)
+    return {
+        'preference': get_data_delivery_preference(
+            current_user,
+            default_cohort_id=_default_delivery_cohort_id(org_scope),
+        )
+    }
+
+
+@router.patch('/data-delivery-preferences')
+def admin_update_data_delivery_preferences_route(
+    payload: dict = Body(...),
+    current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH)),
+) -> dict:
+    cohort_id = _validate_delivery_cohort(current_user, payload.get('cohort_id'))
+    try:
+        preference = save_data_delivery_preference(
+            current_user,
+            cadence=str(payload.get('cadence') or 'weekly'),
+            include_member_summary=bool(payload.get('include_member_summary')),
+            include_cohort_summary=bool(payload.get('include_cohort_summary')),
+            include_org_summary=bool(payload.get('include_org_summary')),
+            cohort_id=cohort_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {'preference': preference}
+
+
+@router.post('/data-delivery/send')
+def admin_send_data_delivery_route(
+    background_tasks: BackgroundTasks,
+    payload: dict | None = Body(default=None),
+    current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH)),
+) -> dict:
+    org_scope, user_scope = _scope(current_user)
+    preference = get_data_delivery_preference(
+        current_user,
+        default_cohort_id=_default_delivery_cohort_id(org_scope),
+    )
+    if isinstance(payload, dict) and payload:
+        preference = {
+            **preference,
+            'cadence': str(payload.get('cadence') or preference.get('cadence') or 'weekly'),
+            'include_member_summary': bool(payload.get('include_member_summary', preference.get('include_member_summary'))),
+            'include_cohort_summary': bool(payload.get('include_cohort_summary', preference.get('include_cohort_summary'))),
+            'include_org_summary': bool(payload.get('include_org_summary', preference.get('include_org_summary'))),
+            'cohort_id': payload.get('cohort_id', preference.get('cohort_id')),
+        }
+    cohort_id = _validate_delivery_cohort(current_user, preference.get('cohort_id'))
+    files = build_delivery_files(
+        user=current_user,
+        selected_files=_selected_delivery_files(preference),
+        cohort_id=cohort_id,
+        organization_label=_organization_label(current_user, org_scope),
+        visible_user_ids=user_scope,
+        visible_organization_ids=org_scope,
+    )
+    if not files:
+        raise HTTPException(status_code=400, detail='Select at least one CSV file to deliver')
+    if email_delivery_enabled():
+        background_tasks.add_task(
+            send_data_delivery_files,
+            user=current_user,
+            files=files,
+            cadence=str(preference.get('cadence') or 'weekly'),
+        )
+        mark_data_delivery_sent(current_user.user_id, cadence=str(preference.get('cadence') or 'weekly'))
+        delivery = {'status': 'queued', 'provider': 'resend', 'skipped': False}
+    else:
+        delivery = send_data_delivery_files(
+            user=current_user,
+            files=files,
+            cadence=str(preference.get('cadence') or 'weekly'),
+        ).to_dict()
+        if delivery.get('status') == 'sent':
+            mark_data_delivery_sent(current_user.user_id, cadence=str(preference.get('cadence') or 'weekly'))
+    return {
+        'queued': email_delivery_enabled(),
+        'recipient_count': 1,
+        'files': [{'filename': item['filename']} for item in files],
+        'delivery': delivery,
+    }
 
 
 @router.post('/cohort-summary/send')

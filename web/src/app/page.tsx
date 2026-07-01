@@ -77,7 +77,7 @@ export default function LandingPage() {
   }, []);
 
   return (
-    <main style={pageStyle}>
+    <main className="public-landing" style={pageStyle}>
       <section style={heroStyle}>
         <div style={heroInnerStyle}>
           <div style={heroTextStyle}>
@@ -244,32 +244,32 @@ function PillarSection({
 }
 
 const pageStyle: CSSProperties = { minHeight: "100vh", background: "var(--bg)", color: "var(--text)" };
-const heroStyle: CSSProperties = { minHeight: "100vh", display: "flex", alignItems: "center" };
-const heroInnerStyle: CSSProperties = { width: "min(100%, 1280px)", margin: "0 auto", padding: "56px 32px 48px" };
+const heroStyle: CSSProperties = { minHeight: "100svh", display: "flex", alignItems: "center" };
+const heroInnerStyle: CSSProperties = { width: "min(100%, 1280px)", margin: "0 auto", padding: "clamp(34px, 6vw, 56px) clamp(20px, 4vw, 32px) 48px" };
 const heroTextStyle: CSSProperties = { display: "grid", gap: 18, maxWidth: 1040 };
-const heroTitleStyle: CSSProperties = { margin: 0, fontSize: "clamp(64px, 7vw, 96px)", lineHeight: 0.96, letterSpacing: "-.06em", fontWeight: 840, maxWidth: 1180 };
-const heroCopyStyle: CSSProperties = { margin: 0, color: "var(--text-65)", fontSize: 28, lineHeight: 1.45, maxWidth: 980 };
+const heroTitleStyle: CSSProperties = { margin: 0, fontSize: "clamp(42px, 10vw, 96px)", lineHeight: 0.98, letterSpacing: "-.04em", fontWeight: 840, maxWidth: 1180 };
+const heroCopyStyle: CSSProperties = { margin: 0, color: "var(--text-65)", fontSize: "clamp(20px, 4.8vw, 28px)", lineHeight: 1.45, maxWidth: 980 };
 const ctaStyle: CSSProperties = { minHeight: 54, padding: "0 24px", justifySelf: "start" };
-const contentSectionStyle: CSSProperties = { width: "min(100%, 1280px)", margin: "0 auto", padding: "0 32px 56px" };
+const contentSectionStyle: CSSProperties = { width: "min(100%, 1280px)", margin: "0 auto", padding: "0 clamp(20px, 4vw, 32px) clamp(44px, 6vw, 56px)" };
 const sectionShellStyle: CSSProperties = { display: "grid", gap: 24, paddingTop: 28, borderTop: "1px solid var(--line-soft)" };
 const sectionHeaderStyle: CSSProperties = { display: "grid", gap: 14, maxWidth: 920 };
-const sectionTitleStyle: CSSProperties = { margin: 0, fontSize: 44, lineHeight: 1.05, letterSpacing: "-.04em", fontWeight: 800, maxWidth: 900 };
-const bodyStyle: CSSProperties = { margin: 0, color: "var(--text-65)", lineHeight: 1.75, fontSize: 18 };
-const statsRowStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 18 };
+const sectionTitleStyle: CSSProperties = { margin: 0, fontSize: "clamp(34px, 8vw, 44px)", lineHeight: 1.05, letterSpacing: "-.03em", fontWeight: 800, maxWidth: 900 };
+const bodyStyle: CSSProperties = { margin: 0, color: "var(--text-65)", lineHeight: 1.7, fontSize: "clamp(16px, 4vw, 18px)" };
+const statsRowStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 18 };
 const statStyle: CSSProperties = { display: "grid", gap: 8, paddingTop: 18, borderTop: "1px solid var(--line-soft)" };
-const statValueStyle: CSSProperties = { fontSize: 58, lineHeight: 1, fontWeight: 840 };
-const statLabelStyle: CSSProperties = { color: "var(--text-65)", lineHeight: 1.5, maxWidth: 220 };
-const featureGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 32 };
+const statValueStyle: CSSProperties = { fontSize: "clamp(46px, 12vw, 58px)", lineHeight: 1, fontWeight: 840 };
+const statLabelStyle: CSSProperties = { color: "var(--text-65)", lineHeight: 1.5, maxWidth: 320 };
+const featureGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))", gap: 32 };
 const featureStyle: CSSProperties = { display: "grid", gap: 10, paddingTop: 18, borderTop: "1px solid var(--line-soft)" };
-const featureTitleStyle: CSSProperties = { margin: 0, fontSize: 32, lineHeight: 1.08, letterSpacing: "-.03em", fontWeight: 800 };
-const villainGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 22 };
-const villainCardStyle: CSSProperties = { display: "grid", gridTemplateColumns: "88px minmax(0,1fr)", gap: 16, alignItems: "start", padding: "16px 0", borderTop: "1px solid var(--line-soft)" };
-const villainImageStyle: CSSProperties = { width: 88, height: 88, objectFit: "cover", borderRadius: 999, border: "1px solid var(--line)" };
-const villainNameStyle: CSSProperties = { fontSize: 26, fontWeight: 780 };
+const featureTitleStyle: CSSProperties = { margin: 0, fontSize: "clamp(26px, 6vw, 32px)", lineHeight: 1.08, letterSpacing: "-.02em", fontWeight: 800 };
+const villainGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))", gap: 22 };
+const villainCardStyle: CSSProperties = { display: "grid", gridTemplateColumns: "clamp(72px, 22vw, 88px) minmax(0,1fr)", gap: 16, alignItems: "start", padding: "16px 0", borderTop: "1px solid var(--line-soft)" };
+const villainImageStyle: CSSProperties = { width: "clamp(72px, 22vw, 88px)", height: "clamp(72px, 22vw, 88px)", objectFit: "cover", borderRadius: 999, border: "1px solid var(--line)" };
+const villainNameStyle: CSSProperties = { fontSize: "clamp(22px, 5vw, 26px)", fontWeight: 780 };
 const villainMetaStyle: CSSProperties = { color: "var(--text-45)", fontSize: 15 };
 const villainCopyStyle: CSSProperties = { color: "var(--text-65)", lineHeight: 1.6, fontSize: 15 };
-const pillarGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1.05fr) minmax(280px, 0.95fr)", gap: 28, alignItems: "center" };
-const pillarReverseStyle: CSSProperties = { gridTemplateColumns: "minmax(280px, 0.95fr) minmax(0, 1.05fr)" };
+const pillarGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 360px), 1fr))", gap: 28, alignItems: "center" };
+const pillarReverseStyle: CSSProperties = {};
 const pillarCopyStackStyle: CSSProperties = { display: "grid", gap: 14 };
-const visualCardStyle: CSSProperties = { minHeight: 260, borderRadius: 28, border: "1px solid var(--line)", background: "var(--surface-fill)", display: "grid", placeItems: "center", padding: 28 };
+const visualCardStyle: CSSProperties = { minHeight: "clamp(220px, 55vw, 300px)", borderRadius: 28, border: "1px solid var(--line)", background: "var(--surface-fill)", display: "grid", placeItems: "center", padding: "clamp(22px, 5vw, 28px)", overflow: "hidden" };
 const logoVisualStyle: CSSProperties = { width: "100%", maxWidth: 300, height: "auto", display: "block" };

@@ -83,7 +83,8 @@ type OrganizationEntry = { organization_id: string; name: string; slug: string; 
 type InviteEntry = { invite_id: string; invite_code: string; email: string | null; role: string; organization_id: string | null; membership_role: string; expires_at: string | null; consumed_at: string | null; status: string; invite_url?: string; email_delivery?: { status?: string; detail?: string | null } | null };
 type CohortEntry = { cohort_id: string; organization_id: string; name: string; description: string | null; status: string; member_count: number; coach_user_ids?: string[]; coaches?: Array<{ user_id: string; email: string; display_name: string | null; role: string; is_active: boolean }> };
 type CohortMemberEntry = { user_id: string; email: string; display_name: string | null; role: string; is_active: boolean };
-type TabKey = "analytics" | "assignments" | "members";
+type DataDeliveryPreference = { cadence: string; include_member_summary: boolean; include_cohort_summary: boolean; include_org_summary: boolean; cohort_id: string | null; last_sent_at?: string | null; next_send_at?: string | null; updated_at?: string | null };
+type TabKey = "analytics" | "assignments" | "members" | "setup";
 
 const PALETTE = { cream: "#F0EBE0", coral: "#E76F51", green: "#6A9E72", muted: "rgba(240,235,224,0.45)", soft: "rgba(240,235,224,0.08)" };
 const EMPTY_ANALYTICS: AnalyticsPayload = {
@@ -195,6 +196,25 @@ async function loadOptional<T>(loader: () => Promise<T>, fallback: T): Promise<T
   }
 }
 
+function filenameFromResponse(res: Response, fallback: string) {
+  const disposition = res.headers.get("Content-Disposition") || "";
+  const match = disposition.match(/filename="?([^";]+)"?/i);
+  return match?.[1] || fallback;
+}
+
+async function downloadCsvResponse(res: Response, fallbackFilename: string) {
+  const blob = await res.blob();
+  if (!res.ok) throw new Error("Unable to download CSV.");
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filenameFromResponse(res, fallbackFilename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 export default function AdminPage() {
   const { user, isAuthLoading, authError } = useRequireAuth();
   const [users, setUsers] = useState<UserEntry[]>([]);
@@ -202,11 +222,12 @@ export default function AdminPage() {
   const [villains, setVillains] = useState<Option[]>([]);
   const [scenarios, setScenarios] = useState<Option[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsPayload | null>(null);
-  const [digest, setDigest] = useState<AccountabilityDigest | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([]);
   const [organizations, setOrganizations] = useState<OrganizationEntry[]>([]);
   const [invites, setInvites] = useState<InviteEntry[]>([]);
   const [cohorts, setCohorts] = useState<CohortEntry[]>([]);
+  const [deliveryPreference, setDeliveryPreference] = useState<DataDeliveryPreference | null>(null);
+  const [isDeliveryBusy, setIsDeliveryBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("analytics");
@@ -378,26 +399,26 @@ export default function AdminPage() {
     );
     setAnalytics(analyticsData);
 
-    const [usersData, assignmentsData, villainsData, scenariosData, digestData, auditsData, orgsData, invitesData, cohortsData] = await Promise.all([
+    const [usersData, assignmentsData, villainsData, scenariosData, auditsData, orgsData, invitesData, cohortsData, deliveryData] = await Promise.all([
       loadOptional(() => loadPagedCollection<UserEntry>("/admin/users", "users"), []),
       loadOptional(() => loadPagedCollection<AssignmentEntry>("/admin/assignments", "assignments"), []),
       loadOptional(() => loadJson<Array<{ id: string; display_name: string }>>("/villains", "Unable to load villains."), []),
       loadOptional(() => loadJson<Array<{ id: string; display_name: string }>>("/scenarios", "Unable to load scenarios."), []),
-      loadOptional(() => loadJson<{ digest: AccountabilityDigest }>("/admin/accountability-digest", "Unable to load accountability digest."), null),
       loadOptional(() => loadPagedCollection<AuditEntry>("/admin/audit-logs", "audit_logs", 1000), []),
       loadOptional(() => loadJson<{ organizations: OrganizationEntry[] }>("/admin/organizations", "Unable to load organizations."), { organizations: [] }),
       loadOptional(() => loadJson<{ invites: InviteEntry[] }>(`/admin/signup-invites?limit=${ADMIN_COLLECTION_CAP}`, "Unable to load invites."), { invites: [] }),
       loadOptional(() => loadJson<{ cohorts: CohortEntry[] }>("/admin/cohorts", "Unable to load cohorts."), { cohorts: [] }),
+      loadOptional(() => loadJson<{ preference: DataDeliveryPreference }>("/admin/data-delivery-preferences", "Unable to load delivery settings."), null),
     ]);
     setUsers(usersData);
     setAssignments(assignmentsData);
     setVillains(villainsData.map((item) => ({ id: item.id, display_name: item.display_name })));
     setScenarios(scenariosData.map((item) => ({ id: item.id, display_name: item.display_name })));
-    setDigest(digestData?.digest ?? null);
     setAuditLogs(auditsData);
     setOrganizations(orgsData.organizations);
     setInvites(invitesData.invites);
     setCohorts(cohortsData.cohorts);
+    setDeliveryPreference(deliveryData?.preference ?? null);
     if (selectedCohortId) {
       await loadOptional(() => loadCohortMembers(selectedCohortId), undefined);
     }
@@ -660,86 +681,83 @@ export default function AdminPage() {
     URL.revokeObjectURL(url);
   }
 
-  async function handleDownloadMemberResultsCsv() {
+  async function handleDownloadSelectedCohortSummaryCsv() {
     setError(null); setNotice(null);
     try {
-      const res = await apiFetch(`${API_BASE}/admin/member-results.csv`, { cache: "no-store" });
-      const blob = await res.blob();
-      if (!res.ok) throw new Error("Unable to download member results.");
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "range-and-react-member-results.csv";
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      setNotice("Member results CSV downloaded.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to download member results.");
-    }
-  }
-
-  async function handleDownloadCohortSummaryCsv() {
-    setError(null); setNotice(null);
-    try {
-      const res = await apiFetch(`${API_BASE}/admin/cohort-summary.csv`, { cache: "no-store" });
-      const blob = await res.blob();
-      if (!res.ok) throw new Error("Unable to download cohort summary.");
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "range-and-react-cohort-summary.csv";
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      const cohortId = deliveryPreference?.cohort_id || cohorts[0]?.cohort_id || "";
+      if (!cohortId) throw new Error("Create a cohort before downloading a cohort summary.");
+      const res = await apiFetch(`${API_BASE}/admin/cohorts/${encodeURIComponent(cohortId)}/summary.csv`, { cache: "no-store" });
+      await downloadCsvResponse(res, "cohort-summary.csv");
       setNotice("Cohort summary CSV downloaded.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to download cohort summary.");
     }
   }
 
-  async function handleSendCohortSummaries() {
+  async function handleDownloadOrgSummaryCsv() {
     setError(null); setNotice(null);
     try {
-      const res = await apiFetch(`${API_BASE}/admin/cohort-summary/send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ days: 7 }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to email cohort summaries.");
-      const recipientCount = Number((data as { recipient_count?: number }).recipient_count ?? 0);
-      const skippedCount = Number((data as { skipped_cohorts?: number }).skipped_cohorts ?? 0);
-      if (recipientCount <= 0) {
-        setNotice(skippedCount ? "No cohort summaries were emailed because cohorts need assigned coaches/admins." : "No cohort summary recipients were found.");
-      } else {
-        setNotice((data as { queued?: boolean }).queued === false
-          ? `Prepared ${recipientCount} cohort summary email${recipientCount === 1 ? "" : "s"}. Email delivery is not configured in this environment.`
-          : `Queued ${recipientCount} cohort summary email${recipientCount === 1 ? "" : "s"}.`);
-      }
+      const res = await apiFetch(`${API_BASE}/admin/cohort-summary.csv`, { cache: "no-store" });
+      await downloadCsvResponse(res, "organization-cohort-summary.csv");
+      setNotice("Organization summary CSV downloaded.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to email cohort summaries.");
+      setError(err instanceof Error ? err.message : "Unable to download organization summary.");
     }
   }
 
-  function handleDownloadSampleReport() {
-    if (!analytics) return;
-    const workspaceName = organizations.length === 1 ? organizations[0].name : organizations.length > 1 ? "All workspaces" : "Workspace";
-    const nextActions = buildCoachNextActions({ analytics, memberNames: userNameById, workspaceName });
-    const rows = memberPerformanceRows.slice(0, 8);
-    const html = buildCoachReportHtml({ analytics, workspaceName, rows, nextActions });
-    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "range-and-react-coach-report.html";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    setNotice("Sample coach report downloaded.");
+  function updateDeliveryPreference(patch: Partial<DataDeliveryPreference>) {
+    setDeliveryPreference((current) => ({
+      cadence: "weekly",
+      include_member_summary: false,
+      include_cohort_summary: true,
+      include_org_summary: user?.role === "owner" || user?.role === "admin",
+      cohort_id: cohorts[0]?.cohort_id ?? null,
+      ...(current ?? {}),
+      ...patch,
+    }));
+  }
+
+  async function handleSaveDeliveryPreference() {
+    if (!deliveryPreference) return;
+    setError(null); setNotice(null); setIsDeliveryBusy(true);
+    try {
+      const res = await apiFetch(`${API_BASE}/admin/data-delivery-preferences`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(deliveryPreference),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to save delivery settings.");
+      setDeliveryPreference((data as { preference: DataDeliveryPreference }).preference);
+      setNotice("Delivery settings saved.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to save delivery settings.");
+    } finally {
+      setIsDeliveryBusy(false);
+    }
+  }
+
+  async function handleSendDeliveryNow() {
+    if (!deliveryPreference) return;
+    setError(null); setNotice(null); setIsDeliveryBusy(true);
+    try {
+      const res = await apiFetch(`${API_BASE}/admin/data-delivery/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(deliveryPreference),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to send CSV files.");
+      const files = ((data as { files?: Array<{ filename: string }> }).files ?? []).map((item) => item.filename);
+      const fileCopy = files.length ? ` ${files.join(", ")}` : "";
+      setNotice((data as { queued?: boolean }).queued === false
+        ? `Prepared${fileCopy}. Email delivery is not configured in this environment.`
+        : `Queued${fileCopy} for email delivery.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to send CSV files.");
+    } finally {
+      setIsDeliveryBusy(false);
+    }
   }
 
   async function handleRosterCsvUpload(file: File | null) {
@@ -754,23 +772,6 @@ export default function AdminPage() {
     }
     setBulkInviteState((current) => ({ ...current, emails: emails.join("\n") }));
     setNotice(`Loaded ${emails.length} email${emails.length === 1 ? "" : "s"} from the roster CSV.`);
-  }
-
-  async function handleSendDigest() {
-    setError(null); setNotice(null);
-    try {
-      const res = await apiFetch(`${API_BASE}/admin/accountability-digest/send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ days: 7 }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to send digest.");
-      setNotice((data as { queued?: boolean }).queued === false ? "Digest preview refreshed. Email delivery is not configured in this environment." : "Accountability digest queued for your email.");
-      if ((data as { digest?: AccountabilityDigest }).digest) setDigest((data as { digest: AccountabilityDigest }).digest);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to send digest.");
-    }
   }
 
   async function handleLinkExternal(event: FormEvent<HTMLFormElement>) {
@@ -865,6 +866,7 @@ export default function AdminPage() {
   const weakestVillain = analytics?.weakest_villains?.[0] ?? null;
   const workspaceName = organizations.length === 1 ? organizations[0].name : organizations.length > 1 ? "All workspaces" : "Workspace";
   const nextCoachActions = analytics ? buildCoachNextActions({ analytics, memberNames: userNameById, workspaceName }) : [];
+  const deliveryCohortId = deliveryPreference?.cohort_id || cohorts[0]?.cohort_id || "";
 
   return (
     <AppShell title="Coach" subtitle="See what the member pool is struggling with, assign the next reps, and keep operations clean." headerContent={headerStats}>
@@ -880,6 +882,7 @@ export default function AdminPage() {
               <TabButton label="Analytics" active={activeTab === "analytics"} onClick={() => setActiveTab("analytics")} />
               <TabButton label="Assignments" active={activeTab === "assignments"} onClick={() => setActiveTab("assignments")} />
               <TabButton label="Members" active={activeTab === "members"} onClick={() => setActiveTab("members")} />
+              <TabButton label="Setup" active={activeTab === "setup"} onClick={() => setActiveTab("setup")} />
             </div>
           </section>
 
@@ -889,9 +892,11 @@ export default function AdminPage() {
                 <div style={splitSectionHeaderStyle}>
                   <SectionHeader eyebrow={workspaceName} title="Pool-wide performance" />
                   <div style={actionClusterStyle}>
-                    <button type="button" onClick={() => void handleDownloadMemberResultsCsv()} style={secondaryButtonStyle}>Member results CSV</button>
-                    <button type="button" onClick={() => void handleDownloadCohortSummaryCsv()} style={secondaryButtonStyle}>Cohort summary CSV</button>
-                    <button type="button" onClick={() => void handleSendCohortSummaries()} style={primaryButtonStyle}>Email cohort summaries</button>
+                    <select value={deliveryCohortId} onChange={(event) => updateDeliveryPreference({ cohort_id: event.target.value || null })} style={{ ...inputStyle, width: "min(100%, 220px)" }} disabled={!cohorts.length}>
+                      {cohorts.length ? cohorts.map((cohort) => <option key={cohort.cohort_id} value={cohort.cohort_id}>{cohort.name}</option>) : <option value="">No cohorts yet</option>}
+                    </select>
+                    <button type="button" onClick={() => void handleDownloadSelectedCohortSummaryCsv()} style={secondaryButtonStyle}>Cohort CSV</button>
+                    <button type="button" onClick={() => void handleDownloadOrgSummaryCsv()} style={secondaryButtonStyle}>Org summary CSV</button>
                   </div>
                 </div>
                 <div style={digestStatGridStyle}>
@@ -901,6 +906,43 @@ export default function AdminPage() {
                   <DigestStat label="Members tracked" value={analytics.summary.users_tracked} />
                 </div>
               </section>
+
+              {deliveryPreference ? (
+                <section style={panelStyle}>
+                  <div style={splitSectionHeaderStyle}>
+                    <SectionHeader eyebrow="Data delivery" title="Email CSV summaries" />
+                    <div style={actionClusterStyle}>
+                      <button type="button" onClick={() => void handleSaveDeliveryPreference()} disabled={isDeliveryBusy} style={secondaryButtonStyle}>Save settings</button>
+                      <button type="button" onClick={() => void handleSendDeliveryNow()} disabled={isDeliveryBusy} style={primaryButtonStyle}>Send now</button>
+                    </div>
+                  </div>
+                  <div style={deliveryGridStyle}>
+                    <label style={labelStyle}>
+                      <span style={labelTitleStyle}>Cadence</span>
+                      <select value={deliveryPreference.cadence} onChange={(event) => updateDeliveryPreference({ cadence: event.target.value })} style={inputStyle}>
+                        <option value="weekly">Weekly</option>
+                        <option value="biweekly">Every 2 weeks</option>
+                        <option value="monthly">Monthly</option>
+                      </select>
+                    </label>
+                    <label style={checkboxRowStyle}>
+                      <input type="checkbox" checked={deliveryPreference.include_member_summary} onChange={(event) => updateDeliveryPreference({ include_member_summary: event.target.checked })} />
+                      <span>My member summary CSV</span>
+                    </label>
+                    <label style={checkboxRowStyle}>
+                      <input type="checkbox" checked={deliveryPreference.include_cohort_summary} onChange={(event) => updateDeliveryPreference({ include_cohort_summary: event.target.checked })} />
+                      <span>Selected cohort CSV</span>
+                    </label>
+                    <label style={checkboxRowStyle}>
+                      <input type="checkbox" checked={deliveryPreference.include_org_summary} onChange={(event) => updateDeliveryPreference({ include_org_summary: event.target.checked })} />
+                      <span>Org summary CSV</span>
+                    </label>
+                  </div>
+                  <div style={helperCopyStyle}>
+                    {deliveryPreference.next_send_at ? `Next scheduled email: ${new Date(deliveryPreference.next_send_at).toLocaleDateString()}.` : "Save settings to schedule recurring delivery."}
+                  </div>
+                </section>
+              ) : null}
 
               <section style={mainGridStyle}>
                 <div style={{ display: "grid", gap: 18 }}>
@@ -1102,6 +1144,11 @@ export default function AdminPage() {
                 </section>
               </section>
 
+            </section>
+          ) : null}
+
+          {activeTab === "setup" ? (
+            <section style={mainGridStyle}>
               <section style={{ display: "grid", gap: 18 }}>
                 <section style={membersTopPanelStyle}>
                   <SectionHeader eyebrow="Admin tools" title="Organizations and access setup" />
@@ -1541,17 +1588,17 @@ const scrollBoxStyle: CSSProperties = { maxHeight: 360, overflowY: "auto", displ
 const scrollRowStyle: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center", padding: "15px 16px", borderTop: "1px solid var(--line-soft)" };
 const memberFocusRowStyle: CSSProperties = { ...scrollRowStyle, textDecoration: "none", color: PALETTE.cream };
 const memberFocusMetricWrapStyle: CSSProperties = { display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" };
-const memberMaintenanceStyle: CSSProperties = { display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap", minWidth: 220 };
+const memberMaintenanceStyle: CSSProperties = { display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap", minWidth: 0 };
 const toolStackStyle: CSSProperties = { display: "grid", marginTop: 14 };
 const workspacePreviewGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))", gap: 12, marginTop: 14 };
 const workspacePreviewStyle: CSSProperties = { display: "grid", gridTemplateColumns: "52px minmax(0, 1fr)", gap: 14, alignItems: "start", padding: 14, borderRadius: 16, border: "1px solid var(--line)", background: "var(--surface-fill)" };
 const workspaceLogoStyle: CSSProperties = { width: 52, height: 52, borderRadius: 14, objectFit: "contain", border: "1px solid var(--line)", background: "rgba(240,235,224,0.04)", padding: 6 };
 const workspaceLogoFallbackStyle: CSSProperties = { width: 52, height: 52, borderRadius: 14, display: "grid", placeItems: "center", border: "1px solid var(--line)", background: "rgba(231,111,81,0.16)", color: PALETTE.cream, fontWeight: 900 };
 const sectionHeaderStyle: CSSProperties = { display: "grid", gap: 8, marginBottom: 16 };
-const splitSectionHeaderStyle: CSSProperties = { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 16 };
+const splitSectionHeaderStyle: CSSProperties = { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 16, minWidth: 0 };
 const eyebrowStyle: CSSProperties = { color: PALETTE.coral, fontSize: 12, textTransform: "uppercase", letterSpacing: 1.3, fontWeight: 900 };
 const sectionTitleStyle: CSSProperties = { margin: 0, fontSize: 26, lineHeight: 1.08 };
-const headerStatStyle: CSSProperties = { width: 188, minHeight: 92, borderRadius: 18, padding: "14px 16px", border: "1px solid var(--line)", background: "rgba(20,18,16,1)", display: "flex", flexDirection: "column", justifyContent: "space-between" };
+const headerStatStyle: CSSProperties = { flex: "1 1 150px", minWidth: 0, minHeight: 92, borderRadius: 18, padding: "14px 16px", border: "1px solid var(--line)", background: "rgba(20,18,16,1)", display: "flex", flexDirection: "column", justifyContent: "space-between" };
 const headerStatLabelStyle: CSSProperties = { color: "inherit", opacity: 0.9, fontSize: 11, textTransform: "uppercase", letterSpacing: 1.1, fontWeight: 800 };
 const headerStatValueStyle: CSSProperties = { marginTop: 6, fontSize: 28, fontWeight: 900, color: "inherit" };
 const headerStatHelperStyle: CSSProperties = { marginTop: 4, opacity: 0.88, fontSize: 12, lineHeight: 1.45 };
@@ -1559,14 +1606,15 @@ const stackStyle: CSSProperties = { display: "grid", gap: 12 };
 const digestStatGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(90px, 1fr))", gap: 10 };
 const digestStatStyle: CSSProperties = { minHeight: 82, borderRadius: 14, border: "1px solid var(--line)", background: "var(--surface-fill)", padding: "12px 13px", display: "grid", alignContent: "space-between" };
 const digestStatValueStyle: CSSProperties = { marginTop: 7, color: PALETTE.cream, fontSize: 24, fontWeight: 900 };
-const rowStyle: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 14, alignItems: "center", paddingTop: 14, borderTop: "1px solid var(--line-soft)" };
+const deliveryGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(min(100%, 210px), 260px) repeat(auto-fit, minmax(min(100%, 190px), 1fr))", gap: 12, alignItems: "end" };
+const rowStyle: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 14, alignItems: "center", flexWrap: "wrap", paddingTop: 14, borderTop: "1px solid var(--line-soft)", minWidth: 0 };
 const memberAdminRowStyle: CSSProperties = { ...rowStyle, alignItems: "flex-start", padding: "18px 18px", border: "1px solid var(--line)", borderRadius: 18, background: "var(--surface-fill)", boxShadow: "0 10px 24px rgba(0,0,0,0.16)" };
-const memberDetailRowStyle: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 16, alignItems: "center", padding: "16px 18px", border: "1px solid var(--line)", borderRadius: 18, background: "var(--surface-fill)", boxShadow: "0 10px 24px rgba(0,0,0,0.14)" };
+const memberDetailRowStyle: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center", flexWrap: "wrap", padding: "16px 18px", border: "1px solid var(--line)", borderRadius: 18, background: "var(--surface-fill)", boxShadow: "0 10px 24px rgba(0,0,0,0.14)", minWidth: 0 };
 const memberDetailScoreWrapStyle: CSSProperties = { display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" };
 const rowTitleStyle: CSSProperties = { fontWeight: 800, fontSize: 15, color: PALETTE.cream };
 const rowMetaStyle: CSSProperties = { color: PALETTE.muted, fontSize: 13, marginTop: 4, lineHeight: 1.5 };
 const rowHelperStyle: CSSProperties = { color: "rgba(240,235,224,0.65)", fontSize: 13, lineHeight: 1.55, marginTop: 4 };
-const memberMetricWrapStyle: CSSProperties = { display: "grid", gap: 8, justifyItems: "end" };
+const memberMetricWrapStyle: CSSProperties = { display: "grid", gap: 8, justifyItems: "end", minWidth: 0 };
 const metricPillStyle: CSSProperties = { padding: "6px 10px", borderRadius: 999, border: "1px solid var(--line)", background: "var(--surface-fill)", fontWeight: 800, fontSize: 12 };
 const insightCardStyle: CSSProperties = { padding: 16, borderRadius: 16, background: "var(--surface-fill)", border: "1px solid var(--line)" };
 const insightFocusStyle: CSSProperties = { marginTop: 8, fontSize: 22, fontWeight: 900, color: PALETTE.cream, lineHeight: 1.12 };
@@ -1589,13 +1637,13 @@ const dangerButtonStyle: CSSProperties = { padding: "10px 14px", borderRadius: 1
 const deleteButtonStyle: CSSProperties = { padding: "10px 14px", borderRadius: 14, border: "1px solid rgba(164, 64, 48, 0.8)", background: "#7C2D22", color: PALETTE.cream, fontWeight: 800 };
 const helperCopyStyle: CSSProperties = { color: "rgba(240,235,224,0.62)", lineHeight: 1.6, fontSize: 13 };
 const tagStyle: CSSProperties = { padding: "6px 10px", borderRadius: 999, background: "var(--surface-fill)", border: "1px solid var(--line)", color: PALETTE.cream, fontSize: 12, fontWeight: 800, textTransform: "uppercase" };
-const actionWrapStyle: CSSProperties = { display: "flex", gap: 10, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap" };
-const actionClusterStyle: CSSProperties = { display: "flex", gap: 10, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap" };
+const actionWrapStyle: CSSProperties = { display: "flex", gap: 10, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap", minWidth: 0 };
+const actionClusterStyle: CSSProperties = { display: "flex", gap: 10, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap", minWidth: 0 };
 const pillWrapStyle: CSSProperties = { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" };
 const softTagStyle: CSSProperties = { padding: "6px 10px", borderRadius: 999, background: "rgba(240,235,224,0.06)", border: "1px solid var(--line)", color: "rgba(240,235,224,0.72)", fontSize: 12, fontWeight: 700 };
 const activeTagStyle: CSSProperties = { ...tagStyle, background: PALETTE.green, border: `1px solid ${PALETTE.green}`, color: "#141210" };
 const inactiveTagStyle: CSSProperties = { ...tagStyle, background: "rgba(231,111,81,0.14)", border: `1px solid rgba(231,111,81,0.55)`, color: PALETTE.coral };
-const inviteCardRowStyle: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 14, alignItems: "flex-start", padding: "16px 18px", borderRadius: 18, border: "1px solid var(--line)", background: "var(--surface-fill)" };
+const inviteCardRowStyle: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 14, alignItems: "flex-start", flexWrap: "wrap", padding: "16px 18px", borderRadius: 18, border: "1px solid var(--line)", background: "var(--surface-fill)", minWidth: 0 };
 const inviteUrlStyle: CSSProperties = { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12, lineHeight: 1.55, color: "rgba(240,235,224,0.72)", wordBreak: "break-all" };
 const detailsStyle: CSSProperties = { borderTop: "1px solid var(--line-soft)", padding: "14px 0", margin: 0 };
 const summaryStyle: CSSProperties = { cursor: "pointer", fontWeight: 900, color: PALETTE.cream, marginBottom: 12, fontSize: 17, listStyle: "none", display: "flex", alignItems: "center", gap: 10 };

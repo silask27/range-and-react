@@ -17,7 +17,8 @@ def _utcnow_iso() -> str:
 def _clean_ids(values: Iterable[str] | None) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
-    for value in values or []:
+    raw_values = [values] if isinstance(values, str) else (values or [])
+    for value in raw_values:
         clean = str(value or "").strip()
         if not clean or clean in seen:
             continue
@@ -36,13 +37,17 @@ def _serialize_cohort(row, *, member_count: int = 0) -> dict[str, Any]:
         with get_connection() as conn:
             coach_rows = conn.execute(
                 f"""
-                SELECT DISTINCT u.user_id, u.email, u.display_name, u.role, u.is_active
+                SELECT u.user_id, u.email, u.display_name, u.role, u.is_active
                 FROM users u
-                JOIN organization_memberships om ON om.user_id = u.user_id
                 WHERE u.user_id IN ({placeholders})
-                  AND om.organization_id = ?
                   AND u.is_active = 1
-                  AND (u.role IN ('coach', 'admin', 'owner') OR om.membership_role IN ('coach', 'admin', 'owner'))
+                  AND EXISTS (
+                    SELECT 1
+                    FROM organization_memberships om
+                    WHERE om.user_id = u.user_id
+                      AND om.organization_id = ?
+                      AND (u.role IN ('coach', 'admin', 'owner') OR om.membership_role IN ('coach', 'admin', 'owner'))
+                  )
                 ORDER BY lower(COALESCE(u.display_name, u.email)) ASC
                 """,
                 (*coach_user_ids, row["organization_id"]),
@@ -220,13 +225,17 @@ def set_cohort_coaches(*, cohort_id: str, user_ids: Iterable[str]) -> dict[str, 
         with get_connection() as conn:
             rows = conn.execute(
                 f"""
-                SELECT DISTINCT u.user_id
+                SELECT u.user_id
                 FROM users u
-                JOIN organization_memberships om ON om.user_id = u.user_id
                 WHERE u.user_id IN ({placeholders})
-                  AND om.organization_id = ?
                   AND u.is_active = 1
-                  AND (u.role IN ('coach', 'admin', 'owner') OR om.membership_role IN ('coach', 'admin', 'owner'))
+                  AND EXISTS (
+                    SELECT 1
+                    FROM organization_memberships om
+                    WHERE om.user_id = u.user_id
+                      AND om.organization_id = ?
+                      AND (u.role IN ('coach', 'admin', 'owner') OR om.membership_role IN ('coach', 'admin', 'owner'))
+                  )
                 """,
                 (*ids, cohort["organization_id"]),
             ).fetchall()
