@@ -1479,12 +1479,20 @@ function Screen1PageContent() {
         padding: "22px 32px 42px",
       }}
     >
-      <TimeoutOverlay
-        open={timeoutOverlay.open}
-        subtitle={timeoutOverlay.subtitle}
-      />
+      <section className="mobile-train-block">
+        <div className="mobile-train-block__eyebrow">Train mode</div>
+        <h1 className="mobile-train-block__title">Desktop or laptop required</h1>
+        <p className="mobile-train-block__copy">
+          Train mode uses wide range grids and table controls that are not supported on phone screens. Open this hand from a desktop or laptop to train or replay it.
+        </p>
+      </section>
 
-      <div style={{ maxWidth: 1500, margin: "0 auto", display: "grid", gap: 18 }}>
+      <div className="desktop-train-content" style={{ maxWidth: 1500, margin: "0 auto", display: "grid", gap: 18 }}>
+        <TimeoutOverlay
+          open={timeoutOverlay.open}
+          subtitle={timeoutOverlay.subtitle}
+        />
+
         <TrainingHeader
           stepLabel={
             isReplayMode

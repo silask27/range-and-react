@@ -13,7 +13,6 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Home", match: (pathname) => pathname === "/dashboard" },
   { href: "/account", label: "Account", match: (pathname) => pathname.startsWith("/account") },
   { href: "/screen-1", label: "Train", match: (pathname) => pathname.startsWith("/screen-1") || pathname.startsWith("/screen-3") },
-  { href: "/study", label: "Study", match: (pathname) => pathname.startsWith("/study") },
   { href: "/results", label: "Results", match: (pathname) => pathname.startsWith("/results") },
   { href: "/review", label: "Review", match: (pathname) => pathname.startsWith("/review"), roles: ["owner", "admin", "coach"] },
   { href: "/assignments", label: "Assignments", match: (pathname) => pathname.startsWith("/assignments"), roles: ["member"] },
@@ -43,8 +42,13 @@ export default function TrainingHeader({ stepLabel, title, subtitle, stage, head
       <div className="internal-top-nav">
         {navItems.map((item) => {
           const active = item.match(pathname);
+          const classes = [
+            "internal-top-nav__tab",
+            active ? "active" : "",
+            item.href === "/screen-1" ? "nav-train-link" : "",
+          ].filter(Boolean).join(" ");
           return (
-            <Link key={item.href} href={item.href} className={`internal-top-nav__tab${active ? " active" : ""}`}>
+            <Link key={item.href} href={item.href} className={classes}>
               {item.label}
             </Link>
           );

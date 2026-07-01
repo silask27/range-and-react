@@ -1454,35 +1454,44 @@ function Screen3PageContent() {
 
   return (
     <main className="screen3-shell">
-      {isLoading ? (
-        <div className="screen3-state screen3-deal-state">
-          <div className="screen3-deal-animation" aria-hidden="true">
-            <div className="screen3-deal-card screen3-deal-card-a">A</div>
-            <div className="screen3-deal-card screen3-deal-card-b">K</div>
-            <div className="screen3-deal-card screen3-deal-card-c">Q</div>
+      <section className="mobile-train-block">
+        <div className="mobile-train-block__eyebrow">Train mode</div>
+        <h1 className="mobile-train-block__title">Desktop or laptop required</h1>
+        <p className="mobile-train-block__copy">
+          Postflop training uses a wide response matrix and table controls that are not supported on phone screens. Open this hand from a desktop or laptop to continue.
+        </p>
+      </section>
+
+      <div className="desktop-train-content">
+        {isLoading ? (
+          <div className="screen3-state screen3-deal-state">
+            <div className="screen3-deal-animation" aria-hidden="true">
+              <div className="screen3-deal-card screen3-deal-card-a">A</div>
+              <div className="screen3-deal-card screen3-deal-card-b">K</div>
+              <div className="screen3-deal-card screen3-deal-card-c">Q</div>
+            </div>
+            <p className="screen3-deal-title">Dealing Cards...</p>
           </div>
-          <p className="screen3-deal-title">Dealing Cards...</p>
-        </div>
-      ) : error && !activeHand ? (
-        <div className="screen3-state">
-          <div className="section-stack" style={{ alignItems: "center" }}>
-            <p className="screen3-error-title">Could not load postflop</p>
-            <p className="muted screen3-center-copy">{error}</p>
-            <button
-              className="btn btn-primary"
-              type="button"
-              onClick={() => window.location.reload()}
-            >
-              Reload
-            </button>
+        ) : error && !activeHand ? (
+          <div className="screen3-state">
+            <div className="section-stack" style={{ alignItems: "center" }}>
+              <p className="screen3-error-title">Could not load postflop</p>
+              <p className="muted screen3-center-copy">{error}</p>
+              <button
+                className="btn btn-primary"
+                type="button"
+                onClick={() => window.location.reload()}
+              >
+                Reload
+              </button>
+            </div>
           </div>
-        </div>
-      ) : !activeHand || !scenario || !villain || !session ? (
-        <div className="screen3-state">
-          <p className="muted">Missing hand data.</p>
-        </div>
-      ) : (
-        <div className="screen3-wrap">
+        ) : !activeHand || !scenario || !villain || !session ? (
+          <div className="screen3-state">
+            <p className="muted">Missing hand data.</p>
+          </div>
+        ) : (
+          <div className="screen3-wrap">
           <TrainingHeader
             stepLabel={isReplayMode ? `Replay ${Math.min(replayStepIndex + 1, replayPayload?.steps.length ?? 1)} of ${replayPayload?.steps.length ?? 1}` : "Step 2 of 2"}
             title="Postflop Training"
@@ -2063,13 +2072,14 @@ function Screen3PageContent() {
               </div>
             </aside>
           </div>
-        </div>
-      )}
+          </div>
+        )}
 
-      <TimeoutOverlay
-        open={isTimeoutOverlayOpen}
-        subtitle={timeoutSubtitle}
-      />
+        <TimeoutOverlay
+          open={isTimeoutOverlayOpen}
+          subtitle={timeoutSubtitle}
+        />
+      </div>
 
       <style jsx global>{`
 

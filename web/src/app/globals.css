@@ -45,6 +45,8 @@ button { cursor: pointer; }
 img { max-width: 100%; display: block; }
 ::selection { background: rgba(231,111,81,0.22); color: var(--text); }
 .public-landing { overflow-x: clip; }
+.desktop-train-content { display: contents; }
+.mobile-train-block { display: none; }
 
 .app-shell {
   width: min(100%, var(--page-max));
@@ -347,6 +349,50 @@ select::-ms-expand { display: none; }
   .btn-primary,
   .btn-success {
     width: 100%;
+  }
+
+  .nav-train-link,
+  .dashboard-train-card {
+    display: none !important;
+  }
+
+  .desktop-train-content {
+    display: none !important;
+  }
+
+  .mobile-train-block {
+    min-height: calc(100svh - 36px);
+    display: grid;
+    align-content: center;
+    gap: 12px;
+    border-top: 1px solid var(--line-soft);
+    padding: 28px 0;
+  }
+
+  .mobile-train-block__eyebrow {
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+
+  .mobile-train-block__title {
+    margin: 0;
+    font-size: 34px;
+    line-height: 1.05;
+    letter-spacing: -.03em;
+  }
+
+  .mobile-train-block__copy {
+    margin: 0;
+    color: var(--text-65);
+    font-size: 16px;
+    line-height: 1.7;
+  }
+
+  .mobile-train-note {
+    display: block !important;
   }
 }
 

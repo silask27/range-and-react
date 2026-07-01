@@ -72,8 +72,7 @@ export default function DashboardPage() {
               </>
             ) : (
               <>
-                <HomeLinkCard href={suggestion?.quick_start_url || "/screen-1"} icon={<TableIcon />} title="Train" copy={cleanedSuggestionReason || "Open the trainer and run the next live rep."} extra={<span className="badge badge-primary">{suggestion ? "Start next rep" : "Train"}</span>} />
-                <HomeLinkCard href="/study" icon={<StudyIcon />} title="Study" copy="Review default charts and adjustment points before live reps." extra={<span className="badge badge-primary">Preflop charts</span>} />
+                <HomeLinkCard className="dashboard-train-card" href={suggestion?.quick_start_url || "/screen-1"} icon={<TableIcon />} title="Train" copy={cleanedSuggestionReason || "Open the trainer and run the next live rep."} extra={<span className="badge badge-primary">{suggestion ? "Start next rep" : "Train"}</span>} />
                 <HomeLinkCard href="/assignments" icon={<ClipboardIcon />} title="Assignments" copy={topAssignment ? `${topAssignment.title} · ${topAssignment.progress.progress_count}/${topAssignment.progress.repetition_target} reps complete.` : "Coach work and guided practice appear here."} extra={<span className="badge badge-primary">{overview.summary.assignments_active} active</span>} />
               </>
             )}
@@ -94,9 +93,9 @@ function cleanTrainCopy(copy?: string | null) {
     .trim();
 }
 
-function HomeLinkCard({ href, icon, title, copy, extra }: { href: string; icon: ReactNode; title: string; copy: string; extra?: ReactNode }) {
+function HomeLinkCard({ href, icon, title, copy, extra, className }: { href: string; icon: ReactNode; title: string; copy: string; extra?: ReactNode; className?: string }) {
   return (
-    <Link href={href} style={cardStyle}>
+    <Link href={href} className={className} style={cardStyle}>
       <div style={iconWrapStyle}>{icon}</div>
       <div style={cardBodyStyle}>
         <div style={titleStyle}>{title}</div>
@@ -115,7 +114,6 @@ function TableIcon() { return iconShell(<><rect x="4" y="6" width="16" height="1
 function ChartIcon() { return iconShell(<><path d="M5 18V8" /><path d="M12 18V5" /><path d="M19 18v-9" /></>); }
 function ClipboardIcon() { return iconShell(<><rect x="6" y="5" width="12" height="15" rx="2" /><path d="M9 5.5h6v3H9z" /></>); }
 function CoachIcon() { return iconShell(<><circle cx="8" cy="10" r="2.5" /><circle cx="16" cy="10" r="2.5" /><path d="M4.8 18c.9-2 2.1-3 3.2-3s2.3 1 3.2 3" /><path d="M12.8 18c.9-2 2.1-3 3.2-3s2.3 1 3.2 3" /></>); }
-function StudyIcon() { return iconShell(<><path d="M5 6.5h6a3 3 0 0 1 3 3V19H8a3 3 0 0 1-3-3z" /><path d="M19 6.5h-5v12.5h2a3 3 0 0 0 3-3z" /></>); }
 function ReviewIcon() { return iconShell(<><path d="M6 5h12v14H6z" /><path d="M9 9h6" /><path d="M9 13h4" /><path d="M15.5 14.5l1.2 1.2 2.1-2.4" /></>); }
 function formatScore(value: number | null | undefined): string { return value == null ? "—" : `${Math.round(value)}`; }
 

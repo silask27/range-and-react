@@ -31,6 +31,11 @@ const GUIDE_SECTIONS = [
     example: "Example: if Deep Stack Study Group is only 42% through its sprint and the weakest villain is Steve, the next action is a cohort nudge plus a maniac-focused drill.",
   },
   {
+    title: "Device support",
+    copy: "Train mode is designed for desktop and laptop screens only. The range grids, table state, and postflop response matrix need enough horizontal space to be usable.",
+    example: "On a phone, use Results, Review, Assignments, Account, and Coach pages. Open assigned reps from a desktop or laptop when it is time to train.",
+  },
+  {
     title: "Member CSV",
     copy: "Coaches and admins can download one row per member with current Range Score, Action Score, Overall Score, reps done, and assignment counts. That makes external reporting easy for a coaching business.",
     example: "Example: a coaching organization can export the roster before a review call and sort by overdue assignments or lowest Action Score.",

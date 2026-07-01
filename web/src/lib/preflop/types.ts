@@ -1,7 +1,5 @@
 // web/src/lib/preflop/types.ts
 
-export type TrainStudyMode = "train" | "study";
-
 export type MatrixAction = "FOLD" | "CALL" | "RAISE";
 
 export type MatrixState = Record<string, MatrixAction>;
@@ -73,21 +71,4 @@ export type SessionResponse = {
   villain_tokens_saved: string[];
   hero_range_confirmed: boolean;
   villain_range_confirmed: boolean;
-};
-
-export type StudyMatrixAction = "fold" | "call" | "raise";
-
-export type StudyChartFamily =
-  | "RFI"
-  | "ISO"
-  | "3BET"
-  | "SQUEEZE"
-  | "3BET_DEFEND"
-  | "BB_DEFEND";
-
-export type StudyRepLike = {
-  id: string;
-  title: string;
-  subtitle?: string;
-  matrix: Record<string, StudyMatrixAction>;
 };
