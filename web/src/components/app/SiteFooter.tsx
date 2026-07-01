@@ -14,6 +14,7 @@ export default function SiteFooter({ compact = false }: { compact?: boolean }) {
         <Link href="/privacy">Privacy</Link>
         <Link href="/terms">Terms</Link>
         <Link href="/status">Status</Link>
+        <Link href="/guide">Guide</Link>
         <a href={`mailto:${SUPPORT_EMAIL}`}>Support</a>
       </div>
     </footer>

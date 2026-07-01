@@ -1,39 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import type { CSSProperties, ReactNode } from "react";
-import { API_BASE, apiFetch } from "../../lib/api";
-import { clearStoredAuth, getStoredAuthUser } from "../../lib/auth";
+import { getStoredAuthUser } from "../../lib/auth";
 
 type Role = "owner" | "admin" | "coach" | "member";
 type NavItem = { href: string; label: string; match: (pathname: string) => boolean; roles?: Role[] };
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Home", match: (pathname) => pathname === "/dashboard" },
-  { href: "/account", label: "Account", match: (pathname) => pathname.startsWith("/account") },
   { href: "/screen-1", label: "Train", match: (pathname) => pathname.startsWith("/screen-1") || pathname.startsWith("/screen-3") },
   { href: "/results", label: "Results", match: (pathname) => pathname.startsWith("/results") },
-  { href: "/review", label: "Review", match: (pathname) => pathname.startsWith("/review"), roles: ["owner", "admin", "coach"] },
   { href: "/assignments", label: "Assignments", match: (pathname) => pathname.startsWith("/assignments"), roles: ["member"] },
-  { href: "/admin", label: "Coach", match: (pathname) => pathname.startsWith("/admin"), roles: ["owner", "admin", "coach"] },
+  { href: "/coach", label: "Coach", match: (pathname) => pathname.startsWith("/coach"), roles: ["owner", "admin", "coach"] },
+  { href: "/admin", label: "Admin", match: (pathname) => pathname.startsWith("/admin"), roles: ["owner", "admin", "coach"] },
+  { href: "/account", label: "Account", match: (pathname) => pathname.startsWith("/account") },
 ];
 
 export default function TrainingHeader({ stepLabel, title, subtitle, stage, headerContent, subtitleMinHeight }: { stepLabel: string; title: string; subtitle: string; stage?: string; headerContent?: ReactNode; subtitleMinHeight?: CSSProperties["minHeight"] }) {
   const pathname = usePathname() || "/screen-1";
-  const router = useRouter();
   const user = getStoredAuthUser();
   const currentRole = ((user?.role as Role | undefined) ?? "member");
   const navItems = NAV_ITEMS.filter((item) => !item.roles || item.roles.includes(currentRole));
-
-  async function handleLogout() {
-    try {
-      await apiFetch(`${API_BASE}/auth/logout`, { method: "POST" });
-    } finally {
-      clearStoredAuth();
-      router.replace("/login");
-    }
-  }
 
   const stageToneClass = stage?.toLowerCase().includes("train mode") ? "badge-primary" : "badge-muted";
 
@@ -53,7 +42,6 @@ export default function TrainingHeader({ stepLabel, title, subtitle, stage, head
             </Link>
           );
         })}
-        <button type="button" onClick={() => void handleLogout()} className="internal-top-nav__tab">Log out</button>
       </div>
 
       <header className="page-header" style={headerStyle}>

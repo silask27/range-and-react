@@ -66,9 +66,9 @@ export default function DashboardPage() {
             <HomeLinkCard href="/account" icon={<PersonIcon />} title="Account" copy={`Signed in as ${user?.display_name || user?.email || "your account"}. Update profile, password, and access settings.`} extra={<span className="badge badge-primary">{user?.role}</span>} />
             {isCoach ? (
               <>
-                <HomeLinkCard href="/admin" icon={<ChartIcon />} title="Analytics" copy="Pool and member score trends, filters, and debrief history." extra={<div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}><span className="badge badge-success">Range Score {formatScore(coachSummary?.avg_ranging_score ?? null)}</span><span className="badge badge-primary">Action Score {formatScore(coachSummary?.avg_response_score ?? null)}</span></div>} />
-                <HomeLinkCard href="/review" icon={<ReviewIcon />} title="Review" copy="Flagged member hands for replay, notes, and coaching follow-up." extra={<span className="badge badge-primary">Flagged hands</span>} />
-                <HomeLinkCard href="/admin" icon={<CoachIcon />} title="Coach" copy={topAssignment ? `Active assignment: ${topAssignment.title}. Review analytics and assign the next reps.` : "Analytics, assignments, cohorts, and member oversight."} extra={<span className="badge badge-primary">{coachSummary?.completed_hands ?? overview.summary.completed_hands} finished hands</span>} />
+                <HomeLinkCard href="/coach" icon={<ChartIcon />} title="Coach" copy="Analytics, assignments, review queue, and reporting for the member pool." extra={<div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}><span className="badge badge-success">Range Score {formatScore(coachSummary?.avg_ranging_score ?? null)}</span><span className="badge badge-primary">Action Score {formatScore(coachSummary?.avg_response_score ?? null)}</span></div>} />
+                <HomeLinkCard href="/coach?tab=review" icon={<ReviewIcon />} title="Review" copy="Flagged member hands for replay, notes, and coaching follow-up." extra={<span className="badge badge-primary">Flagged hands</span>} />
+                <HomeLinkCard href="/admin" icon={<CoachIcon />} title="Admin" copy="Members, cohorts, invites, organizations, and access setup." extra={<span className="badge badge-primary">{coachSummary?.completed_hands ?? overview.summary.completed_hands} finished hands</span>} />
               </>
             ) : (
               <>

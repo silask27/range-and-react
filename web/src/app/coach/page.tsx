@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from "react";
 import Link from "next/link";
 import AppShell from "../../components/app/AppShell";
+import ReviewQueuePanel from "../../components/coach/ReviewQueuePanel";
 import TrendChart from "../../components/app/TrendChart";
 import { API_BASE, apiFetch } from "../../lib/api";
 import { useRequireAuth } from "../../lib/hooks/useRequireAuth";
@@ -84,7 +85,7 @@ type InviteEntry = { invite_id: string; invite_code: string; email: string | nul
 type CohortEntry = { cohort_id: string; organization_id: string; name: string; description: string | null; status: string; member_count: number; coach_user_ids?: string[]; coaches?: Array<{ user_id: string; email: string; display_name: string | null; role: string; is_active: boolean }> };
 type CohortMemberEntry = { user_id: string; email: string; display_name: string | null; role: string; is_active: boolean };
 type DataDeliveryPreference = { cadence: string; include_member_summary: boolean; include_cohort_summary: boolean; include_org_summary: boolean; cohort_id: string | null; last_sent_at?: string | null; next_send_at?: string | null; updated_at?: string | null };
-type TabKey = "analytics" | "assignments" | "members" | "setup";
+type TabKey = "analytics" | "assignments" | "review" | "reporting";
 
 const PALETTE = { cream: "#F0EBE0", coral: "#E76F51", green: "#6A9E72", muted: "rgba(240,235,224,0.45)", soft: "rgba(240,235,224,0.08)" };
 const EMPTY_ANALYTICS: AnalyticsPayload = {
@@ -215,7 +216,7 @@ async function downloadCsvResponse(res: Response, fallbackFilename: string) {
   URL.revokeObjectURL(url);
 }
 
-export default function AdminPage() {
+export default function CoachPage() {
   const { user, isAuthLoading, authError } = useRequireAuth();
   const [users, setUsers] = useState<UserEntry[]>([]);
   const [assignments, setAssignments] = useState<AssignmentEntry[]>([]);
@@ -230,7 +231,7 @@ export default function AdminPage() {
   const [isDeliveryBusy, setIsDeliveryBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<TabKey>("members");
+  const [activeTab, setActiveTab] = useState<TabKey>("analytics");
   const [createState, setCreateState] = useState({ target_type: "member", target_user_id: "", cohort_id: "", title: "", description: "", scenario_id: "", villain_profile_id: "", repetition_target: 20, minimum_overall_score: "", due_at: "" });
   const [cohortState, setCohortState] = useState({ name: "", description: "", organization_id: "", member_user_ids: [] as string[], coach_user_ids: [] as string[] });
   const [externalState, setExternalState] = useState({ user_id: "", provider: "", external_user_id: "", external_email: "" });
@@ -248,6 +249,10 @@ export default function AdminPage() {
   const canManageRoles = user?.role === "owner" || user?.role === "admin";
   const canCreateOrganizations = user?.role === "owner";
   const canDeleteUsers = user?.role === "owner" || user?.role === "admin";
+
+  useEffect(() => {
+    setActiveTab(parseCoachTab(new URLSearchParams(window.location.search).get("tab")));
+  }, []);
 
   const membershipSummaryByUserId = useMemo(() => {
     const summary = new Map<string, string[]>();
@@ -854,24 +859,25 @@ export default function AdminPage() {
     return ["member"];
   }
 
-  const headerStats = (
+  const headerStats = analytics ? (
     <>
-      <HeaderStat label="Members" value={users.length} tone="green" />
-      <HeaderStat label="Cohorts" value={cohorts.length} tone="coral" />
-      <HeaderStat label="Pending Invites" value={pendingInvitesSorted.length} tone="neutral" />
+      <HeaderStat label="Avg Range Score" value={formatScore(analytics.summary.avg_ranging_score)} tone="green" />
+      <HeaderStat label="Avg Action Score" value={formatScore(analytics.summary.avg_response_score)} tone="coral" />
+      <HeaderStat label="Assignments" value={analytics.summary.assignments_tracked} tone="neutral" />
     </>
-  );
+  ) : null;
   const averageCohortCompletion = analytics ? average(analytics.cohort_completion.map((entry) => entry.rep_completion_rate ?? entry.completion_rate)) : null;
   const weakestScenario = analytics?.weakest_scenarios?.[0] ?? null;
   const weakestVillain = analytics?.weakest_villains?.[0] ?? null;
   const workspaceName = organizations.length === 1 ? organizations[0].name : organizations.length > 1 ? "All workspaces" : "Workspace";
   const nextCoachActions = analytics ? buildCoachNextActions({ analytics, memberNames: userNameById, workspaceName }) : [];
   const deliveryCohortId = deliveryPreference?.cohort_id || cohorts[0]?.cohort_id || "";
+  const selectedCohortSummary = analytics?.cohort_completion.find((cohort) => cohort.cohort_id === deliveryCohortId) ?? null;
 
   return (
-    <AppShell title="Admin" subtitle="Manage members, cohorts, invites, organizations, and access setup." headerContent={headerStats}>
+    <AppShell title="Coach" subtitle="See what the member pool is struggling with, assign the next reps, and review flagged hands." headerContent={headerStats}>
       <style>{ADMIN_TOOL_DISCLOSURE_CSS}</style>
-      {isAuthLoading ? <div style={panelStyle}>Loading admin tools…</div> : null}
+      {isAuthLoading ? <div style={panelStyle}>Loading coach tools…</div> : null}
       {authError ? <div style={errorStyle}>{authError}</div> : null}
       {error ? <div style={errorStyle}>{error}</div> : null}
       {notice ? <div style={noticeStyle}>{notice}</div> : null}
@@ -879,201 +885,247 @@ export default function AdminPage() {
         <>
           <section style={panelStyle}>
             <div style={tabRowStyle}>
-              <TabButton label="Members" active={activeTab === "members"} onClick={() => setActiveTab("members")} />
-              <TabButton label="Setup" active={activeTab === "setup"} onClick={() => setActiveTab("setup")} />
+              <TabButton label="Analytics" active={activeTab === "analytics"} onClick={() => setActiveTab("analytics")} />
+              <TabButton label="Assignments" active={activeTab === "assignments"} onClick={() => setActiveTab("assignments")} />
+              <TabButton label="Review" active={activeTab === "review"} onClick={() => setActiveTab("review")} />
+              <TabButton label="Reporting" active={activeTab === "reporting"} onClick={() => setActiveTab("reporting")} />
             </div>
           </section>
 
-          {activeTab === "members" ? (
-            <section style={mainGridStyle}>
-              <section style={{ display: "grid", gap: 18 }}>
-                <section style={membersTopPanelStyle}>
-                  <SectionHeader eyebrow="Members" title="Accounts, roles, and organization access" />
-                  <div style={helperPanelStyle}>Use signup links for brand-new accounts. Keep this table focused on the current roster, role, organization, and maintenance actions.</div>
-                  <div style={scrollBoxStyle}>
-                    {users.length ? users.map((entry) => {
-                      const memberships = membershipSummaryByUserId.get(entry.user_id) ?? [];
-                      const canMaintain = canMaintainEntry(entry);
-                      const canEditRole = canRoleEditEntry(entry);
-                      return (
-                        <div key={entry.user_id} style={scrollRowStyle}>
-                          <div style={{ minWidth: 0 }}>
-                            <div style={rowTitleStyle}>{entry.display_name || entry.email}</div>
-                            <div style={rowMetaStyle}>{entry.email}</div>
-                            <div style={rowHelperStyle}>{memberships.length ? memberships.join(" · ") : "No organization linked"}</div>
-                          </div>
-                          <div style={memberMaintenanceStyle}>
-                            {canEditRole ? (
-                              <select value={entry.role} onChange={(event) => void handleRoleChange(entry.user_id, event.target.value)} style={compactInputStyle}>
-                                {roleOptionsForEntry(entry).map((option) => <option key={option} value={option}>{option}</option>)}
-                              </select>
-                            ) : (
-                              <span style={tagStyle}>{entry.role}</span>
-                            )}
-                            <span style={entry.is_active ? activeTagStyle : inactiveTagStyle}>{entry.is_active ? "active" : "inactive"}</span>
-                            {canMaintain ? <button type="button" onClick={() => void handleActiveToggle(entry.user_id, !entry.is_active)} style={entry.is_active ? dangerButtonStyle : successButtonStyle}>{entry.is_active ? "Deactivate" : "Reactivate"}</button> : null}
-                            {canMaintain && canDeleteUsers ? <button type="button" onClick={() => void handleDeleteUser(entry.user_id, entry.display_name || entry.email)} style={deleteButtonStyle}>Delete</button> : null}
-                          </div>
-                        </div>
-                      );
-                    }) : <EmptyState copy="No accounts yet." />}
-                  </div>
-                </section>
-
-                <section style={panelStyle}>
-                  <SectionHeader eyebrow="Invites" title="Pending signup links" />
-                  <div style={helperCopyStyle}>Pending links are shown until they are consumed or deleted.</div>
-                  <div style={scrollBoxStyle}>
-                    {pendingInvitesSorted.length ? pendingInvitesSorted.map((invite) => (
-                      <div key={invite.invite_id} style={scrollRowStyle}>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={rowTitleStyle}>{invite.email || "Open invite"}</div>
-                          <div style={rowMetaStyle}>{invite.expires_at ? `expires ${new Date(invite.expires_at).toLocaleDateString()}` : "no expiry"}</div>
-                          <div style={rowHelperStyle}>{invite.organization_id ? inviteOrganizationName.get(invite.organization_id) || "Organization" : "No organization"} · {invite.role}</div>
-                        </div>
-                        <div style={actionClusterStyle}>
-                          {invite.invite_url ? <button type="button" onClick={() => void handleCopyInvite(invite.invite_url!)} style={secondaryButtonStyle}>Copy link</button> : null}
-                          <button type="button" onClick={() => void handleDeleteInvite(invite.invite_id)} style={deleteButtonStyle}>Delete link</button>
-                        </div>
-                      </div>
-                    )) : <EmptyState copy="No pending signup invites." />}
-                  </div>
-                </section>
+          {activeTab === "analytics" ? (
+            <div style={{ display: "grid", gap: 24 }}>
+              <section style={panelStyle}>
+                <div style={splitSectionHeaderStyle}>
+                  <SectionHeader eyebrow={workspaceName} title="Pool-wide performance" />
+                </div>
+                <div style={digestStatGridStyle}>
+                  <DigestStat label="Range Score" value={formatScore(analytics.summary.avg_ranging_score)} />
+                  <DigestStat label="Action Score" value={formatScore(analytics.summary.avg_response_score)} />
+                  <DigestStat label="Finished reps" value={analytics.summary.completed_hands} />
+                  <DigestStat label="Members tracked" value={analytics.summary.users_tracked} />
+                </div>
               </section>
 
+              <section style={panelStyle}>
+                <div style={splitSectionHeaderStyle}>
+                  <SectionHeader eyebrow="Cohort comparison" title="Selected cohort snapshot" />
+                  <select value={deliveryCohortId} onChange={(event) => updateDeliveryPreference({ cohort_id: event.target.value || null })} style={{ ...inputStyle, width: 240 }} disabled={!cohorts.length}>
+                    {cohorts.length ? cohorts.map((cohort) => <option key={cohort.cohort_id} value={cohort.cohort_id}>{cohort.name}</option>) : <option value="">No cohorts yet</option>}
+                  </select>
+                </div>
+                {selectedCohortSummary ? (
+                  <>
+                    <div style={digestStatGridStyle}>
+                      <DigestStat label="Members" value={selectedCohortSummary.member_count} />
+                      <DigestStat label="Finished reps" value={selectedCohortSummary.completed_reps} />
+                      <DigestStat label="Rep completion" value={formatPercent(selectedCohortSummary.rep_completion_rate)} />
+                      <DigestStat label="Overdue assignments" value={selectedCohortSummary.overdue_assignments} />
+                    </div>
+                    <div style={helperCopyStyle}>This cohort snapshot is separate from the pool-wide chart below, so HungryHorsePoker can compare cohort progress without losing the org-wide view.</div>
+                  </>
+                ) : <EmptyState copy="Create or select a cohort to compare its progress against the pool." />}
+              </section>
+
+              <section style={mainGridStyle}>
+                <div style={{ display: "grid", gap: 18 }}>
+                <section style={panelStyle}>
+                  <SectionHeader eyebrow="Trend" title="Member-pool score progression" />
+                  {analytics.trend_points.length ? <TrendChart points={buildRunningAverageTrend(analytics.trend_points)} /> : <EmptyState copy="Complete more finished hands to unlock the pool trend." />}
+                </section>
+              </div>
+              <div style={{ display: "grid", gap: 18 }}>
+                <section style={panelStyle}>
+                  <SectionHeader eyebrow="Insights" title="What is driving the pool scores" />
+                  <div style={stackStyle}>
+                    <InsightCard tone="green" title="Range Score struggle" copy={analytics.insight_drivers.ranging.low} />
+                    <InsightCard tone="green" title="Range Score strength" copy={analytics.insight_drivers.ranging.high} />
+                    <InsightCard tone="coral" title="Action Score struggle" copy={analytics.insight_drivers.response.low} />
+                    <InsightCard tone="coral" title="Action Score strength" copy={analytics.insight_drivers.response.high} />
+                  </div>
+                </section>
+              </div>
+              </section>
+            </div>
+          ) : null}
+
+          {activeTab === "assignments" ? (
+            <section style={mainGridStyle}>
+              <section style={assignmentPanelStyle}>
+                <SectionHeader eyebrow="Create" title="Assign the next reps" />
+                <form onSubmit={handleCreateAssignment} style={formGridStyle}>
+                  <div style={twoColStyle}>
+                    <label style={labelStyle}>Assignment target<select value={createState.target_type} onChange={(event) => setCreateState((current) => ({ ...current, target_type: event.target.value, target_user_id: "", cohort_id: "" }))} style={inputStyle}>
+                      <option value="member">Single member</option>
+                      <option value="cohort">Cohort</option>
+                    </select></label>
+                    {createState.target_type === "cohort" ? (
+                      <label style={labelStyle}>Cohort<select value={createState.cohort_id} onChange={(event) => setCreateState((current) => ({ ...current, cohort_id: event.target.value }))} style={inputStyle} required>
+                        <option value="">Select cohort</option>
+                        {cohorts.map((cohort) => <option key={cohort.cohort_id} value={cohort.cohort_id}>{cohort.name} ({cohort.member_count})</option>)}
+                      </select></label>
+                    ) : (
+                      <label style={labelStyle}>Member<select value={createState.target_user_id} onChange={(event) => setCreateState((current) => ({ ...current, target_user_id: event.target.value }))} style={inputStyle} required>
+                        <option value="">Select member</option>
+                        {users.filter((entry) => entry.role === "member").map((entry) => <option key={entry.user_id} value={entry.user_id}>{entry.display_name || entry.email}</option>)}
+                      </select></label>
+                    )}
+                  </div>
+                  <label style={labelStyle}><span style={labelTitleStyle}>Title <span style={requiredStyle}>*</span></span><input value={createState.title} onChange={(event) => setCreateState((current) => ({ ...current, title: event.target.value }))} style={inputStyle} placeholder="Ex. 25 reps of 3Bet IP vs Tom" required /></label>
+                  <label style={labelStyle}>Description<textarea value={createState.description} onChange={(event) => setCreateState((current) => ({ ...current, description: event.target.value }))} style={{ ...inputStyle, minHeight: 92 }} placeholder="Optional assignment note" /></label>
+                  <div style={twoColStyle}>
+                    <label style={labelStyle}>Scenario<select value={createState.scenario_id} onChange={(event) => setCreateState((current) => ({ ...current, scenario_id: event.target.value }))} style={inputStyle}><option value="">Any scenario</option>{scenarios.map((option) => <option key={option.id} value={option.id}>{option.display_name}</option>)}</select></label>
+                    <label style={labelStyle}>Villain<select value={createState.villain_profile_id} onChange={(event) => setCreateState((current) => ({ ...current, villain_profile_id: event.target.value }))} style={inputStyle}><option value="">Any villain</option>{villains.map((option) => <option key={option.id} value={option.id}>{option.display_name}</option>)}</select></label>
+                  </div>
+                  <div style={threeColStyle}>
+                    <label style={labelStyle}>Rep target<input type="number" min={1} value={createState.repetition_target} onChange={(event) => setCreateState((current) => ({ ...current, repetition_target: Number(event.target.value) || 1 }))} style={inputStyle} required /></label>
+                    <label style={labelStyle}>Min score<input type="number" min={0} max={100} value={createState.minimum_overall_score} onChange={(event) => setCreateState((current) => ({ ...current, minimum_overall_score: event.target.value }))} style={inputStyle} placeholder="Optional" /></label>
+                    <label style={labelStyle}>Due date<input type="date" value={createState.due_at} onChange={(event) => setCreateState((current) => ({ ...current, due_at: event.target.value }))} style={inputStyle} /></label>
+                  </div>
+                  <button type="submit" style={primaryButtonStyle}>{createState.target_type === "cohort" ? "Assign to cohort" : "Create assignment"}</button>
+                </form>
+              </section>
+              <section style={assignmentPanelStyle}>
+                <SectionHeader eyebrow="Queue" title="Active coach assignments" />
+                <div style={scrollBoxStyle}>
+                  {activeAssignmentsSorted.length ? activeAssignmentsSorted.map((assignment) => (
+                    <div key={assignment.assignment_id} style={scrollRowStyle}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={rowTitleStyle}>{assignment.title}</div>
+                        <div style={rowMetaStyle}>{userNameById.get(assignment.target_user_id) || "Member"}</div>
+                        <div style={rowHelperStyle}>{assignment.progress.progress_count}/{assignment.progress.repetition_target} reps{assignment.due_at ? ` · due ${new Date(assignment.due_at).toLocaleDateString()}` : ""}</div>
+                      </div>
+                      <div style={tagStyle}>{assignment.status}</div>
+                    </div>
+                  )) : <EmptyState copy="No active assignments yet." />}
+                </div>
+              </section>
+              <section style={assignmentPanelStyle}>
+                <SectionHeader eyebrow="Cohorts" title="Groups for mass assignment" />
+                <form onSubmit={handleCreateCohort} style={formGridStyle}>
+                  <label style={labelStyle}>Name<input value={cohortState.name} onChange={(event) => setCohortState((current) => ({ ...current, name: event.target.value }))} style={inputStyle} placeholder="Ex. Study Group A" required /></label>
+                  <label style={labelStyle}>Organization<select value={cohortState.organization_id} onChange={(event) => setCohortState((current) => ({ ...current, organization_id: event.target.value }))} style={inputStyle} required>
+                    <option value="">Select organization</option>
+                    {organizations.map((org) => <option key={org.organization_id} value={org.organization_id}>{org.name}</option>)}
+                  </select></label>
+                  <MemberCheckboxList
+                    label="Members"
+                    users={memberUsers}
+                    selectedIds={cohortState.member_user_ids}
+                    onChange={(ids) => setCohortState((current) => ({ ...current, member_user_ids: ids }))}
+                  />
+                  <MemberCheckboxList
+                    label="Assigned coaches/admins"
+                    users={coachUsers}
+                    selectedIds={cohortState.coach_user_ids}
+                    onChange={(ids) => setCohortState((current) => ({ ...current, coach_user_ids: ids }))}
+                    emptyCopy="No active coaches or admins are available."
+                  />
+                  <label style={labelStyle}>Description<textarea value={cohortState.description} onChange={(event) => setCohortState((current) => ({ ...current, description: event.target.value }))} style={{ ...inputStyle, minHeight: 76 }} placeholder="Optional internal note" /></label>
+                  <button type="submit" style={secondaryButtonStyle}>Create cohort</button>
+                </form>
+                <div style={{ ...scrollBoxStyle, marginTop: 16 }}>
+                  {cohorts.length ? cohorts.map((cohort) => (
+                    <div key={cohort.cohort_id} style={scrollRowStyle}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={rowTitleStyle}>{cohort.name}</div>
+                        <div style={rowMetaStyle}>{inviteOrganizationName.get(cohort.organization_id) || "Organization"} · {cohort.member_count} members</div>
+                        <div style={rowHelperStyle}>{cohort.coaches?.length ? `Coaches: ${cohort.coaches.map((coach) => coach.display_name || coach.email).join(", ")}` : "No assigned coach/admin yet"}</div>
+                      </div>
+                      <span style={tagStyle}>{cohort.status}</span>
+                    </div>
+                  )) : <EmptyState copy="No cohorts created yet." />}
+                </div>
+                <div style={{ ...cohortEditorStyle, marginTop: 16 }}>
+                  <SectionHeader eyebrow="Membership" title="Add or remove cohort members" />
+                  <label style={labelStyle}>Cohort<select value={selectedCohortId} onChange={(event) => void handleSelectCohort(event.target.value)} style={inputStyle}>
+                    <option value="">Select cohort</option>
+                    {cohorts.map((cohort) => <option key={cohort.cohort_id} value={cohort.cohort_id}>{cohort.name} ({cohort.member_count})</option>)}
+                  </select></label>
+                  {selectedCohortId ? (
+                    <>
+                      <MemberCheckboxList
+                        label="Members in this cohort"
+                        users={memberUsers}
+                        selectedIds={cohortMemberIds}
+                        onChange={setCohortMemberIds}
+                      />
+                      <button type="button" onClick={() => void handleSaveCohortMembers()} disabled={isCohortMembersBusy} style={primaryButtonStyle}>
+                        {isCohortMembersBusy ? "Saving members…" : "Save cohort members"}
+                      </button>
+                      <MemberCheckboxList
+                        label="Assigned coaches/admins"
+                        users={coachUsers}
+                        selectedIds={cohortCoachIds}
+                        onChange={setCohortCoachIds}
+                        emptyCopy="No active coaches or admins are available."
+                      />
+                      <button type="button" onClick={() => void handleSaveCohortCoaches()} disabled={isCohortCoachesBusy} style={secondaryButtonStyle}>
+                        {isCohortCoachesBusy ? "Saving coaches…" : "Save assigned coaches"}
+                      </button>
+                    </>
+                  ) : <EmptyState copy="Select a cohort to edit its member list." />}
+                </div>
+              </section>
             </section>
           ) : null}
 
-          {activeTab === "setup" ? (
-            <section style={mainGridStyle}>
-              <section style={{ display: "grid", gap: 18 }}>
-                <section style={membersTopPanelStyle}>
-                  <SectionHeader eyebrow="Admin tools" title="Organizations and access setup" />
-                  <div style={helperCopyStyle}>Create the organization first, then send signup links. Existing users can be attached later without creating a new account.</div>
-                  {organizations.length ? (
-                    <div style={workspacePreviewGridStyle}>
-                      {organizations.map((org) => (
-                        <div key={org.organization_id} style={workspacePreviewStyle}>
-                          {org.metadata?.logo_url ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={org.metadata.logo_url} alt={`${org.name} logo`} style={workspaceLogoStyle} />
-                          ) : <div style={workspaceLogoFallbackStyle}>{org.name.slice(0, 2).toUpperCase()}</div>}
-                          <div style={{ minWidth: 0 }}>
-                            <div style={rowTitleStyle}>{org.name}</div>
-                            <div style={rowMetaStyle}>{org.members.length} rostered users · {org.slug}</div>
-                            {org.metadata?.invite_landing_copy ? <div style={rowHelperStyle}>{org.metadata.invite_landing_copy}</div> : null}
-                            {org.metadata?.coach_roster_note ? <div style={rowHelperStyle}>{org.metadata.coach_roster_note}</div> : null}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                  <div style={toolStackStyle}>
-                    {canCreateOrganizations ? (
-                      <details className="admin-tool-disclosure" style={detailsStyle}>
-                        <summary style={summaryStyle}><span className="admin-tool-caret" aria-hidden="true">›</span><span>Create organization</span></summary>
-                        <form onSubmit={handleCreateOrg} style={stackStyle}>
-                          <input value={orgState.name} onChange={(event) => setOrgState((current) => ({ ...current, name: event.target.value }))} placeholder="Organization name" style={inputStyle} required />
-                          <input value={orgState.slug} onChange={(event) => setOrgState((current) => ({ ...current, slug: event.target.value }))} placeholder="organization-slug" style={inputStyle} required />
-                          <input value={orgState.logo_url} onChange={(event) => setOrgState((current) => ({ ...current, logo_url: event.target.value }))} placeholder="Logo URL (optional)" style={inputStyle} />
-                          <input value={orgState.brand_accent} onChange={(event) => setOrgState((current) => ({ ...current, brand_accent: event.target.value }))} placeholder="Brand accent color (optional)" style={inputStyle} />
-                          <textarea value={orgState.invite_landing_copy} onChange={(event) => setOrgState((current) => ({ ...current, invite_landing_copy: event.target.value }))} placeholder="Invite landing copy (optional)" style={{ ...inputStyle, minHeight: 82 }} />
-                          <textarea value={orgState.coach_roster_note} onChange={(event) => setOrgState((current) => ({ ...current, coach_roster_note: event.target.value }))} placeholder="Coach roster note (optional)" style={{ ...inputStyle, minHeight: 82 }} />
-                          <input value={orgState.external_provider} onChange={(event) => setOrgState((current) => ({ ...current, external_provider: event.target.value }))} placeholder="External provider (optional)" style={inputStyle} />
-                          <input value={orgState.external_org_id} onChange={(event) => setOrgState((current) => ({ ...current, external_org_id: event.target.value }))} placeholder="External org ID (optional)" style={inputStyle} />
-                          <button type="submit" style={secondaryButtonStyle}>Create organization</button>
-                        </form>
-                      </details>
-                    ) : null}
+          {activeTab === "review" ? (
+            <ReviewQueuePanel user={user} />
+          ) : null}
 
-                    <details className="admin-tool-disclosure" style={detailsStyle}>
-                      <summary style={summaryStyle}><span className="admin-tool-caret" aria-hidden="true">›</span><span>Add existing user to organization</span></summary>
-                      <form onSubmit={handleAddOrgMember} style={stackStyle}>
-                        <select value={orgMemberState.organization_id} onChange={(event) => setOrgMemberState((current) => ({ ...current, organization_id: event.target.value }))} style={inputStyle} required><option value="">Select organization</option>{organizations.map((org) => <option key={org.organization_id} value={org.organization_id}>{org.name}</option>)}</select>
-                        <select value={orgMemberState.user_id} onChange={(event) => setOrgMemberState((current) => ({ ...current, user_id: event.target.value }))} style={inputStyle} required><option value="">Select user</option>{users.map((entry) => <option key={entry.user_id} value={entry.user_id}>{entry.display_name || entry.email}</option>)}</select>
-                        <label style={labelStyle}><span style={labelTitleStyle}>Organization role</span><select value={orgMemberState.membership_role} onChange={(event) => setOrgMemberState((current) => ({ ...current, membership_role: event.target.value }))} style={inputStyle}>{ORG_ROLE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
-                        <button type="submit" style={secondaryButtonStyle}>Save membership</button>
-                      </form>
-                    </details>
-
-                    <details className="admin-tool-disclosure" style={detailsStyle}>
-                      <summary style={summaryStyle}><span className="admin-tool-caret" aria-hidden="true">›</span><span>Create signup invite</span></summary>
-                      <form onSubmit={handleCreateInvite} style={stackStyle}>
-                        <label style={labelStyle}><span style={labelTitleStyle}>Invite email</span><input value={inviteState.email} onChange={(event) => setInviteState((current) => ({ ...current, email: event.target.value }))} placeholder="Required for account-specific invites" style={inputStyle} /></label>
-                        <div style={twoColStyle}>
-                          <label style={labelStyle}><span style={labelTitleStyle}>Account role</span><select value={inviteState.role} onChange={(event) => updateInviteRole(event.target.value)} style={inputStyle}>{roleOptionsForUser(canManageRoles).map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
-                          <label style={labelStyle}><span style={labelTitleStyle}>Organization</span><select value={inviteState.organization_id} onChange={(event) => setInviteState((current) => ({ ...current, organization_id: event.target.value }))} style={inputStyle}>
-                            {canManageRoles ? <option value="">No organization</option> : <option value="">Select organization</option>}
-                            {organizations.map((org) => <option key={org.organization_id} value={org.organization_id}>{org.name}</option>)}
-                          </select></label>
-                        </div>
-                        <div style={twoColStyle}>
-                          <div />
-                          <label style={labelStyle}><span style={labelTitleStyle}>Invite expires in</span><input type="number" min={1} max={90} value={inviteState.expires_in_days} onChange={(event) => setInviteState((current) => ({ ...current, expires_in_days: Number(event.target.value) || 14 }))} placeholder="Expires in days" style={inputStyle} /></label>
-                        </div>
-                        <div style={helperCopyStyle}>This is the standard onboarding path for a brand-new person.</div>
-                        <button type="submit" style={primaryButtonStyle}>Create invite</button>
-                      </form>
-                    </details>
-
-                    <details className="admin-tool-disclosure" style={detailsStyle}>
-                      <summary style={summaryStyle}><span className="admin-tool-caret" aria-hidden="true">›</span><span>Bulk roster invites</span></summary>
-                      <form onSubmit={handleCreateBulkInvites} style={stackStyle}>
-                        <div style={actionClusterStyle}>
-                          <button type="button" onClick={handleDownloadRosterTemplate} style={secondaryButtonStyle}>Download CSV template</button>
-                          <label style={{ ...secondaryButtonStyle, cursor: "pointer" }}>
-                            Import CSV
-                            <input type="file" accept=".csv,text/csv" onChange={(event) => void handleRosterCsvUpload(event.currentTarget.files?.[0] ?? null)} style={{ display: "none" }} />
-                          </label>
-                        </div>
-                        <label style={labelStyle}><span style={labelTitleStyle}>Email list</span><textarea value={bulkInviteState.emails} onChange={(event) => setBulkInviteState((current) => ({ ...current, emails: event.target.value }))} placeholder="One email per line" style={{ ...inputStyle, minHeight: 140, resize: "vertical" }} required /></label>
-                        <div style={twoColStyle}>
-                          <label style={labelStyle}><span style={labelTitleStyle}>Account role</span><select value={bulkInviteState.role} onChange={(event) => updateBulkInviteRole(event.target.value)} style={inputStyle}>{roleOptionsForUser(canManageRoles).map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
-                          <label style={labelStyle}><span style={labelTitleStyle}>Organization</span><select value={bulkInviteState.organization_id} onChange={(event) => setBulkInviteState((current) => ({ ...current, organization_id: event.target.value }))} style={inputStyle}>
-                            {canManageRoles ? <option value="">No organization</option> : <option value="">Select organization</option>}
-                            {organizations.map((org) => <option key={org.organization_id} value={org.organization_id}>{org.name}</option>)}
-                          </select></label>
-                        </div>
-                        <div style={twoColStyle}>
-                          <div />
-                          <label style={labelStyle}><span style={labelTitleStyle}>Invite expires in</span><input type="number" min={1} max={90} value={bulkInviteState.expires_in_days} onChange={(event) => setBulkInviteState((current) => ({ ...current, expires_in_days: Number(event.target.value) || 14 }))} placeholder="Expires in days" style={inputStyle} /></label>
-                        </div>
-                        <div style={helperCopyStyle}>Use this when a training company sends you a roster. The import reads the email column, then uses the role and organization selected here.</div>
-                        <button type="submit" style={primaryButtonStyle}>Create bulk invites</button>
-                      </form>
-                    </details>
-
-                    {canManageRoles ? (
-                      <details className="admin-tool-disclosure" style={detailsStyle}>
-                        <summary style={summaryStyle}><span className="admin-tool-caret" aria-hidden="true">›</span><span>Advanced · link external identity</span></summary>
-                        <form onSubmit={handleLinkExternal} style={stackStyle}>
-                          <select value={externalState.user_id} onChange={(event) => setExternalState((current) => ({ ...current, user_id: event.target.value }))} style={inputStyle} required><option value="">Select user</option>{users.map((entry) => <option key={entry.user_id} value={entry.user_id}>{entry.display_name || entry.email}</option>)}</select>
-                          <input value={externalState.provider} onChange={(event) => setExternalState((current) => ({ ...current, provider: event.target.value }))} placeholder="Provider" style={inputStyle} required />
-                          <input value={externalState.external_user_id} onChange={(event) => setExternalState((current) => ({ ...current, external_user_id: event.target.value }))} placeholder="External user ID" style={inputStyle} required />
-                          <input value={externalState.external_email} onChange={(event) => setExternalState((current) => ({ ...current, external_email: event.target.value }))} placeholder="External email (optional)" style={inputStyle} />
-                          <button type="submit" style={secondaryButtonStyle}>Link identity</button>
-                        </form>
-                      </details>
-                    ) : null}
+          {activeTab === "reporting" ? (
+            <div style={{ display: "grid", gap: 24 }}>
+              <section style={panelStyle}>
+                <div style={splitSectionHeaderStyle}>
+                  <SectionHeader eyebrow="Reporting" title="CSV exports" />
+                  <div style={actionClusterStyle}>
+                    <select value={deliveryCohortId} onChange={(event) => updateDeliveryPreference({ cohort_id: event.target.value || null })} style={{ ...inputStyle, width: 240 }} disabled={!cohorts.length}>
+                      {cohorts.length ? cohorts.map((cohort) => <option key={cohort.cohort_id} value={cohort.cohort_id}>{cohort.name}</option>) : <option value="">No cohorts yet</option>}
+                    </select>
+                    <button type="button" onClick={() => void handleDownloadSelectedCohortSummaryCsv()} style={secondaryButtonStyle}>Cohort CSV</button>
+                    <button type="button" onClick={() => void handleDownloadOrgSummaryCsv()} style={secondaryButtonStyle}>Org summary CSV</button>
                   </div>
-                </section>
-
-                <section style={panelStyle}>
-                  <SectionHeader eyebrow="Audit" title="Recent admin activity" />
-                  <div style={scrollBoxStyle}>
-                    {auditLogsSorted.length ? auditLogsSorted.map((entry) => (
-                      <div key={entry.audit_log_id} style={scrollRowStyle}>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={rowTitleStyle}>{entry.action_type}</div>
-                          <div style={rowMetaStyle}>{entry.target_user_id ? userNameById.get(entry.target_user_id) || "User" : "System"}</div>
-                        </div>
-                        <div style={rowMetaStyle}>{new Date(entry.created_at).toLocaleDateString()}</div>
-                      </div>
-                    )) : <EmptyState copy="No audit events yet." />}
-                  </div>
-                </section>
+                </div>
+                <div style={helperCopyStyle}>Use this section for exports and scheduled delivery. Analytics above stays pool-wide unless a cohort section is explicitly labeled.</div>
               </section>
-            </section>
+
+              {deliveryPreference ? (
+                <section style={panelStyle}>
+                  <div style={splitSectionHeaderStyle}>
+                    <SectionHeader eyebrow="Data delivery" title="Email CSV summaries" />
+                    <div style={actionClusterStyle}>
+                      <button type="button" onClick={() => void handleSaveDeliveryPreference()} disabled={isDeliveryBusy} style={secondaryButtonStyle}>Save settings</button>
+                      <button type="button" onClick={() => void handleSendDeliveryNow()} disabled={isDeliveryBusy} style={primaryButtonStyle}>Send now</button>
+                    </div>
+                  </div>
+                  <div style={deliveryGridStyle}>
+                    <label style={labelStyle}>
+                      <span style={labelTitleStyle}>Cadence</span>
+                      <select value={deliveryPreference.cadence} onChange={(event) => updateDeliveryPreference({ cadence: event.target.value })} style={inputStyle}>
+                        <option value="weekly">Weekly</option>
+                        <option value="biweekly">Every 2 weeks</option>
+                        <option value="monthly">Monthly</option>
+                      </select>
+                    </label>
+                    <label style={checkboxRowStyle}>
+                      <input type="checkbox" checked={deliveryPreference.include_member_summary} onChange={(event) => updateDeliveryPreference({ include_member_summary: event.target.checked })} />
+                      <span>My member summary CSV</span>
+                    </label>
+                    <label style={checkboxRowStyle}>
+                      <input type="checkbox" checked={deliveryPreference.include_cohort_summary} onChange={(event) => updateDeliveryPreference({ include_cohort_summary: event.target.checked })} />
+                      <span>Selected cohort CSV</span>
+                    </label>
+                    <label style={checkboxRowStyle}>
+                      <input type="checkbox" checked={deliveryPreference.include_org_summary} onChange={(event) => updateDeliveryPreference({ include_org_summary: event.target.checked })} />
+                      <span>Org summary CSV</span>
+                    </label>
+                  </div>
+                  <div style={helperCopyStyle}>
+                    {deliveryPreference.next_send_at ? `Next scheduled email: ${new Date(deliveryPreference.next_send_at).toLocaleDateString()}.` : "Save settings to schedule recurring delivery."}
+                  </div>
+                </section>
+              ) : null}
+            </div>
           ) : null}
 
         </>
@@ -1154,6 +1206,10 @@ function ScoreBreakdownList({ title, rows }: { title: string; rows: ScoreBreakdo
   );
 }
 function EmptyState({ copy }: { copy: string }) { return <div style={emptyStateStyle}>{copy}</div>; }
+
+function parseCoachTab(value: string | null): TabKey {
+  return value === "assignments" || value === "review" || value === "reporting" ? value : "analytics";
+}
 
 function MemberCheckboxList({
   label,

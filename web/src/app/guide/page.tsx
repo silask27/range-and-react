@@ -27,13 +27,13 @@ const GUIDE_SECTIONS = [
   },
   {
     title: "Coach command center",
-    copy: "The coach view rolls member work into cohort completion, struggling members, weakest scenarios, weakest villains, and overdue assignments. It is built to answer what a coach should do next.",
+    copy: "The Coach page rolls member work into pool-wide analytics, cohort comparison, assignments, flagged-hand review, and reporting. It is built to answer what a coach should do next.",
     example: "Example: if Deep Stack Study Group is only 42% through its sprint and the weakest villain is Steve, the next action is a cohort nudge plus a maniac-focused drill.",
   },
   {
     title: "Device support",
     copy: "Train mode is designed for desktop and laptop screens only. The range grids, table state, and postflop response matrix need enough horizontal space to be usable.",
-    example: "On a phone, use Results, Review, Assignments, Account, and Coach pages. Open assigned reps from a desktop or laptop when it is time to train.",
+    example: "On a phone, use Results, Assignments, Account, Coach, and Admin pages. Open assigned reps from a desktop or laptop when it is time to train.",
   },
   {
     title: "Member CSV",

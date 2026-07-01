@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
+import Link from "next/link";
 import AppShell from "../../components/app/AppShell";
 import { API_BASE, apiFetch } from "../../lib/api";
 import { clearStoredAuth, getStoredAuthUser, setStoredAuthUser } from "../../lib/auth";
@@ -9,6 +10,8 @@ import { useRequireAuth } from "../../lib/hooks/useRequireAuth";
 type ExternalIdentity = { provider: string; external_user_id: string; external_email: string | null; created_at: string };
 type Organization = { organization_id: string; name: string; slug: string; membership_role?: string; external_provider: string | null };
 type MePayload = { user: { user_id: string; email: string; display_name: string | null; role: string; is_active: boolean }; external_identities: ExternalIdentity[]; organizations: Organization[] };
+
+const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL ?? "support@rangeandreact.com";
 
 export default function AccountPage() {
   const { user, isAuthLoading, authError } = useRequireAuth();
@@ -137,6 +140,15 @@ export default function AccountPage() {
     }
   }
 
+  async function handleLogout() {
+    try {
+      await apiFetch(`${API_BASE}/auth/logout`, { method: "POST" });
+    } finally {
+      clearStoredAuth();
+      window.location.href = "/login";
+    }
+  }
+
   return (
     <AppShell title="Account" subtitle="Update profile, security, linked access, and account exports in one place.">
       {isAuthLoading || isLoading ? <div style={copyStyle}>Loading account…</div> : null}
@@ -211,6 +223,21 @@ export default function AccountPage() {
               <button onClick={() => void handleDeactivate()} className="btn-primary" style={wideButtonStyle}>Deactivate account</button>
               <div style={copyStyle}>Deactivation signs you out and marks the account inactive until an admin reactivates it.</div>
             </div>
+
+            <div className="divider" />
+
+            <div>
+              <div className="page-eyebrow">Help and session</div>
+              <h2 style={sectionTitleStyle}>Docs, support, and logout</h2>
+            </div>
+            <div style={linkGridStyle}>
+              <Link href="/guide" style={accountLinkStyle}>Guide</Link>
+              <Link href="/privacy" style={accountLinkStyle}>Privacy</Link>
+              <Link href="/terms" style={accountLinkStyle}>Terms</Link>
+              <Link href="/status" style={accountLinkStyle}>Status</Link>
+              <a href={`mailto:${SUPPORT_EMAIL}`} style={accountLinkStyle}>Support</a>
+              <button type="button" onClick={() => void handleLogout()} style={logoutButtonStyle}>Log out</button>
+            </div>
           </section>
         </div>
       ) : null}
@@ -224,6 +251,9 @@ const labelStyle: CSSProperties = { display: "grid", gap: 8, color: "var(--text-
 const stackStyle: CSSProperties = { display: "grid", gap: 12 };
 const lineRowStyle: CSSProperties = { display: "grid", gap: 4, paddingTop: 10, borderTop: "1px solid var(--line-soft)" };
 const wideButtonStyle: CSSProperties = { width: "100%", minHeight: 52 };
+const linkGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 150px), 1fr))", gap: 10 };
+const accountLinkStyle: CSSProperties = { border: "1px solid var(--line)", borderRadius: 12, padding: "12px 13px", color: "var(--text)", fontWeight: 850, textAlign: "center", background: "var(--surface-fill)" };
+const logoutButtonStyle: CSSProperties = { ...accountLinkStyle, cursor: "pointer" };
 const copyStyle: CSSProperties = { color: "var(--text-65)", lineHeight: 1.7 };
 const errorStyle: CSSProperties = { color: "var(--accent)", fontWeight: 700 };
 const noticeStyle: CSSProperties = { color: "var(--success)", fontWeight: 700 };

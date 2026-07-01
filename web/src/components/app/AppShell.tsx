@@ -1,10 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import { API_BASE, apiFetch } from "../../lib/api";
-import { clearStoredAuth, getStoredAuthUser } from "../../lib/auth";
+import { getStoredAuthUser } from "../../lib/auth";
 import SiteFooter from "./SiteFooter";
 
 type Role = "owner" | "admin" | "coach" | "member";
@@ -12,13 +11,12 @@ type NavItem = { href: string; label: string; match: (pathname: string) => boole
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Home", match: (pathname) => pathname === "/dashboard" },
-  { href: "/account", label: "Account", match: (pathname) => pathname.startsWith("/account") },
   { href: "/screen-1", label: "Train", match: (pathname) => pathname.startsWith("/screen-1") || pathname.startsWith("/screen-3") },
   { href: "/results", label: "Results", match: (pathname) => pathname.startsWith("/results") },
-  { href: "/review", label: "Review", match: (pathname) => pathname.startsWith("/review"), roles: ["owner", "admin", "coach"] },
   { href: "/assignments", label: "Assignments", match: (pathname) => pathname.startsWith("/assignments"), roles: ["member"] },
-  { href: "/admin", label: "Coach", match: (pathname) => pathname.startsWith("/admin"), roles: ["owner", "admin", "coach"] },
-  { href: "/guide", label: "Guide", match: (pathname) => pathname.startsWith("/guide") },
+  { href: "/coach", label: "Coach", match: (pathname) => pathname.startsWith("/coach"), roles: ["owner", "admin", "coach"] },
+  { href: "/admin", label: "Admin", match: (pathname) => pathname.startsWith("/admin"), roles: ["owner", "admin", "coach"] },
+  { href: "/account", label: "Account", match: (pathname) => pathname.startsWith("/account") },
 ];
 
 const PAGE_LABELS: Record<string, string> = {
@@ -29,13 +27,13 @@ const PAGE_LABELS: Record<string, string> = {
   "/results": "Results",
   "/review": "Review",
   "/assignments": "Assignments",
-  "/admin": "Coach",
+  "/coach": "Coach",
+  "/admin": "Admin",
   "/guide": "Guide",
 };
 
 export default function AppShell({ children, title, subtitle, headerContent }: { children: ReactNode; title?: string; subtitle?: string; headerContent?: ReactNode }) {
   const pathname = usePathname() || "/dashboard";
-  const router = useRouter();
   const [storedRole, setStoredRole] = useState<Role | null>(null);
 
   useEffect(() => {
@@ -46,15 +44,6 @@ export default function AppShell({ children, title, subtitle, headerContent }: {
   const currentRole = storedRole ?? "member";
   const navItems = NAV_ITEMS.filter((item) => !item.roles || item.roles.includes(currentRole));
   const pageLabel = PAGE_LABELS[Object.keys(PAGE_LABELS).find((key) => pathname.startsWith(key)) || "/dashboard"];
-
-  async function handleLogout() {
-    try {
-      await apiFetch(`${API_BASE}/auth/logout`, { method: "POST" });
-    } finally {
-      clearStoredAuth();
-      router.replace("/login");
-    }
-  }
 
   return (
     <main style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)" }}>
@@ -73,7 +62,6 @@ export default function AppShell({ children, title, subtitle, headerContent }: {
               </Link>
             );
           })}
-          <button type="button" onClick={handleLogout} className="internal-top-nav__tab">Log out</button>
         </div>
 
         <div className="page-stack">
