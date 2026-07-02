@@ -83,7 +83,6 @@ type AuditEntry = { audit_log_id: string; action_type: string; created_at: strin
 type OrganizationEntry = { organization_id: string; name: string; slug: string; external_provider: string | null; metadata?: { logo_url?: string; invite_landing_copy?: string; brand_accent?: string; coach_roster_note?: string }; members: Array<{ user_id: string; display_name: string | null; email: string; membership_role: string }> };
 type InviteEntry = { invite_id: string; invite_code: string; email: string | null; role: string; organization_id: string | null; membership_role: string; expires_at: string | null; consumed_at: string | null; status: string; invite_url?: string; email_delivery?: { status?: string; detail?: string | null } | null };
 type CohortEntry = { cohort_id: string; organization_id: string; name: string; description: string | null; status: string; member_count: number; coach_user_ids?: string[]; coaches?: Array<{ user_id: string; email: string; display_name: string | null; role: string; is_active: boolean }> };
-type CohortMemberEntry = { user_id: string; email: string; display_name: string | null; role: string; is_active: boolean };
 type DataDeliveryPreference = { cadence: string; include_member_summary: boolean; include_cohort_summary: boolean; include_org_summary: boolean; cohort_id: string | null; last_sent_at?: string | null; next_send_at?: string | null; updated_at?: string | null };
 type TabKey = "analytics" | "assignments" | "review" | "reporting";
 
@@ -258,18 +257,11 @@ export default function CoachPage() {
   const [activeTab, setActiveTab] = useState<TabKey>("analytics");
   const [analyticsScope, setAnalyticsScope] = useState("all");
   const [createState, setCreateState] = useState({ target_type: "member", target_user_id: "", cohort_id: "", title: "", description: "", scenario_id: "", villain_profile_id: "", repetition_target: 20, minimum_overall_score: "", due_at: "" });
-  const [cohortState, setCohortState] = useState({ name: "", description: "", organization_id: "", member_user_ids: [] as string[], coach_user_ids: [] as string[] });
   const [externalState, setExternalState] = useState({ user_id: "", provider: "", external_user_id: "", external_email: "" });
   const [orgState, setOrgState] = useState({ name: "", slug: "", logo_url: "", invite_landing_copy: "", brand_accent: "", coach_roster_note: "", external_provider: "", external_org_id: "" });
   const [orgMemberState, setOrgMemberState] = useState({ organization_id: "", user_id: "", membership_role: "member" });
   const [inviteState, setInviteState] = useState({ email: "", role: "member", organization_id: "", expires_in_days: 14 });
   const [bulkInviteState, setBulkInviteState] = useState({ emails: "", role: "member", organization_id: "", expires_in_days: 14 });
-  const [selectedCohortId, setSelectedCohortId] = useState("");
-  const [cohortMemberIds, setCohortMemberIds] = useState<string[]>([]);
-  const [savedCohortMemberIds, setSavedCohortMemberIds] = useState<string[]>([]);
-  const [isCohortMembersBusy, setIsCohortMembersBusy] = useState(false);
-  const [cohortCoachIds, setCohortCoachIds] = useState<string[]>([]);
-  const [isCohortCoachesBusy, setIsCohortCoachesBusy] = useState(false);
 
   const canManageRoles = user?.role === "owner" || user?.role === "admin";
   const canCreateOrganizations = user?.role === "owner";
@@ -329,15 +321,6 @@ export default function CoachPage() {
       .slice()
       .sort((a, b) => dueSortValue(a.expires_at) - dueSortValue(b.expires_at) || (a.email || "").localeCompare(b.email || ""));
   }, [invites]);
-
-  const memberUsers = useMemo(
-    () => users.filter((entry) => entry.role === "member" && entry.is_active),
-    [users],
-  );
-  const coachUsers = useMemo(
-    () => users.filter((entry) => ["coach", "admin", "owner"].includes(entry.role) && entry.is_active),
-    [users],
-  );
 
   const auditLogsSorted = useMemo(() => {
     return auditLogs.slice().sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
@@ -461,9 +444,6 @@ export default function CoachPage() {
     setScenarios(scenariosData.map((item) => ({ id: item.id, display_name: item.display_name })));
     setOrganizations(orgsData.organizations);
     setCohorts(cohortsData.cohorts);
-    if (selectedCohortId) {
-      await loadOptional(() => loadCohortMembers(selectedCohortId), undefined);
-    }
     setIsAssignmentDataLoading(false);
   }
 
@@ -523,119 +503,6 @@ export default function CoachPage() {
       await refreshActiveData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to create assignment.");
-    }
-  }
-
-  async function handleCreateCohort(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError(null); setNotice(null);
-    try {
-      const res = await apiFetch(`${API_BASE}/admin/cohorts`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: cohortState.name,
-          description: cohortState.description || undefined,
-          organization_id: cohortState.organization_id || undefined,
-          user_ids: cohortState.member_user_ids,
-          coach_user_ids: cohortState.coach_user_ids,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to create cohort.");
-      setCohortState({ name: "", description: "", organization_id: "", member_user_ids: [], coach_user_ids: [] });
-      setNotice("Cohort created.");
-      await refreshActiveData();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to create cohort.");
-    }
-  }
-
-  async function loadCohortMembers(cohortId: string) {
-    if (!cohortId) {
-      setCohortMemberIds([]);
-      setSavedCohortMemberIds([]);
-      return;
-    }
-    const res = await apiFetch(`${API_BASE}/admin/cohorts/${encodeURIComponent(cohortId)}/members`, { cache: "no-store" });
-    const data = await res.json();
-    if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to load cohort members.");
-    const ids = ((data as { members?: CohortMemberEntry[] }).members ?? [])
-      .filter((member) => member.role === "member")
-      .map((member) => member.user_id);
-    setCohortMemberIds(ids);
-    setSavedCohortMemberIds(ids);
-  }
-
-  async function handleSelectCohort(cohortId: string) {
-    setSelectedCohortId(cohortId);
-    setError(null);
-    setNotice(null);
-    const selected = cohorts.find((cohort) => cohort.cohort_id === cohortId);
-    setCohortCoachIds(selected?.coach_user_ids ?? []);
-    try {
-      await loadCohortMembers(cohortId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to load cohort members.");
-    }
-  }
-
-  async function handleSaveCohortCoaches() {
-    if (!selectedCohortId) return;
-    setIsCohortCoachesBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const res = await apiFetch(`${API_BASE}/admin/cohorts/${encodeURIComponent(selectedCohortId)}/coaches`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_ids: cohortCoachIds }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to update cohort coaches.");
-      setNotice("Cohort coaches updated.");
-      await refreshActiveData();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to update cohort coaches.");
-    } finally {
-      setIsCohortCoachesBusy(false);
-    }
-  }
-
-  async function handleSaveCohortMembers() {
-    if (!selectedCohortId) return;
-    setIsCohortMembersBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const nextIds = new Set(cohortMemberIds);
-      const previousIds = new Set(savedCohortMemberIds);
-      const toAdd = cohortMemberIds.filter((id) => !previousIds.has(id));
-      const toRemove = savedCohortMemberIds.filter((id) => !nextIds.has(id));
-
-      if (toAdd.length) {
-        const addRes = await apiFetch(`${API_BASE}/admin/cohorts/${encodeURIComponent(selectedCohortId)}/members`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ user_ids: toAdd }),
-        });
-        const addData = await addRes.json();
-        if (!addRes.ok) throw new Error(typeof addData.detail === "string" ? addData.detail : "Unable to add cohort members.");
-      }
-
-      for (const userId of toRemove) {
-        const removeRes = await apiFetch(`${API_BASE}/admin/cohorts/${encodeURIComponent(selectedCohortId)}/members/${encodeURIComponent(userId)}`, { method: "DELETE" });
-        const removeData = await removeRes.json();
-        if (!removeRes.ok) throw new Error(typeof removeData.detail === "string" ? removeData.detail : "Unable to remove cohort member.");
-      }
-
-      setNotice("Cohort members updated.");
-      await refreshActiveData();
-      await loadCohortMembers(selectedCohortId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to update cohort members.");
-    } finally {
-      setIsCohortMembersBusy(false);
     }
   }
 
@@ -1075,30 +942,11 @@ export default function CoachPage() {
                 </div>
               </section>
               <section style={assignmentPanelStyle}>
-                <SectionHeader eyebrow="Cohorts" title="Groups for mass assignment" />
-                <form onSubmit={handleCreateCohort} style={formGridStyle}>
-                  <label style={labelStyle}>Name<input value={cohortState.name} onChange={(event) => setCohortState((current) => ({ ...current, name: event.target.value }))} style={inputStyle} placeholder="Ex. Study Group A" required /></label>
-                  <label style={labelStyle}>Organization<select value={cohortState.organization_id} onChange={(event) => setCohortState((current) => ({ ...current, organization_id: event.target.value }))} style={inputStyle} required>
-                    <option value="">Select organization</option>
-                    {organizations.map((org) => <option key={org.organization_id} value={org.organization_id}>{org.name}</option>)}
-                  </select></label>
-                  <MemberCheckboxList
-                    label="Members"
-                    users={memberUsers}
-                    selectedIds={cohortState.member_user_ids}
-                    onChange={(ids) => setCohortState((current) => ({ ...current, member_user_ids: ids }))}
-                  />
-                  <MemberCheckboxList
-                    label="Assigned coaches/admins"
-                    users={coachUsers}
-                    selectedIds={cohortState.coach_user_ids}
-                    onChange={(ids) => setCohortState((current) => ({ ...current, coach_user_ids: ids }))}
-                    emptyCopy="No active coaches or admins are available."
-                  />
-                  <label style={labelStyle}>Description<textarea value={cohortState.description} onChange={(event) => setCohortState((current) => ({ ...current, description: event.target.value }))} style={{ ...inputStyle, minHeight: 76 }} placeholder="Optional internal note" /></label>
-                  <button type="submit" style={secondaryButtonStyle}>Create cohort</button>
-                </form>
-                <div style={{ ...scrollBoxStyle, marginTop: 16 }}>
+                <div style={splitSectionHeaderStyle}>
+                  <SectionHeader eyebrow="Cohort targets" title="Assignment groups" />
+                  <Link href="/admin" style={{ ...secondaryButtonStyle, textDecoration: "none" }}>Manage cohorts</Link>
+                </div>
+                <div style={scrollBoxStyle}>
                   {cohorts.length ? cohorts.map((cohort) => (
                     <div key={cohort.cohort_id} style={scrollRowStyle}>
                       <div style={{ minWidth: 0 }}>
@@ -1108,37 +956,7 @@ export default function CoachPage() {
                       </div>
                       <span style={tagStyle}>{cohort.status}</span>
                     </div>
-                  )) : <EmptyState copy="No cohorts created yet." />}
-                </div>
-                <div style={{ ...cohortEditorStyle, marginTop: 16 }}>
-                  <SectionHeader eyebrow="Membership" title="Add or remove cohort members" />
-                  <label style={labelStyle}>Cohort<select value={selectedCohortId} onChange={(event) => void handleSelectCohort(event.target.value)} style={inputStyle}>
-                    <option value="">Select cohort</option>
-                    {cohorts.map((cohort) => <option key={cohort.cohort_id} value={cohort.cohort_id}>{cohort.name} ({cohort.member_count})</option>)}
-                  </select></label>
-                  {selectedCohortId ? (
-                    <>
-                      <MemberCheckboxList
-                        label="Members in this cohort"
-                        users={memberUsers}
-                        selectedIds={cohortMemberIds}
-                        onChange={setCohortMemberIds}
-                      />
-                      <button type="button" onClick={() => void handleSaveCohortMembers()} disabled={isCohortMembersBusy} style={primaryButtonStyle}>
-                        {isCohortMembersBusy ? "Saving members…" : "Save cohort members"}
-                      </button>
-                      <MemberCheckboxList
-                        label="Assigned coaches/admins"
-                        users={coachUsers}
-                        selectedIds={cohortCoachIds}
-                        onChange={setCohortCoachIds}
-                        emptyCopy="No active coaches or admins are available."
-                      />
-                      <button type="button" onClick={() => void handleSaveCohortCoaches()} disabled={isCohortCoachesBusy} style={secondaryButtonStyle}>
-                        {isCohortCoachesBusy ? "Saving coaches…" : "Save assigned coaches"}
-                      </button>
-                    </>
-                  ) : <EmptyState copy="Select a cohort to edit its member list." />}
+                  )) : <EmptyState copy="No cohort targets yet." />}
                 </div>
               </section>
             </section>

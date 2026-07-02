@@ -35,16 +35,119 @@ def _clean_ids(values: Iterable[str] | None) -> list[str]:
 
 
 def _serialize_org_row(row) -> dict[str, Any]:
+    metadata = json_loads(row['metadata_json'])
+    access_status = organization_access_status(metadata)
     return {
         'organization_id': row['organization_id'],
         'name': row['name'],
         'slug': row['slug'],
         'external_provider': row['external_provider'],
         'external_org_id': row['external_org_id'],
-        'metadata': json_loads(row['metadata_json']),
+        'metadata': metadata,
+        'access_status': access_status,
+        'trial_ends_at': metadata.get('trial_ends_at'),
         'created_at': row['created_at'],
         'updated_at': row['updated_at'],
     }
+
+
+def _parse_iso_date(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    try:
+        if len(raw) == 10:
+            raw = f'{raw}T23:59:59+00:00'
+        return datetime.fromisoformat(raw.replace('Z', '+00:00')).astimezone(UTC)
+    except ValueError:
+        return None
+
+
+def organization_access_status(metadata: dict[str, Any] | None) -> str:
+    data = metadata or {}
+    explicit_status = str(data.get('access_status') or 'active').strip().lower()
+    if explicit_status == 'paused':
+        return 'paused'
+    trial_ends_at = _parse_iso_date(data.get('trial_ends_at'))
+    if trial_ends_at is not None and trial_ends_at < datetime.now(UTC):
+        return 'trial_expired'
+    if trial_ends_at is not None:
+        return 'trial'
+    return 'active'
+
+
+def organization_has_access(metadata: dict[str, Any] | None) -> bool:
+    return organization_access_status(metadata) in {'active', 'trial'}
+
+
+def user_has_active_organization_access(user_id: str) -> bool:
+    organizations = list_user_organizations(user_id)
+    if not organizations:
+        return True
+    return any(organization_has_access(org.get('metadata')) for org in organizations)
+
+
+def update_organization_settings(
+    *,
+    organization_id: str,
+    name: str | None = None,
+    slug: str | None = None,
+    external_provider: str | None = None,
+    external_org_id: str | None = None,
+    metadata_updates: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    clean = str(organization_id or '').strip()
+    if not clean:
+        raise ValueError('organization_id is required')
+    now = _utcnow_iso()
+    with get_connection() as conn:
+        row = conn.execute('SELECT * FROM organizations WHERE organization_id = ? LIMIT 1', (clean,)).fetchone()
+        if row is None:
+            raise ValueError('Unknown organization_id')
+        current_metadata = json_loads(row['metadata_json'])
+        next_metadata = dict(current_metadata)
+        for key, value in (metadata_updates or {}).items():
+            clean_key = str(key or '').strip()
+            if not clean_key:
+                continue
+            if value is None or value == '':
+                next_metadata.pop(clean_key, None)
+            else:
+                next_metadata[clean_key] = value
+        name_clean = str(name if name is not None else row['name']).strip()
+        if not name_clean:
+            raise ValueError('name is required')
+        slug_clean = _slugify(slug if slug is not None else row['slug'])
+        if not slug_clean:
+            raise ValueError('slug is required')
+        existing = conn.execute(
+            'SELECT 1 FROM organizations WHERE slug = ? AND organization_id <> ? LIMIT 1',
+            (slug_clean, clean),
+        ).fetchone()
+        if existing is not None:
+            raise ValueError('An organization with that slug already exists')
+        conn.execute(
+            '''
+            UPDATE organizations
+            SET name = ?, slug = ?, external_provider = ?, external_org_id = ?, metadata_json = ?, updated_at = ?
+            WHERE organization_id = ?
+            ''',
+            (
+                name_clean,
+                slug_clean,
+                (str(external_provider).strip() or None) if external_provider is not None else row['external_provider'],
+                (str(external_org_id).strip() or None) if external_org_id is not None else row['external_org_id'],
+                json_dumps(next_metadata),
+                now,
+                clean,
+            ),
+        )
+        updated = conn.execute('SELECT * FROM organizations WHERE organization_id = ? LIMIT 1', (clean,)).fetchone()
+    if updated is None:
+        raise RuntimeError('Failed to update organization')
+    return _serialize_org_row(updated)
 
 
 

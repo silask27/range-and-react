@@ -6,7 +6,8 @@ from fastapi import HTTPException, status
 
 from api.app.models.auth import UserAccount
 from api.app.models.enums import UserRole
-from api.app.storage.db import get_connection
+from api.app.services.organization_service import organization_has_access
+from api.app.storage.db import get_connection, json_loads
 
 
 _PLATFORM_ADMIN_ROLES = {UserRole.OWNER}
@@ -28,16 +29,28 @@ def _clean_ids(values: Iterable[str] | None) -> list[str]:
     return out
 
 
-def list_user_organization_ids(user_id: str) -> list[str]:
+def list_user_organization_ids(user_id: str, *, active_only: bool = True) -> list[str]:
     clean = str(user_id or '').strip()
     if not clean:
         return []
     with get_connection() as conn:
         rows = conn.execute(
-            'SELECT organization_id FROM organization_memberships WHERE user_id = ? ORDER BY created_at ASC',
+            '''
+            SELECT o.organization_id, o.metadata_json
+            FROM organization_memberships m
+            JOIN organizations o ON o.organization_id = m.organization_id
+            WHERE m.user_id = ?
+            ORDER BY m.created_at ASC
+            ''',
             (clean,),
         ).fetchall()
-    return [str(row['organization_id']) for row in rows if row['organization_id']]
+    out: list[str] = []
+    for row in rows:
+        if active_only and not organization_has_access(json_loads(row['metadata_json'])):
+            continue
+        if row['organization_id']:
+            out.append(str(row['organization_id']))
+    return out
 
 
 

@@ -172,6 +172,58 @@ class RegressionTestCase(unittest.TestCase):
         store.create_session(session.session_id, asdict(session))
 
 
+    def test_a_owner_can_pause_and_restore_organization_access(self) -> None:
+        pause = self.client.patch(
+            "/admin/organizations/org-alpha",
+            headers={"Authorization": f"Bearer {self.owner_token}"},
+            json={"access_status": "paused", "trial_ends_at": ""},
+        )
+        self.assertEqual(pause.status_code, 200, pause.text)
+        self.assertEqual(pause.json()["organization"]["access_status"], "paused")
+
+        try:
+            owner_me = self.client.get("/auth/me", headers={"Authorization": f"Bearer {self.owner_token}"})
+            self.assertEqual(owner_me.status_code, 200, owner_me.text)
+
+            owner_users = self.client.get("/admin/users", headers={"Authorization": f"Bearer {self.owner_token}"})
+            self.assertEqual(owner_users.status_code, 200, owner_users.text)
+
+            member_me = self.client.get("/auth/me", headers={"Authorization": f"Bearer {self.member_token}"})
+            self.assertEqual(member_me.status_code, 403, member_me.text)
+
+            coach_me = self.client.get("/auth/me", headers={"Authorization": f"Bearer {self.coach_token}"})
+            self.assertEqual(coach_me.status_code, 403, coach_me.text)
+
+            paused_invite = self.client.post(
+                "/admin/signup-invites",
+                headers={"Authorization": f"Bearer {self.owner_token}"},
+                json={"email": "paused@example.com", "role": "member", "organization_id": "org-alpha", "membership_role": "member"},
+            )
+            self.assertEqual(paused_invite.status_code, 200, paused_invite.text)
+            invite_code = paused_invite.json()["invite"]["invite_code"]
+            invite_preview = self.client.get(f"/auth/signup-invites/{invite_code}")
+            self.assertEqual(invite_preview.status_code, 404, invite_preview.text)
+            invite_signup = self.client.post(
+                "/auth/signup",
+                json={"email": "paused@example.com", "password": "Password123!", "display_name": "Paused", "invite_code": invite_code},
+            )
+            self.assertEqual(invite_signup.status_code, 400, invite_signup.text)
+        finally:
+            restore = self.client.patch(
+                "/admin/organizations/org-alpha",
+                headers={"Authorization": f"Bearer {self.owner_token}"},
+                json={"access_status": "active", "trial_ends_at": ""},
+            )
+            self.assertEqual(restore.status_code, 200, restore.text)
+            self.assertEqual(restore.json()["organization"]["access_status"], "active")
+
+        member_login = self.client.post(
+            "/auth/login",
+            json={"email": "member@example.com", "password": "Password123!"},
+        )
+        self.assertEqual(member_login.status_code, 200, member_login.text)
+
+
     def test_login_route_returns_success(self) -> None:
         response = self.client.post(
             "/auth/login",
@@ -417,6 +469,8 @@ class RegressionTestCase(unittest.TestCase):
         )
         self.assertEqual(cohort_members_response.status_code, 200, cohort_members_response.text)
         self.assertIn("Member", cohort_members_response.text)
+        self.assertIn("cohort", cohort_members_response.text.splitlines()[0])
+        self.assertIn(cohort["name"], cohort_members_response.text)
         self.assertIn("members-summary.csv", cohort_members_response.headers.get("content-disposition", ""))
 
         member_summary_response = self.client.get(
@@ -425,6 +479,8 @@ class RegressionTestCase(unittest.TestCase):
         )
         self.assertEqual(member_summary_response.status_code, 200, member_summary_response.text)
         self.assertIn("member-results.csv", member_summary_response.headers.get("content-disposition", ""))
+        self.assertIn("cohort", member_summary_response.text.splitlines()[0])
+        self.assertIn(cohort["name"], member_summary_response.text)
         self.assertIn("Member", member_summary_response.text)
 
         delivery_get = self.client.get(

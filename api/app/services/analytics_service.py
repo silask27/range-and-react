@@ -370,6 +370,37 @@ def _query_user_organization_names(*, visible_user_ids: Sequence[str] | None = N
     return dict(out)
 
 
+def _query_user_cohort_names(*, visible_user_ids: Sequence[str] | None = None, visible_organization_ids: Sequence[str] | None = None) -> dict[str, list[str]]:
+    clean_user_ids = _clean_ids(visible_user_ids)
+    clean_org_ids = _clean_ids(visible_organization_ids)
+    clauses = ["c.status = 'active'"]
+    params: list[Any] = []
+    if clean_user_ids:
+        placeholders = ', '.join('?' for _ in clean_user_ids)
+        clauses.append(f'cm.user_id IN ({placeholders})')
+        params.extend(clean_user_ids)
+    if clean_org_ids:
+        placeholders = ', '.join('?' for _ in clean_org_ids)
+        clauses.append(f'c.organization_id IN ({placeholders})')
+        params.extend(clean_org_ids)
+    where_sql = f"WHERE {' AND '.join(clauses)}"
+    with get_connection() as conn:
+        rows = conn.execute(
+            f'''
+            SELECT cm.user_id, c.name
+            FROM cohort_memberships cm
+            JOIN cohorts c ON c.cohort_id = cm.cohort_id
+            {where_sql}
+            ORDER BY lower(c.name) ASC
+            ''',
+            tuple(params),
+        ).fetchall()
+    out: dict[str, list[str]] = defaultdict(list)
+    for row in rows:
+        out[str(row['user_id'])].append(str(row['name']))
+    return dict(out)
+
+
 def _query_member_user_ids(*, visible_user_ids: Sequence[str] | None = None, visible_organization_ids: Sequence[str] | None = None) -> list[str]:
     clean_user_ids = _clean_ids(visible_user_ids)
     clean_org_ids = _clean_ids(visible_organization_ids)
@@ -502,10 +533,17 @@ def _build_cohort_completion_rows(*, visible_user_ids: Iterable[str] | None = No
 
 
 def build_member_results_export_rows(*, visible_user_ids: Iterable[str] | None = None, visible_organization_ids: Iterable[str] | None = None) -> list[dict[str, Any]]:
-    user_scope = _clean_ids(visible_user_ids) or None
-    org_scope = _clean_ids(visible_organization_ids) or None
+    raw_user_scope = _clean_ids(visible_user_ids)
+    raw_org_scope = _clean_ids(visible_organization_ids)
+    if visible_user_ids is not None and not raw_user_scope:
+        return []
+    if visible_organization_ids is not None and not raw_org_scope:
+        return []
+    user_scope = raw_user_scope or None
+    org_scope = raw_org_scope or None
     user_rows = [row for row in _query_user_rows(visible_user_ids=user_scope) if row.get('role') == 'member']
     org_names = _query_user_organization_names(visible_user_ids=user_scope, visible_organization_ids=org_scope)
+    cohort_names = _query_user_cohort_names(visible_user_ids=user_scope, visible_organization_ids=org_scope)
     worst_opponents = _query_user_worst_opponents(visible_user_ids=user_scope)
     assignments = list_assignments_with_progress(limit=5000, organization_ids=org_scope, target_user_ids=user_scope)
     assignments_by_user: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -520,6 +558,7 @@ def build_member_results_export_rows(*, visible_user_ids: Iterable[str] | None =
             'display_name': user['display_name'],
             'email': user['email'],
             'organizations': '; '.join(org_names.get(str(user['user_id']), [])),
+            'cohort': '; '.join(cohort_names.get(str(user['user_id']), [])),
             'is_active': 'yes' if user.get('is_active') else 'no',
             'reps_done': int(user.get('completed_hands') or 0),
             'current_range_score': user.get('avg_ranging_score'),

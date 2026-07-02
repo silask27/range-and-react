@@ -15,6 +15,7 @@ from api.app.config import settings
 from api.app.models.auth import AuthSession, UserAccount
 from api.app.models.enums import UserRole
 from api.app.services.email_service import send_password_reset_email
+from api.app.services.organization_service import organization_has_access, user_has_active_organization_access
 from api.app.storage.db import get_connection, json_dumps, json_loads
 
 _PBKDF2_ITERATIONS = 240_000
@@ -288,6 +289,16 @@ def get_active_signup_invite_preview(*, invite_code: str) -> dict[str, Any]:
         raise ValueError('That invite has already been used')
     if row['expires_at'] and _parse_iso(row['expires_at']) <= now:
         raise ValueError('That invite has expired')
+    if row['organization_id']:
+        with get_connection() as conn:
+            organization = conn.execute(
+                'SELECT metadata_json FROM organizations WHERE organization_id = ? LIMIT 1',
+                (row['organization_id'],),
+            ).fetchone()
+        if organization is None:
+            raise ValueError('This invite is tied to an organization that no longer exists')
+        if not organization_has_access(json_loads(organization['metadata_json'])):
+            raise ValueError('This organization is paused or its trial has expired')
     return {
         'invite_code': row['invite_code'],
         'email': row['email'],
@@ -326,6 +337,16 @@ def create_user_from_signup_invite(
         invited_email = row['email']
         if invited_email and invited_email != normalized_email:
             raise ValueError('This invite is tied to a different email address')
+        organization_id = row['organization_id']
+        if organization_id:
+            organization = conn.execute(
+                'SELECT metadata_json FROM organizations WHERE organization_id = ? LIMIT 1',
+                (organization_id,),
+            ).fetchone()
+            if organization is None:
+                raise ValueError('This invite is tied to an organization that no longer exists')
+            if not organization_has_access(json_loads(organization['metadata_json'])):
+                raise ValueError('This organization is paused or its trial has expired')
 
         existing = conn.execute(
             'SELECT user_id FROM users WHERE lower(trim(email)) = ? LIMIT 1',
@@ -345,7 +366,6 @@ def create_user_from_signup_invite(
             (user_id, normalized_email, password_hash, resolved_display_name, role.value, timestamp, timestamp),
         )
 
-        organization_id = row['organization_id']
         if organization_id:
             conn.execute(
                 '''
@@ -383,6 +403,8 @@ def authenticate_user(*, email: str, password: str) -> UserAccount:
         raise ValueError('Invalid email or password')
     if not bool(row['is_active']):
         raise ValueError('This account is inactive')
+    if row['role'] != UserRole.OWNER.value and not user_has_active_organization_access(str(row['user_id'])):
+        raise ValueError('Organization access is paused or expired')
     return UserAccount(
         user_id=row['user_id'],
         email=row['email'],
@@ -444,6 +466,8 @@ def get_user_by_token(token: str) -> UserAccount:
 
         if not bool(row['is_active']):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Account is inactive')
+        if row['role'] != UserRole.OWNER.value and not user_has_active_organization_access(str(row['user_id'])):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Organization access is paused or expired')
 
         conn.execute(
             'UPDATE auth_tokens SET last_used_at = ? WHERE token_hash = ?',

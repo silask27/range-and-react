@@ -54,10 +54,19 @@ from api.app.services.auth_service import (
     set_user_active,
     update_user_role,
 )
-from api.app.services.organization_service import add_user_to_organization, create_organization, get_organization, list_organizations
+from api.app.services.organization_service import add_user_to_organization, create_organization, get_organization, list_organizations, update_organization_settings
 from api.app.storage.memory_store import store
 
 router = APIRouter(prefix='/admin', tags=['admin'])
+
+
+def _optional_str(value: object, *, keep_empty: bool = False) -> str | None:
+    if value is None:
+        return '' if keep_empty else None
+    clean = str(value).strip()
+    if clean:
+        return clean
+    return '' if keep_empty else None
 
 
 
@@ -931,7 +940,21 @@ def admin_organizations_route(current_user: UserAccount = Depends(require_role(U
 @router.post('/organizations')
 def admin_create_organization_route(payload: dict = Body(...), current_user: UserAccount = Depends(require_role(UserRole.OWNER))) -> dict:
     metadata = payload.get('metadata') if isinstance(payload.get('metadata'), dict) else {}
-    for key in ('logo_url', 'invite_landing_copy', 'brand_accent', 'coach_roster_note'):
+    for key in (
+        'logo_url',
+        'brand_name',
+        'brand_accent',
+        'invite_landing_copy',
+        'coach_roster_note',
+        'support_email',
+        'access_status',
+        'trial_starts_at',
+        'trial_ends_at',
+        'license_model',
+        'monthly_minimum_cents',
+        'included_active_users',
+        'additional_user_cents',
+    ):
         value = str(payload.get(key) or '').strip()
         if value:
             metadata[key] = value
@@ -944,6 +967,54 @@ def admin_create_organization_route(payload: dict = Body(...), current_user: Use
             metadata=metadata,
         )
         log_audit_event(action_type='organization_created', actor=current_user, organization_id=org['organization_id'], metadata={'name': org['name'], 'slug': org['slug']})
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {'organization': org}
+
+
+@router.patch('/organizations/{organization_id}')
+def admin_update_organization_route(
+    organization_id: str,
+    payload: dict = Body(...),
+    current_user: UserAccount = Depends(require_role(UserRole.OWNER)),
+) -> dict:
+    metadata_updates = payload.get('metadata') if isinstance(payload.get('metadata'), dict) else {}
+    for key in (
+        'logo_url',
+        'brand_name',
+        'brand_accent',
+        'invite_landing_copy',
+        'coach_roster_note',
+        'support_email',
+        'access_status',
+        'trial_starts_at',
+        'trial_ends_at',
+        'license_model',
+        'monthly_minimum_cents',
+        'included_active_users',
+        'additional_user_cents',
+    ):
+        if key in payload:
+            metadata_updates[key] = str(payload.get(key) or '').strip()
+    try:
+        org = update_organization_settings(
+            organization_id=organization_id,
+            name=_optional_str(payload.get('name')) if 'name' in payload else None,
+            slug=_optional_str(payload.get('slug')) if 'slug' in payload else None,
+            external_provider=_optional_str(payload.get('external_provider'), keep_empty=True) if 'external_provider' in payload else None,
+            external_org_id=_optional_str(payload.get('external_org_id'), keep_empty=True) if 'external_org_id' in payload else None,
+            metadata_updates=metadata_updates,
+        )
+        log_audit_event(
+            action_type='organization_settings_updated',
+            actor=current_user,
+            organization_id=organization_id,
+            metadata={
+                'access_status': org.get('access_status'),
+                'trial_ends_at': org.get('trial_ends_at'),
+                'name': org.get('name'),
+            },
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {'organization': org}

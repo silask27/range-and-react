@@ -21,6 +21,7 @@ MEMBER_SUMMARY_FIELDNAMES = [
     'display_name',
     'email',
     'organizations',
+    'cohort',
     'is_active',
     'reps_done',
     'current_range_score',
@@ -156,12 +157,14 @@ def cohort_member_summary_csv(
     clean_cohort_ids = split_cohort_ids(cohort_ids)
     visible = set(str(user_id) for user_id in visible_user_ids) if visible_user_ids is not None else None
     member_ids: list[str] = []
+    member_cohort_entries: list[tuple[str, str]] = []
     seen: set[str] = set()
     cohort_names: list[str] = []
     for cohort_id in clean_cohort_ids:
         cohort = get_cohort(cohort_id)
+        cohort_name = str(cohort.get('name') or cohort_id) if cohort is not None else cohort_id
         if cohort is not None:
-            cohort_names.append(str(cohort.get('name') or cohort_id))
+            cohort_names.append(cohort_name)
         try:
             members = list_cohort_members(cohort_id=cohort_id, active_only=True)
         except ValueError:
@@ -172,14 +175,25 @@ def cohort_member_summary_csv(
                 continue
             if visible is not None and user_id not in visible:
                 continue
+            member_cohort_entries.append((cohort_name, user_id))
             if user_id in seen:
                 continue
             seen.add(user_id)
             member_ids.append(user_id)
-    rows = build_member_results_export_rows(
+    base_rows = build_member_results_export_rows(
         visible_user_ids=member_ids,
         visible_organization_ids=visible_organization_ids,
     )
+    rows_by_member_id = {str(row.get('member_id')): row for row in base_rows}
+    rows: list[dict[str, Any]] = []
+    for cohort_name, user_id in member_cohort_entries:
+        base_row = rows_by_member_id.get(user_id)
+        if base_row is None:
+            continue
+        row = dict(base_row)
+        row['cohort'] = cohort_name
+        rows.append(row)
+    rows.sort(key=lambda item: (str(item.get('cohort') or '').lower(), str(item.get('display_name') or '').lower(), str(item.get('email') or '').lower()))
     if len(cohort_names) == 1:
         filename_label = f"{cohort_names[0]} members"
     elif cohort_names:

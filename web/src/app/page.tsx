@@ -53,7 +53,7 @@ const VILLAINS = [
 const SUMMARY_CARDS = [
   {
     title: "Built for live poker",
-    copy: "The goal is not to memorize solver output. It is to understand how real opponents arrive at a spot and how they are likely to react.",
+    copy: "Practice the repeatable live-decision loop: assign the range, update it street by street, and choose the action that fits the opponent in front of you.",
   },
   {
     title: "Train the decision loop",

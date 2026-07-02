@@ -206,8 +206,8 @@ def seed_demo_data(*, reset: bool = False) -> dict[str, Any]:
     add_cohort_members(cohort_id=deep_stack_cohort["cohort_id"], user_ids=[member.user_id, member_two.user_id])
 
     link_external_identity(user_id=coach.user_id, provider="kajabi", external_user_id="coach-001", external_email=coach.email, metadata={"plan": "coach"})
-    link_external_identity(user_id=member.user_id, provider="kajabi", external_user_id="member-001", external_email=member.email, metadata={"plan": "basecamp"})
-    link_external_identity(user_id=member_two.user_id, provider="kajabi", external_user_id="member-002", external_email=member_two.email, metadata={"plan": "basecamp"})
+    link_external_identity(user_id=member.user_id, provider="kajabi", external_user_id="member-001", external_email=member.email, metadata={"plan": "coaching-program"})
+    link_external_identity(user_id=member_two.user_id, provider="kajabi", external_user_id="member-002", external_email=member_two.email, metadata={"plan": "coaching-program"})
 
     member_session_1 = _session_payload(user_id=member.user_id, villain_profile_id="tag", scenario_id="3bet_ip_co_vs_hj")
     member_session_2 = _session_payload(user_id=member.user_id, villain_profile_id="calling_station", scenario_id="srp_ip_btn_vs_bb")

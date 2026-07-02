@@ -79,7 +79,22 @@ type AccountabilityDigest = {
 };
 
 type AuditEntry = { audit_log_id: string; action_type: string; created_at: string; target_user_id: string | null };
-type OrganizationEntry = { organization_id: string; name: string; slug: string; external_provider: string | null; metadata?: { logo_url?: string; invite_landing_copy?: string; brand_accent?: string; coach_roster_note?: string }; members: Array<{ user_id: string; display_name: string | null; email: string; membership_role: string }> };
+type OrganizationMetadata = {
+  logo_url?: string;
+  brand_name?: string;
+  brand_accent?: string;
+  invite_landing_copy?: string;
+  coach_roster_note?: string;
+  support_email?: string;
+  access_status?: string;
+  trial_starts_at?: string;
+  trial_ends_at?: string;
+  license_model?: string;
+  monthly_minimum_cents?: string;
+  included_active_users?: string;
+  additional_user_cents?: string;
+};
+type OrganizationEntry = { organization_id: string; name: string; slug: string; external_provider: string | null; external_org_id: string | null; access_status?: string; trial_ends_at?: string | null; metadata?: OrganizationMetadata; members: Array<{ user_id: string; display_name: string | null; email: string; membership_role: string }> };
 type InviteEntry = { invite_id: string; invite_code: string; email: string | null; role: string; organization_id: string | null; membership_role: string; expires_at: string | null; consumed_at: string | null; status: string; invite_url?: string; email_delivery?: { status?: string; detail?: string | null } | null };
 type CohortEntry = { cohort_id: string; organization_id: string; name: string; description: string | null; status: string; member_count: number; coach_user_ids?: string[]; coaches?: Array<{ user_id: string; email: string; display_name: string | null; role: string; is_active: boolean }> };
 type CohortMemberEntry = { user_id: string; email: string; display_name: string | null; role: string; is_active: boolean };
@@ -256,7 +271,7 @@ export default function AdminPage() {
   const [createState, setCreateState] = useState({ target_type: "member", target_user_id: "", cohort_id: "", title: "", description: "", scenario_id: "", villain_profile_id: "", repetition_target: 20, minimum_overall_score: "", due_at: "" });
   const [cohortState, setCohortState] = useState({ name: "", description: "", organization_id: "", member_user_ids: [] as string[], coach_user_ids: [] as string[] });
   const [externalState, setExternalState] = useState({ user_id: "", provider: "", external_user_id: "", external_email: "" });
-  const [orgState, setOrgState] = useState({ name: "", slug: "", logo_url: "", invite_landing_copy: "", brand_accent: "", coach_roster_note: "", external_provider: "", external_org_id: "" });
+  const [orgState, setOrgState] = useState({ name: "", slug: "", logo_url: "", brand_name: "", invite_landing_copy: "", brand_accent: "", coach_roster_note: "", support_email: "", access_status: "active", trial_starts_at: "", trial_ends_at: "", license_model: "trial", monthly_minimum_cents: "", included_active_users: "", additional_user_cents: "", external_provider: "", external_org_id: "" });
   const [orgMemberState, setOrgMemberState] = useState({ organization_id: "", user_id: "", membership_role: "member" });
   const [inviteState, setInviteState] = useState({ email: "", role: "member", organization_id: "", expires_in_days: 14 });
   const [bulkInviteState, setBulkInviteState] = useState({ emails: "", role: "member", organization_id: "", expires_in_days: 14 });
@@ -617,11 +632,28 @@ export default function AdminPage() {
       const res = await apiFetch(`${API_BASE}/admin/organizations`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(orgState) });
       const data = await res.json();
       if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to create organization.");
-      setOrgState({ name: "", slug: "", logo_url: "", invite_landing_copy: "", brand_accent: "", coach_roster_note: "", external_provider: "", external_org_id: "" });
+      setOrgState({ name: "", slug: "", logo_url: "", brand_name: "", invite_landing_copy: "", brand_accent: "", coach_roster_note: "", support_email: "", access_status: "active", trial_starts_at: "", trial_ends_at: "", license_model: "trial", monthly_minimum_cents: "", included_active_users: "", additional_user_cents: "", external_provider: "", external_org_id: "" });
       setNotice("Organization created.");
       await loadAll();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to create organization.");
+    }
+  }
+
+  async function handleUpdateOrganization(organizationId: string, payload: Record<string, string>) {
+    setError(null); setNotice(null);
+    try {
+      const res = await apiFetch(`${API_BASE}/admin/organizations/${encodeURIComponent(organizationId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to update organization.");
+      setNotice("Organization settings saved.");
+      await loadAll();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update organization.");
     }
   }
 
@@ -1047,10 +1079,14 @@ export default function AdminPage() {
                           ) : <div style={workspaceLogoFallbackStyle}>{org.name.slice(0, 2).toUpperCase()}</div>}
                           <div style={{ minWidth: 0 }}>
                             <div style={rowTitleStyle}>{org.name}</div>
-                            <div style={rowMetaStyle}>{org.members.length} rostered users · {org.slug}</div>
+                            <div style={rowMetaStyle}>{org.members.length} rostered users · {org.slug} · {formatOrgAccessStatus(org)}</div>
+                            {org.trial_ends_at ? <div style={rowHelperStyle}>Trial ends {new Date(org.trial_ends_at).toLocaleDateString()}</div> : null}
                             {org.metadata?.invite_landing_copy ? <div style={rowHelperStyle}>{org.metadata.invite_landing_copy}</div> : null}
                             {org.metadata?.coach_roster_note ? <div style={rowHelperStyle}>{org.metadata.coach_roster_note}</div> : null}
                           </div>
+                          {canCreateOrganizations ? (
+                            <OrganizationSettingsForm organization={org} onSave={(payload) => void handleUpdateOrganization(org.organization_id, payload)} />
+                          ) : null}
                         </div>
                       ))}
                     </div>
@@ -1063,7 +1099,22 @@ export default function AdminPage() {
                           <input value={orgState.name} onChange={(event) => setOrgState((current) => ({ ...current, name: event.target.value }))} placeholder="Organization name" style={inputStyle} required />
                           <input value={orgState.slug} onChange={(event) => setOrgState((current) => ({ ...current, slug: event.target.value }))} placeholder="organization-slug" style={inputStyle} required />
                           <input value={orgState.logo_url} onChange={(event) => setOrgState((current) => ({ ...current, logo_url: event.target.value }))} placeholder="Logo URL (optional)" style={inputStyle} />
+                          <input value={orgState.brand_name} onChange={(event) => setOrgState((current) => ({ ...current, brand_name: event.target.value }))} placeholder="Private brand name (optional)" style={inputStyle} />
                           <input value={orgState.brand_accent} onChange={(event) => setOrgState((current) => ({ ...current, brand_accent: event.target.value }))} placeholder="Brand accent color (optional)" style={inputStyle} />
+                          <input value={orgState.support_email} onChange={(event) => setOrgState((current) => ({ ...current, support_email: event.target.value }))} placeholder="Support email (optional)" style={inputStyle} />
+                          <div style={twoColStyle}>
+                            <label style={labelStyle}><span style={labelTitleStyle}>Access status</span><select value={orgState.access_status} onChange={(event) => setOrgState((current) => ({ ...current, access_status: event.target.value }))} style={inputStyle}>
+                              <option value="active">Active</option>
+                              <option value="paused">Paused</option>
+                            </select></label>
+                            <label style={labelStyle}><span style={labelTitleStyle}>Trial ends</span><input type="date" value={orgState.trial_ends_at} onChange={(event) => setOrgState((current) => ({ ...current, trial_ends_at: event.target.value }))} style={inputStyle} /></label>
+                          </div>
+                          <div style={threeColStyle}>
+                            <input value={orgState.license_model} onChange={(event) => setOrgState((current) => ({ ...current, license_model: event.target.value }))} placeholder="License model" style={inputStyle} />
+                            <input value={orgState.monthly_minimum_cents} onChange={(event) => setOrgState((current) => ({ ...current, monthly_minimum_cents: event.target.value }))} placeholder="Monthly minimum cents" style={inputStyle} />
+                            <input value={orgState.included_active_users} onChange={(event) => setOrgState((current) => ({ ...current, included_active_users: event.target.value }))} placeholder="Included active users" style={inputStyle} />
+                            <input value={orgState.additional_user_cents} onChange={(event) => setOrgState((current) => ({ ...current, additional_user_cents: event.target.value }))} placeholder="Extra user cents" style={inputStyle} />
+                          </div>
                           <textarea value={orgState.invite_landing_copy} onChange={(event) => setOrgState((current) => ({ ...current, invite_landing_copy: event.target.value }))} placeholder="Invite landing copy (optional)" style={{ ...inputStyle, minHeight: 82 }} />
                           <textarea value={orgState.coach_roster_note} onChange={(event) => setOrgState((current) => ({ ...current, coach_roster_note: event.target.value }))} placeholder="Coach roster note (optional)" style={{ ...inputStyle, minHeight: 82 }} />
                           <input value={orgState.external_provider} onChange={(event) => setOrgState((current) => ({ ...current, external_provider: event.target.value }))} placeholder="External provider (optional)" style={inputStyle} />
@@ -1186,6 +1237,79 @@ function HeaderStat({ label, value, tone, helper }: { label: string; value: stri
       ? { borderColor: PALETTE.green, background: PALETTE.green, color: "#141210" }
       : { borderColor: "var(--line)", background: "var(--surface-fill-strong)", color: PALETTE.cream };
   return <div style={{ ...headerStatStyle, ...toneStyle }}><div style={headerStatLabelStyle}>{label}</div><div style={headerStatValueStyle}>{value}</div>{helper ? <div style={headerStatHelperStyle}>{helper}</div> : null}</div>;
+}
+
+function formatOrgAccessStatus(organization: OrganizationEntry) {
+  const status = organization.access_status || organization.metadata?.access_status || "active";
+  if (status === "trial_expired") return "trial expired";
+  if (status === "trial") return "trial active";
+  return status;
+}
+
+function OrganizationSettingsForm({ organization, onSave }: { organization: OrganizationEntry; onSave: (payload: Record<string, string>) => void }) {
+  const metadata = organization.metadata ?? {};
+  const [state, setState] = useState({
+    name: organization.name,
+    slug: organization.slug,
+    logo_url: metadata.logo_url ?? "",
+    brand_name: metadata.brand_name ?? "",
+    brand_accent: metadata.brand_accent ?? "",
+    invite_landing_copy: metadata.invite_landing_copy ?? "",
+    coach_roster_note: metadata.coach_roster_note ?? "",
+    support_email: metadata.support_email ?? "",
+    access_status: metadata.access_status === "paused" ? "paused" : "active",
+    trial_starts_at: metadata.trial_starts_at ?? "",
+    trial_ends_at: metadata.trial_ends_at ?? "",
+    license_model: metadata.license_model ?? "trial",
+    monthly_minimum_cents: metadata.monthly_minimum_cents ?? "",
+    included_active_users: metadata.included_active_users ?? "",
+    additional_user_cents: metadata.additional_user_cents ?? "",
+    external_provider: organization.external_provider ?? "",
+    external_org_id: organization.external_org_id ?? "",
+  });
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    onSave(state);
+  }
+
+  return (
+    <details className="admin-tool-disclosure" style={{ ...detailsStyle, width: "100%", gridColumn: "1 / -1", marginTop: 12 }}>
+      <summary style={summaryStyle}><span className="admin-tool-caret" aria-hidden="true">›</span><span>Organization controls</span></summary>
+      <form onSubmit={submit} style={stackStyle}>
+        <div style={twoColStyle}>
+          <label style={labelStyle}><span style={labelTitleStyle}>Name</span><input value={state.name} onChange={(event) => setState((current) => ({ ...current, name: event.target.value }))} style={inputStyle} required /></label>
+          <label style={labelStyle}><span style={labelTitleStyle}>Slug</span><input value={state.slug} onChange={(event) => setState((current) => ({ ...current, slug: event.target.value }))} style={inputStyle} required /></label>
+        </div>
+        <div style={twoColStyle}>
+          <label style={labelStyle}><span style={labelTitleStyle}>Access status</span><select value={state.access_status} onChange={(event) => setState((current) => ({ ...current, access_status: event.target.value }))} style={inputStyle}>
+            <option value="active">Active</option>
+            <option value="paused">Paused</option>
+          </select></label>
+          <label style={labelStyle}><span style={labelTitleStyle}>Trial ends</span><input type="date" value={state.trial_ends_at.slice(0, 10)} onChange={(event) => setState((current) => ({ ...current, trial_ends_at: event.target.value }))} style={inputStyle} /></label>
+        </div>
+        <div style={twoColStyle}>
+          <label style={labelStyle}><span style={labelTitleStyle}>Brand name</span><input value={state.brand_name} onChange={(event) => setState((current) => ({ ...current, brand_name: event.target.value }))} style={inputStyle} /></label>
+          <label style={labelStyle}><span style={labelTitleStyle}>Support email</span><input value={state.support_email} onChange={(event) => setState((current) => ({ ...current, support_email: event.target.value }))} style={inputStyle} /></label>
+        </div>
+        <input value={state.logo_url} onChange={(event) => setState((current) => ({ ...current, logo_url: event.target.value }))} placeholder="Logo URL" style={inputStyle} />
+        <input value={state.brand_accent} onChange={(event) => setState((current) => ({ ...current, brand_accent: event.target.value }))} placeholder="Brand accent color" style={inputStyle} />
+        <div style={threeColStyle}>
+          <input value={state.license_model} onChange={(event) => setState((current) => ({ ...current, license_model: event.target.value }))} placeholder="License model" style={inputStyle} />
+          <input value={state.monthly_minimum_cents} onChange={(event) => setState((current) => ({ ...current, monthly_minimum_cents: event.target.value }))} placeholder="Monthly minimum cents" style={inputStyle} />
+          <input value={state.included_active_users} onChange={(event) => setState((current) => ({ ...current, included_active_users: event.target.value }))} placeholder="Included active users" style={inputStyle} />
+          <input value={state.additional_user_cents} onChange={(event) => setState((current) => ({ ...current, additional_user_cents: event.target.value }))} placeholder="Extra user cents" style={inputStyle} />
+        </div>
+        <textarea value={state.invite_landing_copy} onChange={(event) => setState((current) => ({ ...current, invite_landing_copy: event.target.value }))} placeholder="Invite landing copy" style={{ ...inputStyle, minHeight: 76 }} />
+        <textarea value={state.coach_roster_note} onChange={(event) => setState((current) => ({ ...current, coach_roster_note: event.target.value }))} placeholder="Coach roster note" style={{ ...inputStyle, minHeight: 76 }} />
+        <div style={twoColStyle}>
+          <input value={state.external_provider} onChange={(event) => setState((current) => ({ ...current, external_provider: event.target.value }))} placeholder="External provider" style={inputStyle} />
+          <input value={state.external_org_id} onChange={(event) => setState((current) => ({ ...current, external_org_id: event.target.value }))} placeholder="External org ID" style={inputStyle} />
+        </div>
+        <button type="submit" style={primaryButtonStyle}>Save organization controls</button>
+      </form>
+    </details>
+  );
 }
 
 function SectionHeader({ eyebrow, title }: { eyebrow: string; title: string }) {

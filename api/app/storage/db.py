@@ -107,6 +107,7 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         updated_at TEXT NOT NULL
     )
     ''',
+    'CREATE INDEX IF NOT EXISTS idx_users_role_active ON users(role, is_active)',
     '''
     CREATE TABLE IF NOT EXISTS auth_tokens (
         token_hash TEXT PRIMARY KEY,
@@ -187,6 +188,8 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     'CREATE INDEX IF NOT EXISTS idx_hand_results_session_id ON hand_results(session_id)',
     'CREATE INDEX IF NOT EXISTS idx_hand_results_status ON hand_results(status)',
     'CREATE INDEX IF NOT EXISTS idx_hand_results_user_completed ON hand_results(user_id, hand_over, completed_at)',
+    'CREATE INDEX IF NOT EXISTS idx_hand_results_completed_scores ON hand_results(hand_over, completed_at, user_id, scenario_id, villain_profile_id)',
+    'CREATE INDEX IF NOT EXISTS idx_hand_results_user_completed_desc ON hand_results(user_id, hand_over, completed_at DESC)',
     'CREATE INDEX IF NOT EXISTS idx_hand_results_user_hand_over_updated ON hand_results(user_id, hand_over, updated_at)',
     'CREATE INDEX IF NOT EXISTS idx_hand_results_hand_over_updated ON hand_results(hand_over, updated_at)',
     'CREATE INDEX IF NOT EXISTS idx_hand_results_user_scenario_villain_completed ON hand_results(user_id, scenario_id, villain_profile_id, hand_over, completed_at)',
@@ -275,6 +278,8 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     ''',
     'CREATE INDEX IF NOT EXISTS idx_org_memberships_org_id ON organization_memberships(organization_id)',
     'CREATE INDEX IF NOT EXISTS idx_org_memberships_user_id ON organization_memberships(user_id)',
+    'CREATE INDEX IF NOT EXISTS idx_org_memberships_user_org ON organization_memberships(user_id, organization_id)',
+    'CREATE INDEX IF NOT EXISTS idx_org_memberships_org_role_user ON organization_memberships(organization_id, membership_role, user_id)',
     '''
     CREATE TABLE IF NOT EXISTS cohorts (
         cohort_id TEXT PRIMARY KEY,
@@ -304,6 +309,7 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     ''',
     'CREATE INDEX IF NOT EXISTS idx_cohort_memberships_cohort_id ON cohort_memberships(cohort_id)',
     'CREATE INDEX IF NOT EXISTS idx_cohort_memberships_user_id ON cohort_memberships(user_id)',
+    'CREATE INDEX IF NOT EXISTS idx_cohort_memberships_user_cohort ON cohort_memberships(user_id, cohort_id)',
     '''
     CREATE TABLE IF NOT EXISTS signup_invites (
         invite_id TEXT PRIMARY KEY,
@@ -354,6 +360,8 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         FOREIGN KEY(cohort_id) REFERENCES cohorts(cohort_id) ON DELETE SET NULL
     )
     ''',
+    'CREATE INDEX IF NOT EXISTS idx_data_delivery_next_send ON data_delivery_preferences(next_send_at, user_id)',
+    'CREATE INDEX IF NOT EXISTS idx_data_delivery_enabled_next_send ON data_delivery_preferences(include_member_summary, include_cohort_summary, include_org_summary, next_send_at)',
 )
 
 
