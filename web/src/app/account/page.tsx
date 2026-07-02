@@ -23,8 +23,8 @@ export default function AccountPage() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
 
-  async function loadMe() {
-    setIsLoading(true);
+  async function loadMe(showLoading = true) {
+    if (showLoading) setIsLoading(true);
     setError(null);
     const res = await apiFetch(`${API_BASE}/auth/me`, { cache: "no-store" });
     const data = await res.json();
@@ -47,9 +47,12 @@ export default function AccountPage() {
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
+    setPayload((current) => current ?? { user, external_identities: [], organizations: [] });
+    setProfileName((current) => current || (user.display_name ?? ""));
+    setIsLoading(false);
     void (async () => {
       try {
-        await loadMe();
+        await loadMe(false);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Unable to load account.");
@@ -151,7 +154,7 @@ export default function AccountPage() {
 
   return (
     <AppShell title="Account" subtitle="Update profile, security, linked access, and account exports in one place.">
-      {isAuthLoading || isLoading ? <div style={copyStyle}>Loading account…</div> : null}
+      {(isAuthLoading && !user) || (isLoading && !payload) ? <div style={copyStyle}>Loading account…</div> : null}
       {authError ? <div style={errorStyle}>{authError}</div> : null}
       {error ? <div style={errorStyle}>{error}</div> : null}
       {notice ? <div style={noticeStyle}>{notice}</div> : null}

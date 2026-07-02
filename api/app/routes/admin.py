@@ -703,8 +703,25 @@ def admin_analytics_route(
     background_tasks: BackgroundTasks,
     current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH)),
     refresh: bool = Query(default=False),
+    cohort_id: str | None = Query(default=None),
 ) -> dict:
     org_scope, user_scope = _scope(current_user)
+    clean_cohort_id = (cohort_id or '').strip() or None
+    if clean_cohort_id:
+        cohort = get_cohort(clean_cohort_id)
+        if cohort is None:
+            raise HTTPException(status_code=404, detail='Cohort not found.')
+        ensure_organization_access(current_user, str(cohort['organization_id']))
+        cohort_user_ids = [
+            str(member['user_id'])
+            for member in list_cohort_members(cohort_id=clean_cohort_id, active_only=True)
+            if member.get('role') == UserRole.MEMBER.value
+        ]
+        if user_scope is not None:
+            visible = set(user_scope)
+            cohort_user_ids = [user_id for user_id in cohort_user_ids if user_id in visible]
+        user_scope = cohort_user_ids
+        org_scope = [str(cohort['organization_id'])]
     return get_admin_analytics(visible_user_ids=user_scope, visible_organization_ids=org_scope, background_tasks=background_tasks, force_refresh=refresh)
 
 

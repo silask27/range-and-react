@@ -385,6 +385,16 @@ class RegressionTestCase(unittest.TestCase):
         self.assertEqual(analytics_cohort["coach_user_ids"], [self.coach_user_id])
         self.assertEqual(analytics_cohort["coach_names"], ["Coach"])
 
+        cohort_analytics_response = self.client.get(
+            f"/admin/analytics?refresh=true&cohort_id={cohort['cohort_id']}",
+            headers={"Authorization": f"Bearer {self.owner_token}"},
+        )
+        self.assertEqual(cohort_analytics_response.status_code, 200, cohort_analytics_response.text)
+        cohort_analytics = cohort_analytics_response.json()
+        self.assertIn("trend_points", cohort_analytics)
+        self.assertIn("insight_drivers", cohort_analytics)
+        self.assertEqual(cohort_analytics["summary"]["users_tracked"], 1)
+
         csv_response = self.client.get(
             "/admin/cohort-summary.csv",
             headers={"Authorization": f"Bearer {self.owner_token}"},

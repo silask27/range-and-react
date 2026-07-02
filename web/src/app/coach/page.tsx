@@ -119,7 +119,7 @@ const EMPTY_ANALYTICS: AnalyticsPayload = {
 const ACCOUNT_ROLE_OPTIONS = ["member", "coach", "admin"] as const;
 const ORG_ROLE_OPTIONS = ["member", "coach", "admin", "owner"] as const;
 const ADMIN_PAGE_SIZE = 500;
-const ADMIN_COLLECTION_CAP = 2500;
+const ADMIN_COLLECTION_CAP = 500;
 const ADMIN_TOOL_DISCLOSURE_CSS = `
   .admin-tool-disclosure > summary::-webkit-details-marker { display: none; }
   .admin-tool-disclosure > summary::marker { content: ""; }
@@ -229,9 +229,12 @@ export default function CoachPage() {
   const [cohorts, setCohorts] = useState<CohortEntry[]>([]);
   const [deliveryPreference, setDeliveryPreference] = useState<DataDeliveryPreference | null>(null);
   const [isDeliveryBusy, setIsDeliveryBusy] = useState(false);
+  const [isAnalyticsLoading, setIsAnalyticsLoading] = useState(false);
+  const [isAssignmentDataLoading, setIsAssignmentDataLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("analytics");
+  const [analyticsScope, setAnalyticsScope] = useState("all");
   const [createState, setCreateState] = useState({ target_type: "member", target_user_id: "", cohort_id: "", title: "", description: "", scenario_id: "", villain_profile_id: "", repetition_target: 20, minimum_overall_score: "", due_at: "" });
   const [cohortState, setCohortState] = useState({ name: "", description: "", organization_id: "", member_user_ids: [] as string[], coach_user_ids: [] as string[] });
   const [externalState, setExternalState] = useState({ user_id: "", provider: "", external_user_id: "", external_email: "" });
@@ -396,37 +399,58 @@ export default function CoachPage() {
     setBulkInviteState((current) => ({ ...current, role }));
   }
 
-  async function loadAll() {
+  async function loadAnalytics(scope = analyticsScope) {
+    setIsAnalyticsLoading(true);
     setError(null);
+    const query = scope !== "all" ? `?cohort_id=${encodeURIComponent(scope)}` : "";
     const analyticsData = await loadOptional(
-      () => loadJson<AnalyticsPayload>("/admin/analytics?refresh=true", "Unable to load analytics."),
+      () => loadJson<AnalyticsPayload>(`/admin/analytics${query}`, "Unable to load analytics."),
       EMPTY_ANALYTICS,
     );
     setAnalytics(analyticsData);
+    setIsAnalyticsLoading(false);
+  }
 
-    const [usersData, assignmentsData, villainsData, scenariosData, auditsData, orgsData, invitesData, cohortsData, deliveryData] = await Promise.all([
+  async function loadCoachLookups() {
+    const [orgsData, cohortsData, deliveryData] = await Promise.all([
+      loadOptional(() => loadJson<{ organizations: OrganizationEntry[] }>("/admin/organizations", "Unable to load organizations."), { organizations: [] }),
+      loadOptional(() => loadJson<{ cohorts: CohortEntry[] }>("/admin/cohorts", "Unable to load cohorts."), { cohorts: [] }),
+      loadOptional(() => loadJson<{ preference: DataDeliveryPreference }>("/admin/data-delivery-preferences", "Unable to load delivery settings."), null),
+    ]);
+    setOrganizations(orgsData.organizations);
+    setCohorts(cohortsData.cohorts);
+    setDeliveryPreference(deliveryData?.preference ?? null);
+  }
+
+  async function loadAssignmentData() {
+    setIsAssignmentDataLoading(true);
+    const [usersData, assignmentsData, villainsData, scenariosData, orgsData, cohortsData] = await Promise.all([
       loadOptional(() => loadPagedCollection<UserEntry>("/admin/users", "users"), []),
       loadOptional(() => loadPagedCollection<AssignmentEntry>("/admin/assignments", "assignments"), []),
       loadOptional(() => loadJson<Array<{ id: string; display_name: string }>>("/villains", "Unable to load villains."), []),
       loadOptional(() => loadJson<Array<{ id: string; display_name: string }>>("/scenarios", "Unable to load scenarios."), []),
-      loadOptional(() => loadPagedCollection<AuditEntry>("/admin/audit-logs", "audit_logs", 1000), []),
       loadOptional(() => loadJson<{ organizations: OrganizationEntry[] }>("/admin/organizations", "Unable to load organizations."), { organizations: [] }),
-      loadOptional(() => loadJson<{ invites: InviteEntry[] }>(`/admin/signup-invites?limit=${ADMIN_COLLECTION_CAP}`, "Unable to load invites."), { invites: [] }),
       loadOptional(() => loadJson<{ cohorts: CohortEntry[] }>("/admin/cohorts", "Unable to load cohorts."), { cohorts: [] }),
-      loadOptional(() => loadJson<{ preference: DataDeliveryPreference }>("/admin/data-delivery-preferences", "Unable to load delivery settings."), null),
     ]);
     setUsers(usersData);
     setAssignments(assignmentsData);
     setVillains(villainsData.map((item) => ({ id: item.id, display_name: item.display_name })));
     setScenarios(scenariosData.map((item) => ({ id: item.id, display_name: item.display_name })));
-    setAuditLogs(auditsData);
     setOrganizations(orgsData.organizations);
-    setInvites(invitesData.invites);
     setCohorts(cohortsData.cohorts);
-    setDeliveryPreference(deliveryData?.preference ?? null);
     if (selectedCohortId) {
       await loadOptional(() => loadCohortMembers(selectedCohortId), undefined);
     }
+    setIsAssignmentDataLoading(false);
+  }
+
+  async function loadAll() {
+    await Promise.all([loadAnalytics(), loadCoachLookups()]);
+  }
+
+  async function refreshActiveData() {
+    await loadAll();
+    if (activeTab === "assignments") await loadAssignmentData();
   }
 
   useEffect(() => {
@@ -437,9 +461,18 @@ export default function CoachPage() {
     }
     void loadAll().catch(() => {
       setAnalytics(EMPTY_ANALYTICS);
+      setIsAnalyticsLoading(false);
       setError(null);
     });
   }, [user]);
+
+  useEffect(() => {
+    if (!user || activeTab !== "assignments") return;
+    void loadAssignmentData().catch(() => {
+      setIsAssignmentDataLoading(false);
+      setError("Unable to load assignment tools.");
+    });
+  }, [user, activeTab]);
 
   async function handleCreateAssignment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -464,7 +497,7 @@ export default function CoachPage() {
       setCreateState({ target_type: "member", target_user_id: "", cohort_id: "", title: "", description: "", scenario_id: "", villain_profile_id: "", repetition_target: 20, minimum_overall_score: "", due_at: "" });
       const createdCount = Number((data as { created_count?: number }).created_count ?? 1);
       setNotice(createState.target_type === "cohort" ? `Created ${createdCount} assignment${createdCount === 1 ? "" : "s"} for that cohort.` : "Assignment created.");
-      await loadAll();
+      await refreshActiveData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to create assignment.");
     }
@@ -489,7 +522,7 @@ export default function CoachPage() {
       if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to create cohort.");
       setCohortState({ name: "", description: "", organization_id: "", member_user_ids: [], coach_user_ids: [] });
       setNotice("Cohort created.");
-      await loadAll();
+      await refreshActiveData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to create cohort.");
     }
@@ -538,7 +571,7 @@ export default function CoachPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to update cohort coaches.");
       setNotice("Cohort coaches updated.");
-      await loadAll();
+      await refreshActiveData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to update cohort coaches.");
     } finally {
@@ -574,7 +607,7 @@ export default function CoachPage() {
       }
 
       setNotice("Cohort members updated.");
-      await loadAll();
+      await refreshActiveData();
       await loadCohortMembers(selectedCohortId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to update cohort members.");
@@ -589,7 +622,7 @@ export default function CoachPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to update role.");
       setNotice("User role updated.");
-      await loadAll();
+      await refreshActiveData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to update role.");
     }
@@ -601,7 +634,7 @@ export default function CoachPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to update user status.");
       setNotice(`User ${isActive ? "reactivated" : "deactivated"}.`);
-      await loadAll();
+      await refreshActiveData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to update user status.");
     }
@@ -616,7 +649,7 @@ export default function CoachPage() {
       if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to create organization.");
       setOrgState({ name: "", slug: "", logo_url: "", invite_landing_copy: "", brand_accent: "", coach_roster_note: "", external_provider: "", external_org_id: "" });
       setNotice("Organization created.");
-      await loadAll();
+      await refreshActiveData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to create organization.");
     }
@@ -631,7 +664,7 @@ export default function CoachPage() {
       if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to add organization member.");
       setOrgMemberState({ organization_id: "", user_id: "", membership_role: "member" });
       setNotice("Organization membership saved.");
-      await loadAll();
+      await refreshActiveData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to add organization member.");
     }
@@ -649,7 +682,7 @@ export default function CoachPage() {
       const deliveryStatus = invite.email_delivery?.status;
       const suffix = deliveryStatus === "sent" ? " · email sent" : invite.invite_url ? ` · share link: ${invite.invite_url}` : "";
       setNotice(`Invite created: ${invite.invite_code}${suffix}`);
-      await loadAll();
+      await refreshActiveData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to create invite.");
     }
@@ -667,7 +700,7 @@ export default function CoachPage() {
       const failureCount = Array.isArray((data as { failures?: unknown[] }).failures) ? (data as { failures?: unknown[] }).failures!.length : 0;
       setBulkInviteState({ emails: "", role: "member", organization_id: "", expires_in_days: 14 });
       setNotice(`Created ${createdCount} invite${createdCount === 1 ? "" : "s"}${failureCount ? ` · ${failureCount} failed` : ""}.`);
-      await loadAll();
+      await refreshActiveData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to create bulk invites.");
     }
@@ -792,7 +825,7 @@ export default function CoachPage() {
       if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to link external identity.");
       setExternalState({ user_id: "", provider: "", external_user_id: "", external_email: "" });
       setNotice("External identity linked.");
-      await loadAll();
+      await refreshActiveData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to link external identity.");
     }
@@ -808,7 +841,7 @@ export default function CoachPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to delete user.");
       setNotice(`${label} deleted.`);
-      await loadAll();
+      await refreshActiveData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to delete user.");
     }
@@ -823,7 +856,7 @@ export default function CoachPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to delete invite.");
       setNotice("Signup invite deleted.");
-      await loadAll();
+      await refreshActiveData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to delete invite.");
     }
@@ -872,7 +905,17 @@ export default function CoachPage() {
   const workspaceName = organizations.length === 1 ? organizations[0].name : organizations.length > 1 ? "All workspaces" : "Workspace";
   const nextCoachActions = analytics ? buildCoachNextActions({ analytics, memberNames: userNameById, workspaceName }) : [];
   const deliveryCohortId = deliveryPreference?.cohort_id || cohorts[0]?.cohort_id || "";
-  const selectedCohortSummary = analytics?.cohort_completion.find((cohort) => cohort.cohort_id === deliveryCohortId) ?? null;
+  const selectedAnalyticsCohort = cohorts.find((cohort) => cohort.cohort_id === analyticsScope) ?? null;
+  const analyticsViewLabel = selectedAnalyticsCohort?.name ?? "Pool-wide";
+
+  function handleAnalyticsScopeChange(nextScope: string) {
+    setAnalyticsScope(nextScope);
+    void loadAnalytics(nextScope).catch(() => {
+      setAnalytics(EMPTY_ANALYTICS);
+      setIsAnalyticsLoading(false);
+      setError("Unable to load analytics for that view.");
+    });
+  }
 
   return (
     <AppShell title="Coach" subtitle="See what the member pool is struggling with, assign the next reps, and review flagged hands." headerContent={headerStats}>
@@ -896,8 +939,16 @@ export default function CoachPage() {
             <div style={{ display: "grid", gap: 24 }}>
               <section style={panelStyle}>
                 <div style={splitSectionHeaderStyle}>
-                  <SectionHeader eyebrow={workspaceName} title="Pool-wide performance" />
+                  <SectionHeader eyebrow={analyticsScope === "all" ? workspaceName : "Cohort analytics"} title={`${analyticsViewLabel} performance`} />
+                  <label style={{ ...labelStyle, width: 260 }}>
+                    <span style={labelTitleStyle}>Analytics view</span>
+                    <select value={analyticsScope} onChange={(event) => handleAnalyticsScopeChange(event.target.value)} style={inputStyle}>
+                      <option value="all">Pool-wide</option>
+                      {cohorts.map((cohort) => <option key={cohort.cohort_id} value={cohort.cohort_id}>{cohort.name}</option>)}
+                    </select>
+                  </label>
                 </div>
+                {isAnalyticsLoading ? <div style={helperCopyStyle}>Updating analytics...</div> : null}
                 <div style={digestStatGridStyle}>
                   <DigestStat label="Range Score" value={formatScore(analytics.summary.avg_ranging_score)} />
                   <DigestStat label="Action Score" value={formatScore(analytics.summary.avg_response_score)} />
@@ -906,36 +957,16 @@ export default function CoachPage() {
                 </div>
               </section>
 
-              <section style={panelStyle}>
-                <div style={splitSectionHeaderStyle}>
-                  <SectionHeader eyebrow="Cohort comparison" title="Selected cohort snapshot" />
-                  <select value={deliveryCohortId} onChange={(event) => updateDeliveryPreference({ cohort_id: event.target.value || null })} style={{ ...inputStyle, width: 240 }} disabled={!cohorts.length}>
-                    {cohorts.length ? cohorts.map((cohort) => <option key={cohort.cohort_id} value={cohort.cohort_id}>{cohort.name}</option>) : <option value="">No cohorts yet</option>}
-                  </select>
-                </div>
-                {selectedCohortSummary ? (
-                  <>
-                    <div style={digestStatGridStyle}>
-                      <DigestStat label="Members" value={selectedCohortSummary.member_count} />
-                      <DigestStat label="Finished reps" value={selectedCohortSummary.completed_reps} />
-                      <DigestStat label="Rep completion" value={formatPercent(selectedCohortSummary.rep_completion_rate)} />
-                      <DigestStat label="Overdue assignments" value={selectedCohortSummary.overdue_assignments} />
-                    </div>
-                    <div style={helperCopyStyle}>This cohort snapshot is separate from the pool-wide chart below, so HungryHorsePoker can compare cohort progress without losing the org-wide view.</div>
-                  </>
-                ) : <EmptyState copy="Create or select a cohort to compare its progress against the pool." />}
-              </section>
-
               <section style={mainGridStyle}>
                 <div style={{ display: "grid", gap: 18 }}>
                 <section style={panelStyle}>
-                  <SectionHeader eyebrow="Trend" title="Member-pool score progression" />
-                  {analytics.trend_points.length ? <TrendChart points={buildRunningAverageTrend(analytics.trend_points)} /> : <EmptyState copy="Complete more finished hands to unlock the pool trend." />}
+                  <SectionHeader eyebrow="Trend" title={`${analyticsViewLabel} score progression`} />
+                  {analytics.trend_points.length ? <TrendChart points={buildRunningAverageTrend(analytics.trend_points)} /> : <EmptyState copy="Complete more finished hands to unlock this trend." />}
                 </section>
               </div>
               <div style={{ display: "grid", gap: 18 }}>
                 <section style={panelStyle}>
-                  <SectionHeader eyebrow="Insights" title="What is driving the pool scores" />
+                  <SectionHeader eyebrow="Insights" title={`What is driving ${analyticsViewLabel.toLowerCase()} scores`} />
                   <div style={stackStyle}>
                     <InsightCard tone="green" title="Range Score struggle" copy={analytics.insight_drivers.ranging.low} />
                     <InsightCard tone="green" title="Range Score strength" copy={analytics.insight_drivers.ranging.high} />

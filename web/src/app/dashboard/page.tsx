@@ -31,7 +31,6 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!user) return;
-    const activeUser = user;
     let cancelled = false;
     async function loadOverview() {
       try {
@@ -54,13 +53,14 @@ export default function DashboardPage() {
   const isCoach = user?.role === "owner" || user?.role === "admin" || user?.role === "coach";
   const coachSummary = overview?.coach_summary ?? overview?.summary;
   const cleanedSuggestionReason = cleanTrainCopy(suggestion?.reason);
+  const userSummary = overview?.summary ?? null;
 
   return (
     <AppShell title={`Welcome back, ${user?.display_name || "player"}`} subtitle="One place to start training, review results, and check what matters right now.">
-      {isAuthLoading ? <div style={copyStyle}>Loading home…</div> : null}
+      {isAuthLoading && !user ? <div style={copyStyle}>Loading home…</div> : null}
       {authError ? <div style={errorStyle}>{authError}</div> : null}
       {error ? <div style={errorStyle}>{error}</div> : null}
-      {overview ? (
+      {user ? (
         <div style={{ display: "grid", gap: 28 }}>
           <section className="open-grid-four">
             <HomeLinkCard href="/account" icon={<PersonIcon />} title="Account" copy={`Signed in as ${user?.display_name || user?.email || "your account"}. Update profile, password, and access settings.`} extra={<span className="badge badge-primary">{user?.role}</span>} />
@@ -68,12 +68,12 @@ export default function DashboardPage() {
               <>
                 <HomeLinkCard href="/coach" icon={<ChartIcon />} title="Coach" copy="Analytics, assignments, review queue, and reporting for the member pool." extra={<div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}><span className="badge badge-success">Range Score {formatScore(coachSummary?.avg_ranging_score ?? null)}</span><span className="badge badge-primary">Action Score {formatScore(coachSummary?.avg_response_score ?? null)}</span></div>} />
                 <HomeLinkCard href="/coach?tab=review" icon={<ReviewIcon />} title="Review" copy="Flagged member hands for replay, notes, and coaching follow-up." extra={<span className="badge badge-primary">Flagged hands</span>} />
-                <HomeLinkCard href="/admin" icon={<CoachIcon />} title="Admin" copy="Members, cohorts, invites, organizations, and access setup." extra={<span className="badge badge-primary">{coachSummary?.completed_hands ?? overview.summary.completed_hands} finished hands</span>} />
+                <HomeLinkCard href="/admin" icon={<CoachIcon />} title="Admin" copy="Members, cohorts, invites, organizations, and access setup." extra={<span className="badge badge-primary">{coachSummary?.completed_hands ?? userSummary?.completed_hands ?? 0} finished hands</span>} />
               </>
             ) : (
               <>
                 <HomeLinkCard className="dashboard-train-card" href={suggestion?.quick_start_url || "/screen-1"} icon={<TableIcon />} title="Train" copy={cleanedSuggestionReason || "Open the trainer and run the next live rep."} extra={<span className="badge badge-primary">{suggestion ? "Start next rep" : "Train"}</span>} />
-                <HomeLinkCard href="/assignments" icon={<ClipboardIcon />} title="Assignments" copy={topAssignment ? `${topAssignment.title} · ${topAssignment.progress.progress_count}/${topAssignment.progress.repetition_target} reps complete.` : "Coach work and guided practice appear here."} extra={<span className="badge badge-primary">{overview.summary.assignments_active} active</span>} />
+                <HomeLinkCard href="/assignments" icon={<ClipboardIcon />} title="Assignments" copy={topAssignment ? `${topAssignment.title} · ${topAssignment.progress.progress_count}/${topAssignment.progress.repetition_target} reps complete.` : "Coach work and guided practice appear here."} extra={<span className="badge badge-primary">{userSummary?.assignments_active ?? 0} active</span>} />
               </>
             )}
           </section>

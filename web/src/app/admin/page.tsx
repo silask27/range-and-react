@@ -118,7 +118,7 @@ const EMPTY_ANALYTICS: AnalyticsPayload = {
 const ACCOUNT_ROLE_OPTIONS = ["member", "coach", "admin"] as const;
 const ORG_ROLE_OPTIONS = ["member", "coach", "admin", "owner"] as const;
 const ADMIN_PAGE_SIZE = 500;
-const ADMIN_COLLECTION_CAP = 2500;
+const ADMIN_COLLECTION_CAP = 500;
 const ADMIN_TOOL_DISCLOSURE_CSS = `
   .admin-tool-disclosure > summary::-webkit-details-marker { display: none; }
   .admin-tool-disclosure > summary::marker { content: ""; }
@@ -393,32 +393,18 @@ export default function AdminPage() {
 
   async function loadAll() {
     setError(null);
-    const analyticsData = await loadOptional(
-      () => loadJson<AnalyticsPayload>("/admin/analytics?refresh=true", "Unable to load analytics."),
-      EMPTY_ANALYTICS,
-    );
-    setAnalytics(analyticsData);
-
-    const [usersData, assignmentsData, villainsData, scenariosData, auditsData, orgsData, invitesData, cohortsData, deliveryData] = await Promise.all([
+    const [usersData, auditsData, orgsData, invitesData, cohortsData] = await Promise.all([
       loadOptional(() => loadPagedCollection<UserEntry>("/admin/users", "users"), []),
-      loadOptional(() => loadPagedCollection<AssignmentEntry>("/admin/assignments", "assignments"), []),
-      loadOptional(() => loadJson<Array<{ id: string; display_name: string }>>("/villains", "Unable to load villains."), []),
-      loadOptional(() => loadJson<Array<{ id: string; display_name: string }>>("/scenarios", "Unable to load scenarios."), []),
-      loadOptional(() => loadPagedCollection<AuditEntry>("/admin/audit-logs", "audit_logs", 1000), []),
+      loadOptional(() => loadPagedCollection<AuditEntry>("/admin/audit-logs", "audit_logs", 100), []),
       loadOptional(() => loadJson<{ organizations: OrganizationEntry[] }>("/admin/organizations", "Unable to load organizations."), { organizations: [] }),
       loadOptional(() => loadJson<{ invites: InviteEntry[] }>(`/admin/signup-invites?limit=${ADMIN_COLLECTION_CAP}`, "Unable to load invites."), { invites: [] }),
       loadOptional(() => loadJson<{ cohorts: CohortEntry[] }>("/admin/cohorts", "Unable to load cohorts."), { cohorts: [] }),
-      loadOptional(() => loadJson<{ preference: DataDeliveryPreference }>("/admin/data-delivery-preferences", "Unable to load delivery settings."), null),
     ]);
     setUsers(usersData);
-    setAssignments(assignmentsData);
-    setVillains(villainsData.map((item) => ({ id: item.id, display_name: item.display_name })));
-    setScenarios(scenariosData.map((item) => ({ id: item.id, display_name: item.display_name })));
     setAuditLogs(auditsData);
     setOrganizations(orgsData.organizations);
     setInvites(invitesData.invites);
     setCohorts(cohortsData.cohorts);
-    setDeliveryPreference(deliveryData?.preference ?? null);
     if (selectedCohortId) {
       await loadOptional(() => loadCohortMembers(selectedCohortId), undefined);
     }
@@ -875,14 +861,13 @@ export default function AdminPage() {
       {authError ? <div style={errorStyle}>{authError}</div> : null}
       {error ? <div style={errorStyle}>{error}</div> : null}
       {notice ? <div style={noticeStyle}>{notice}</div> : null}
-      {analytics ? (
-        <>
-          <section style={panelStyle}>
-            <div style={tabRowStyle}>
-              <TabButton label="Members" active={activeTab === "members"} onClick={() => setActiveTab("members")} />
-              <TabButton label="Setup" active={activeTab === "setup"} onClick={() => setActiveTab("setup")} />
-            </div>
-          </section>
+      <>
+        <section style={panelStyle}>
+          <div style={tabRowStyle}>
+            <TabButton label="Members" active={activeTab === "members"} onClick={() => setActiveTab("members")} />
+            <TabButton label="Setup" active={activeTab === "setup"} onClick={() => setActiveTab("setup")} />
+          </div>
+        </section>
 
           {activeTab === "members" ? (
             <section style={mainGridStyle}>
@@ -1075,9 +1060,7 @@ export default function AdminPage() {
               </section>
             </section>
           ) : null}
-
-        </>
-      ) : null}
+      </>
     </AppShell>
   );
 }

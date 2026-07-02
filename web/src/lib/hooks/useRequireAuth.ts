@@ -17,9 +17,11 @@ export function useRequireAuth() {
 
     if (storedUser) {
       setUser(storedUser);
+      setIsAuthLoading(false);
     }
 
     if (!storedToken) {
+      setIsAuthLoading(false);
       router.replace("/login");
       return;
     }
@@ -27,7 +29,7 @@ export function useRequireAuth() {
     let cancelled = false;
 
     async function loadUser() {
-      setIsAuthLoading(true);
+      if (!storedUser) setIsAuthLoading(true);
       setAuthError(null);
       try {
         const res = await apiFetch(`${API_BASE}/auth/me`, { cache: "no-store" });
