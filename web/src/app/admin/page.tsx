@@ -215,6 +215,28 @@ async function downloadCsvResponse(res: Response, fallbackFilename: string) {
   URL.revokeObjectURL(url);
 }
 
+function splitPreferenceCohortIds(value?: string | null) {
+  const seen = new Set<string>();
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => {
+      if (!item || seen.has(item)) return false;
+      seen.add(item);
+      return true;
+    });
+}
+
+function joinPreferenceCohortIds(ids: string[]) {
+  const seen = new Set<string>();
+  const clean = ids.map((id) => id.trim()).filter((id) => {
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+  return clean.length ? clean.join(",") : null;
+}
+
 export default function AdminPage() {
   const { user, isAuthLoading, authError } = useRequireAuth();
   const [users, setUsers] = useState<UserEntry[]>([]);
@@ -670,13 +692,15 @@ export default function AdminPage() {
   async function handleDownloadSelectedCohortSummaryCsv() {
     setError(null); setNotice(null);
     try {
-      const cohortId = deliveryPreference?.cohort_id || cohorts[0]?.cohort_id || "";
-      if (!cohortId) throw new Error("Create a cohort before downloading a cohort summary.");
-      const res = await apiFetch(`${API_BASE}/admin/cohorts/${encodeURIComponent(cohortId)}/summary.csv`, { cache: "no-store" });
-      await downloadCsvResponse(res, "cohort-summary.csv");
-      setNotice("Cohort summary CSV downloaded.");
+      const cohortIds = splitPreferenceCohortIds(deliveryPreference?.cohort_id || cohorts[0]?.cohort_id || "");
+      if (!cohortIds.length) throw new Error("Select at least one cohort before downloading a cohort members summary.");
+      const params = new URLSearchParams();
+      cohortIds.forEach((cohortId) => params.append("cohort_ids", cohortId));
+      const res = await apiFetch(`${API_BASE}/admin/cohort-members-summary.csv?${params.toString()}`, { cache: "no-store" });
+      await downloadCsvResponse(res, "cohort-members-summary.csv");
+      setNotice("Cohort Members Summary.csv downloaded.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to download cohort summary.");
+      setError(err instanceof Error ? err.message : "Unable to download cohort members summary.");
     }
   }
 
@@ -684,18 +708,18 @@ export default function AdminPage() {
     setError(null); setNotice(null);
     try {
       const res = await apiFetch(`${API_BASE}/admin/cohort-summary.csv`, { cache: "no-store" });
-      await downloadCsvResponse(res, "organization-cohort-summary.csv");
-      setNotice("Organization summary CSV downloaded.");
+      await downloadCsvResponse(res, "org-wide-summary.csv");
+      setNotice("Org Wide Summary.csv downloaded.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to download organization summary.");
+      setError(err instanceof Error ? err.message : "Unable to download org-wide summary.");
     }
   }
 
   function updateDeliveryPreference(patch: Partial<DataDeliveryPreference>) {
     setDeliveryPreference((current) => ({
       cadence: "weekly",
-      include_member_summary: false,
-      include_cohort_summary: true,
+      include_member_summary: true,
+      include_cohort_summary: false,
       include_org_summary: user?.role === "owner" || user?.role === "admin",
       cohort_id: cohorts[0]?.cohort_id ?? null,
       ...(current ?? {}),
@@ -710,7 +734,11 @@ export default function AdminPage() {
       const res = await apiFetch(`${API_BASE}/admin/data-delivery-preferences`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(deliveryPreference),
+        body: JSON.stringify({
+          ...deliveryPreference,
+          include_cohort_summary: false,
+          cohort_id: joinPreferenceCohortIds(splitPreferenceCohortIds(deliveryPreference.cohort_id)),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to save delivery settings.");
@@ -730,7 +758,11 @@ export default function AdminPage() {
       const res = await apiFetch(`${API_BASE}/admin/data-delivery/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(deliveryPreference),
+        body: JSON.stringify({
+          ...deliveryPreference,
+          include_cohort_summary: false,
+          cohort_id: joinPreferenceCohortIds(splitPreferenceCohortIds(deliveryPreference.cohort_id)),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to send CSV files.");

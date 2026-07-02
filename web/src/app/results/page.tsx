@@ -293,20 +293,20 @@ export default function ResultsPage() {
       const query = params.toString();
       const res = await apiFetch(`${API_BASE}/results/member-summary.csv${query ? `?${query}` : ""}`, { cache: "no-store" });
       const blob = await res.blob();
-      if (!res.ok) throw new Error("Unable to download member summary.");
+      if (!res.ok) throw new Error("Unable to download member results.");
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
       const disposition = res.headers.get("Content-Disposition") || "";
       const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
-      link.download = filenameMatch?.[1] || "member-summary.csv";
+      link.download = filenameMatch?.[1] || "member-results.csv";
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-      setReviewMessage("Member summary CSV downloaded.");
+      setReviewMessage("Member Results.csv downloaded.");
     } catch (err) {
-      setReviewMessage(err instanceof Error ? err.message : "Unable to download member summary.");
+      setReviewMessage(err instanceof Error ? err.message : "Unable to download member results.");
     } finally {
       setCsvBusy(false);
     }

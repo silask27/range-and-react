@@ -411,12 +411,20 @@ class RegressionTestCase(unittest.TestCase):
         self.assertIn(cohort["name"], single_csv_response.text)
         self.assertIn("cohort-summary.csv", single_csv_response.headers.get("content-disposition", ""))
 
+        cohort_members_response = self.client.get(
+            f"/admin/cohort-members-summary.csv?cohort_ids={cohort['cohort_id']}",
+            headers={"Authorization": f"Bearer {self.owner_token}"},
+        )
+        self.assertEqual(cohort_members_response.status_code, 200, cohort_members_response.text)
+        self.assertIn("Member", cohort_members_response.text)
+        self.assertIn("members-summary.csv", cohort_members_response.headers.get("content-disposition", ""))
+
         member_summary_response = self.client.get(
             "/results/member-summary.csv",
             headers={"Authorization": f"Bearer {self.member_token}"},
         )
         self.assertEqual(member_summary_response.status_code, 200, member_summary_response.text)
-        self.assertIn("member-summary.csv", member_summary_response.headers.get("content-disposition", ""))
+        self.assertIn("member-results.csv", member_summary_response.headers.get("content-disposition", ""))
         self.assertIn("Member", member_summary_response.text)
 
         delivery_get = self.client.get(
@@ -432,14 +440,15 @@ class RegressionTestCase(unittest.TestCase):
             json={
                 "cadence": "biweekly",
                 "include_member_summary": True,
-                "include_cohort_summary": True,
-                "include_org_summary": False,
+                "include_cohort_summary": False,
+                "include_org_summary": True,
                 "cohort_id": cohort["cohort_id"],
             },
         )
         self.assertEqual(delivery_patch.status_code, 200, delivery_patch.text)
         self.assertEqual(delivery_patch.json()["preference"]["cadence"], "biweekly")
         self.assertEqual(delivery_patch.json()["preference"]["cohort_id"], cohort["cohort_id"])
+        self.assertFalse(delivery_patch.json()["preference"]["include_cohort_summary"])
 
         delivery_send = self.client.post(
             "/admin/data-delivery/send",
@@ -448,8 +457,8 @@ class RegressionTestCase(unittest.TestCase):
         )
         self.assertEqual(delivery_send.status_code, 200, delivery_send.text)
         sent_filenames = {item["filename"] for item in delivery_send.json()["files"]}
-        self.assertTrue(any(name.endswith("member-summary.csv") for name in sent_filenames))
-        self.assertTrue(any(name.endswith("cohort-summary.csv") for name in sent_filenames))
+        self.assertTrue(any(name.endswith("members-summary.csv") for name in sent_filenames))
+        self.assertTrue(any(name.endswith("org-wide-summary.csv") for name in sent_filenames))
 
         forbidden_cron = self.client.post(
             "/internal/data-delivery/run-due",

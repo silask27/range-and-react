@@ -216,6 +216,28 @@ async function downloadCsvResponse(res: Response, fallbackFilename: string) {
   URL.revokeObjectURL(url);
 }
 
+function splitPreferenceCohortIds(value?: string | null) {
+  const seen = new Set<string>();
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => {
+      if (!item || seen.has(item)) return false;
+      seen.add(item);
+      return true;
+    });
+}
+
+function joinPreferenceCohortIds(ids: string[]) {
+  const seen = new Set<string>();
+  const clean = ids.map((id) => id.trim()).filter((id) => {
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+  return clean.length ? clean.join(",") : null;
+}
+
 export default function CoachPage() {
   const { user, isAuthLoading, authError } = useRequireAuth();
   const [users, setUsers] = useState<UserEntry[]>([]);
@@ -720,16 +742,18 @@ export default function CoachPage() {
     URL.revokeObjectURL(url);
   }
 
-  async function handleDownloadSelectedCohortSummaryCsv() {
+  async function handleDownloadCohortMembersSummaryCsv() {
     setError(null); setNotice(null);
     try {
-      const cohortId = deliveryPreference?.cohort_id || cohorts[0]?.cohort_id || "";
-      if (!cohortId) throw new Error("Create a cohort before downloading a cohort summary.");
-      const res = await apiFetch(`${API_BASE}/admin/cohorts/${encodeURIComponent(cohortId)}/summary.csv`, { cache: "no-store" });
-      await downloadCsvResponse(res, "cohort-summary.csv");
-      setNotice("Cohort summary CSV downloaded.");
+      const cohortIds = splitPreferenceCohortIds(deliveryPreference?.cohort_id || cohorts[0]?.cohort_id || "");
+      if (!cohortIds.length) throw new Error("Select at least one cohort before downloading a cohort members summary.");
+      const params = new URLSearchParams();
+      cohortIds.forEach((cohortId) => params.append("cohort_ids", cohortId));
+      const res = await apiFetch(`${API_BASE}/admin/cohort-members-summary.csv?${params.toString()}`, { cache: "no-store" });
+      await downloadCsvResponse(res, "cohort-members-summary.csv");
+      setNotice("Cohort Members Summary.csv downloaded.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to download cohort summary.");
+      setError(err instanceof Error ? err.message : "Unable to download cohort members summary.");
     }
   }
 
@@ -737,18 +761,18 @@ export default function CoachPage() {
     setError(null); setNotice(null);
     try {
       const res = await apiFetch(`${API_BASE}/admin/cohort-summary.csv`, { cache: "no-store" });
-      await downloadCsvResponse(res, "organization-cohort-summary.csv");
-      setNotice("Organization summary CSV downloaded.");
+      await downloadCsvResponse(res, "org-wide-summary.csv");
+      setNotice("Org Wide Summary.csv downloaded.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to download organization summary.");
+      setError(err instanceof Error ? err.message : "Unable to download org-wide summary.");
     }
   }
 
   function updateDeliveryPreference(patch: Partial<DataDeliveryPreference>) {
     setDeliveryPreference((current) => ({
       cadence: "weekly",
-      include_member_summary: false,
-      include_cohort_summary: true,
+      include_member_summary: true,
+      include_cohort_summary: false,
       include_org_summary: user?.role === "owner" || user?.role === "admin",
       cohort_id: cohorts[0]?.cohort_id ?? null,
       ...(current ?? {}),
@@ -763,7 +787,11 @@ export default function CoachPage() {
       const res = await apiFetch(`${API_BASE}/admin/data-delivery-preferences`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(deliveryPreference),
+        body: JSON.stringify({
+          ...deliveryPreference,
+          include_cohort_summary: false,
+          cohort_id: joinPreferenceCohortIds(splitPreferenceCohortIds(deliveryPreference.cohort_id)),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to save delivery settings.");
@@ -783,7 +811,11 @@ export default function CoachPage() {
       const res = await apiFetch(`${API_BASE}/admin/data-delivery/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(deliveryPreference),
+        body: JSON.stringify({
+          ...deliveryPreference,
+          include_cohort_summary: false,
+          cohort_id: joinPreferenceCohortIds(splitPreferenceCohortIds(deliveryPreference.cohort_id)),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to send CSV files.");
@@ -905,7 +937,7 @@ export default function CoachPage() {
   const weakestVillain = analytics?.weakest_villains?.[0] ?? null;
   const workspaceName = organizations.length === 1 ? organizations[0].name : organizations.length > 1 ? "All workspaces" : "Workspace";
   const nextCoachActions = analytics ? buildCoachNextActions({ analytics, memberNames: userNameById, workspaceName }) : [];
-  const deliveryCohortId = deliveryPreference?.cohort_id || cohorts[0]?.cohort_id || "";
+  const selectedDeliveryCohortIds = splitPreferenceCohortIds(deliveryPreference?.cohort_id || cohorts[0]?.cohort_id || "");
   const selectedAnalyticsCohort = cohorts.find((cohort) => cohort.cohort_id === analyticsScope) ?? null;
   const analyticsViewLabel = selectedAnalyticsCohort?.name ?? "Pool-wide";
 
@@ -915,6 +947,14 @@ export default function CoachPage() {
       setAnalytics(EMPTY_ANALYTICS);
       setIsAnalyticsLoading(false);
       setError("Unable to load analytics for that view.");
+    });
+  }
+
+  function handleDeliveryCohortChange(ids: string[]) {
+    updateDeliveryPreference({
+      cohort_id: joinPreferenceCohortIds(ids),
+      include_member_summary: true,
+      include_cohort_summary: false,
     });
   }
 
@@ -1114,14 +1154,16 @@ export default function CoachPage() {
                 <div style={splitSectionHeaderStyle}>
                   <SectionHeader eyebrow="Reporting" title="CSV exports" />
                   <div style={actionClusterStyle}>
-                    <select value={deliveryCohortId} onChange={(event) => updateDeliveryPreference({ cohort_id: event.target.value || null })} style={{ ...inputStyle, width: 240 }} disabled={!cohorts.length}>
-                      {cohorts.length ? cohorts.map((cohort) => <option key={cohort.cohort_id} value={cohort.cohort_id}>{cohort.name}</option>) : <option value="">No cohorts yet</option>}
-                    </select>
-                    <button type="button" onClick={() => void handleDownloadSelectedCohortSummaryCsv()} style={secondaryButtonStyle}>Cohort CSV</button>
-                    <button type="button" onClick={() => void handleDownloadOrgSummaryCsv()} style={secondaryButtonStyle}>Org summary CSV</button>
+                    <button type="button" onClick={() => void handleDownloadCohortMembersSummaryCsv()} style={secondaryButtonStyle}>Cohort Members Summary.csv</button>
+                    <button type="button" onClick={() => void handleDownloadOrgSummaryCsv()} style={secondaryButtonStyle}>Org Wide Summary.csv</button>
                   </div>
                 </div>
-                <div style={helperCopyStyle}>Use this section for exports and scheduled delivery. Analytics above stays pool-wide unless a cohort section is explicitly labeled.</div>
+                <CohortCheckboxList
+                  cohorts={cohorts}
+                  selectedIds={selectedDeliveryCohortIds}
+                  onChange={handleDeliveryCohortChange}
+                />
+                <div style={helperCopyStyle}>Cohort Members Summary uses the selected cohort list. Org Wide Summary covers every cohort in your visible workspace.</div>
               </section>
 
               {deliveryPreference ? (
@@ -1144,15 +1186,11 @@ export default function CoachPage() {
                     </label>
                     <label style={checkboxRowStyle}>
                       <input type="checkbox" checked={deliveryPreference.include_member_summary} onChange={(event) => updateDeliveryPreference({ include_member_summary: event.target.checked })} />
-                      <span>My member summary CSV</span>
-                    </label>
-                    <label style={checkboxRowStyle}>
-                      <input type="checkbox" checked={deliveryPreference.include_cohort_summary} onChange={(event) => updateDeliveryPreference({ include_cohort_summary: event.target.checked })} />
-                      <span>Selected cohort CSV</span>
+                      <span>Cohort Members Summary.csv</span>
                     </label>
                     <label style={checkboxRowStyle}>
                       <input type="checkbox" checked={deliveryPreference.include_org_summary} onChange={(event) => updateDeliveryPreference({ include_org_summary: event.target.checked })} />
-                      <span>Org summary CSV</span>
+                      <span>Org Wide Summary.csv</span>
                     </label>
                   </div>
                   <div style={helperCopyStyle}>
@@ -1289,6 +1327,44 @@ function MemberCheckboxList({
             <span>{entry.display_name || entry.email}</span>
           </label>
         )) : <div style={helperCopyStyle}>{users.length ? "No matches." : emptyCopy}</div>}
+      </div>
+    </div>
+  );
+}
+
+function CohortCheckboxList({
+  cohorts,
+  selectedIds,
+  onChange,
+}: {
+  cohorts: CohortEntry[];
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const selected = new Set(selectedIds);
+
+  function toggle(cohortId: string) {
+    if (selected.has(cohortId)) {
+      onChange(selectedIds.filter((id) => id !== cohortId));
+      return;
+    }
+    onChange([...selectedIds, cohortId]);
+  }
+
+  return (
+    <div style={{ ...labelStyle, marginBottom: 14 }}>
+      <span style={labelTitleStyle}>Cohorts included in Cohort Members Summary.csv</span>
+      <div style={checkboxListStyle}>
+        {cohorts.length ? cohorts.map((cohort) => (
+          <label key={cohort.cohort_id} style={checkboxRowStyle}>
+            <input
+              type="checkbox"
+              checked={selected.has(cohort.cohort_id)}
+              onChange={() => toggle(cohort.cohort_id)}
+            />
+            <span>{cohort.name} ({cohort.member_count})</span>
+          </label>
+        )) : <div style={helperCopyStyle}>Create a cohort to export cohort members.</div>}
       </div>
     </div>
   );

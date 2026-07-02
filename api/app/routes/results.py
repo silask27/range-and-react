@@ -61,26 +61,6 @@ def results_overview_csv_route(
         timer_label=timer,
         limit=limit,
     )
-
-
-@router.get('/member-summary.csv')
-def results_member_summary_csv_route(
-    user_id: str | None = Query(default=None),
-    current_user: UserAccount = Depends(get_current_user),
-) -> Response:
-    target_user_id = (user_id or current_user.user_id).strip()
-    if target_user_id != current_user.user_id:
-        ensure_user_access(current_user, target_user_id)
-    filename, content, _ = member_summary_csv(
-        user_id=target_user_id,
-        visible_organization_ids=get_visible_organization_ids(current_user),
-    )
-    safe_filename = filename.replace('"', '').replace('\r', '').replace('\n', '')
-    return Response(
-        content=content,
-        media_type='text/csv',
-        headers={'Content-Disposition': f'attachment; filename="{safe_filename}"'},
-    )
     fieldnames = [
         'completed_at',
         'hand_id',
@@ -106,6 +86,26 @@ def results_member_summary_csv_route(
         content=buffer.getvalue(),
         media_type='text/csv',
         headers={'Content-Disposition': 'attachment; filename="range-and-react-results.csv"'},
+    )
+
+
+@router.get('/member-summary.csv')
+def results_member_summary_csv_route(
+    user_id: str | None = Query(default=None),
+    current_user: UserAccount = Depends(get_current_user),
+) -> Response:
+    target_user_id = (user_id or current_user.user_id).strip()
+    if target_user_id != current_user.user_id:
+        ensure_user_access(current_user, target_user_id)
+    filename, content, _ = member_summary_csv(
+        user_id=target_user_id,
+        visible_organization_ids=get_visible_organization_ids(current_user),
+    )
+    safe_filename = filename.replace('"', '').replace('\r', '').replace('\n', '')
+    return Response(
+        content=content,
+        media_type='text/csv',
+        headers={'Content-Disposition': f'attachment; filename="{safe_filename}"'},
     )
 
 

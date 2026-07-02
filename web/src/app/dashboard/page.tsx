@@ -73,6 +73,7 @@ export default function DashboardPage() {
             ) : (
               <>
                 <HomeLinkCard className="dashboard-train-card" href={suggestion?.quick_start_url || "/screen-1"} icon={<TableIcon />} title="Train" copy={cleanedSuggestionReason || "Open the trainer and run the next live rep."} extra={<span className="badge badge-primary">{suggestion ? "Start next rep" : "Train"}</span>} />
+                <HomeLinkCard href="/results" icon={<ResultsIcon />} title="Results" copy={resultCardCopy(userSummary)} extra={<div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}><span className="badge badge-success">Range {formatScore(userSummary?.avg_ranging_score ?? null)}</span><span className="badge badge-primary">Action {formatScore(userSummary?.avg_response_score ?? null)}</span></div>} />
                 <HomeLinkCard href="/assignments" icon={<ClipboardIcon />} title="Assignments" copy={topAssignment ? `${topAssignment.title} · ${topAssignment.progress.progress_count}/${topAssignment.progress.repetition_target} reps complete.` : "Coach work and guided practice appear here."} extra={<span className="badge badge-primary">{userSummary?.assignments_active ?? 0} active</span>} />
               </>
             )}
@@ -91,6 +92,12 @@ function cleanTrainCopy(copy?: string | null) {
     .replace(/\s{2,}/g, " ")
     .replace(/\s+([.,;:!?])/g, "$1")
     .trim();
+}
+
+function resultCardCopy(summary: OverviewPayload["summary"] | null) {
+  const completedHands = summary?.completed_hands ?? 0;
+  if (!completedHands) return "No completed hands yet. Your score history appears here after finished reps.";
+  return `${completedHands} completed ${completedHands === 1 ? "hand" : "hands"}. Review score trends, filters, and debriefs.`;
 }
 
 function HomeLinkCard({ href, icon, title, copy, extra, className }: { href: string; icon: ReactNode; title: string; copy: string; extra?: ReactNode; className?: string }) {
@@ -112,6 +119,7 @@ function iconShell(children: ReactNode) {
 function PersonIcon() { return iconShell(<><circle cx="12" cy="8" r="3.4" /><path d="M5.8 19c1.8-3 4.1-4.5 6.2-4.5S16.4 16 18.2 19" /></>); }
 function TableIcon() { return iconShell(<><rect x="4" y="6" width="16" height="12" rx="2" /><path d="M8 6v12M16 6v12M4 12h16" /></>); }
 function ChartIcon() { return iconShell(<><path d="M5 18V8" /><path d="M12 18V5" /><path d="M19 18v-9" /></>); }
+function ResultsIcon() { return iconShell(<><path d="M4 18h16" /><path d="M7 15l3-3 3 2 4-6" /><path d="M17 8h-4" /><path d="M17 8v4" /></>); }
 function ClipboardIcon() { return iconShell(<><rect x="6" y="5" width="12" height="15" rx="2" /><path d="M9 5.5h6v3H9z" /></>); }
 function CoachIcon() { return iconShell(<><circle cx="8" cy="10" r="2.5" /><circle cx="16" cy="10" r="2.5" /><path d="M4.8 18c.9-2 2.1-3 3.2-3s2.3 1 3.2 3" /><path d="M12.8 18c.9-2 2.1-3 3.2-3s2.3 1 3.2 3" /></>); }
 function ReviewIcon() { return iconShell(<><path d="M6 5h12v14H6z" /><path d="M9 9h6" /><path d="M9 13h4" /><path d="M15.5 14.5l1.2 1.2 2.1-2.4" /></>); }

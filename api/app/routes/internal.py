@@ -34,10 +34,8 @@ def _organization_label(organization_ids: list[str] | None) -> str:
 
 def _selected_files(preference: dict) -> list[str]:
     files = []
-    if preference.get('include_member_summary'):
+    if preference.get('include_member_summary') or preference.get('include_cohort_summary'):
         files.append('member_summary')
-    if preference.get('include_cohort_summary'):
-        files.append('cohort_summary')
     if preference.get('include_org_summary'):
         files.append('org_summary')
     return files

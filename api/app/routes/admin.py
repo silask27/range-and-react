@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import csv
-import io
-
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query, Response
 
 from api.app.models.auth import UserAccount
@@ -18,7 +15,7 @@ from api.app.services.access_service import (
     shared_organization_ids,
 )
 from api.app.services.accountability_service import build_weekly_accountability_digest
-from api.app.services.analytics_service import build_cohort_summary_export_rows, build_member_results_export_rows, get_admin_analytics, invalidate_admin_analytics, invalidate_dashboard_overview
+from api.app.services.analytics_service import get_admin_analytics, invalidate_admin_analytics, invalidate_dashboard_overview
 from api.app.services.assignment_service import count_assignments_with_progress, create_assignment, list_assignments_with_progress, summarize_assignments
 from api.app.services.audit_service import count_audit_logs, list_audit_logs, log_audit_event
 from api.app.services.cohort_service import (
@@ -32,15 +29,16 @@ from api.app.services.cohort_service import (
     set_cohort_coaches,
 )
 from api.app.services.data_delivery_service import (
-    COHORT_SUMMARY_FIELDNAMES,
-    MEMBER_SUMMARY_FIELDNAMES,
     build_delivery_files,
+    cohort_member_summary_csv,
     cohort_summary_csv,
     get_data_delivery_preference,
     mark_data_delivery_sent,
+    member_scope_summary_csv,
     org_cohort_summary_csv,
     save_data_delivery_preference,
     send_data_delivery_files,
+    split_cohort_ids,
 )
 from api.app.services.email_service import build_signup_invite_url, email_delivery_enabled, send_accountability_digest_email, send_signup_invite_email
 from api.app.services.auth_service import (
@@ -146,23 +144,22 @@ def _default_delivery_cohort_id(organization_ids: list[str] | None) -> str | Non
     return str(cohorts[0]['cohort_id']) if cohorts else None
 
 
-def _validate_delivery_cohort(current_user: UserAccount, cohort_id: str | None) -> str | None:
-    clean = str(cohort_id or '').strip() or None
-    if clean is None:
+def _validate_delivery_cohorts(current_user: UserAccount, cohort_id: str | list[str] | None) -> str | None:
+    clean_ids = split_cohort_ids(cohort_id)
+    if not clean_ids:
         return None
-    cohort = get_cohort(clean)
-    if cohort is None:
-        raise HTTPException(status_code=404, detail='Cohort not found')
-    ensure_organization_access(current_user, cohort['organization_id'])
-    return clean
+    for clean in clean_ids:
+        cohort = get_cohort(clean)
+        if cohort is None:
+            raise HTTPException(status_code=404, detail='Cohort not found')
+        ensure_organization_access(current_user, cohort['organization_id'])
+    return ','.join(clean_ids)
 
 
 def _selected_delivery_files(preference: dict) -> list[str]:
     files = []
-    if preference.get('include_member_summary'):
+    if preference.get('include_member_summary') or preference.get('include_cohort_summary'):
         files.append('member_summary')
-    if preference.get('include_cohort_summary'):
-        files.append('cohort_summary')
     if preference.get('include_org_summary'):
         files.append('org_summary')
     return files
@@ -728,12 +725,34 @@ def admin_analytics_route(
 @router.get('/member-results.csv')
 def admin_member_results_csv_route(current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> Response:
     org_scope, user_scope = _scope(current_user)
-    rows = build_member_results_export_rows(visible_user_ids=user_scope, visible_organization_ids=org_scope)
-    buffer = io.StringIO()
-    writer = csv.DictWriter(buffer, fieldnames=MEMBER_SUMMARY_FIELDNAMES)
-    writer.writeheader()
-    writer.writerows(rows)
-    return _csv_response('member-summary.csv', buffer.getvalue())
+    filename, content, _ = member_scope_summary_csv(
+        organization_label=_organization_label(current_user, org_scope),
+        visible_user_ids=user_scope,
+        visible_organization_ids=org_scope,
+    )
+    return _csv_response(filename, content)
+
+
+@router.get('/cohort-members-summary.csv')
+def admin_cohort_members_summary_csv_route(
+    current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH)),
+    cohort_ids: list[str] | None = Query(default=None),
+) -> Response:
+    org_scope, user_scope = _scope(current_user)
+    clean_cohort_ids = split_cohort_ids(cohort_ids)
+    if not clean_cohort_ids:
+        default_cohort_id = _default_delivery_cohort_id(org_scope)
+        clean_cohort_ids = [default_cohort_id] if default_cohort_id else []
+    clean = _validate_delivery_cohorts(current_user, clean_cohort_ids)
+    if not clean:
+        raise HTTPException(status_code=400, detail='Select at least one cohort before downloading cohort members summary')
+    filename, content, _ = cohort_member_summary_csv(
+        cohort_ids=split_cohort_ids(clean),
+        organization_label=_organization_label(current_user, org_scope),
+        visible_user_ids=user_scope,
+        visible_organization_ids=org_scope,
+    )
+    return _csv_response(filename, content)
 
 
 @router.get('/cohort-summary.csv')
@@ -783,13 +802,13 @@ def admin_update_data_delivery_preferences_route(
     payload: dict = Body(...),
     current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH)),
 ) -> dict:
-    cohort_id = _validate_delivery_cohort(current_user, payload.get('cohort_id'))
+    cohort_id = _validate_delivery_cohorts(current_user, payload.get('cohort_id'))
     try:
         preference = save_data_delivery_preference(
             current_user,
             cadence=str(payload.get('cadence') or 'weekly'),
             include_member_summary=bool(payload.get('include_member_summary')),
-            include_cohort_summary=bool(payload.get('include_cohort_summary')),
+            include_cohort_summary=False,
             include_org_summary=bool(payload.get('include_org_summary')),
             cohort_id=cohort_id,
         )
@@ -818,7 +837,7 @@ def admin_send_data_delivery_route(
             'include_org_summary': bool(payload.get('include_org_summary', preference.get('include_org_summary'))),
             'cohort_id': payload.get('cohort_id', preference.get('cohort_id')),
         }
-    cohort_id = _validate_delivery_cohort(current_user, preference.get('cohort_id'))
+    cohort_id = _validate_delivery_cohorts(current_user, preference.get('cohort_id'))
     files = build_delivery_files(
         user=current_user,
         selected_files=_selected_delivery_files(preference),

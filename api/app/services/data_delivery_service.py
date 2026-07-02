@@ -9,7 +9,7 @@ from typing import Any, Iterable
 from api.app.models.auth import UserAccount
 from api.app.models.enums import UserRole
 from api.app.services.analytics_service import build_cohort_summary_export_rows, build_member_results_export_rows
-from api.app.services.cohort_service import get_cohort
+from api.app.services.cohort_service import get_cohort, list_cohort_members
 from api.app.services.email_service import EmailDeliveryResult, send_csv_delivery_email
 from api.app.storage.db import get_connection
 
@@ -109,7 +109,7 @@ def member_summary_csv(
         visible_organization_ids=visible_organization_ids,
     )
     display_name = rows[0].get('display_name') if rows else 'member'
-    filename = f"{slugify_filename(str(display_name or ''), 'member')}-member-summary.csv"
+    filename = f"{slugify_filename(str(display_name or ''), 'member')}-results.csv"
     return filename, write_csv(rows, MEMBER_SUMMARY_FIELDNAMES), len(rows)
 
 
@@ -124,6 +124,69 @@ def member_scope_summary_csv(
         visible_organization_ids=visible_organization_ids,
     )
     filename = f"{slugify_filename(organization_label, 'organization')}-member-summary.csv"
+    return filename, write_csv(rows, MEMBER_SUMMARY_FIELDNAMES), len(rows)
+
+
+def split_cohort_ids(value: str | Iterable[str] | None) -> list[str]:
+    raw_values: Iterable[str]
+    if value is None:
+        raw_values = []
+    elif isinstance(value, str):
+        raw_values = value.split(',')
+    else:
+        raw_values = value
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in raw_values:
+        clean = str(item or '').strip()
+        if not clean or clean in seen:
+            continue
+        seen.add(clean)
+        out.append(clean)
+    return out
+
+
+def cohort_member_summary_csv(
+    *,
+    cohort_ids: Iterable[str],
+    organization_label: str | None,
+    visible_user_ids: Iterable[str] | None = None,
+    visible_organization_ids: Iterable[str] | None = None,
+) -> tuple[str, str, int]:
+    clean_cohort_ids = split_cohort_ids(cohort_ids)
+    visible = set(str(user_id) for user_id in visible_user_ids) if visible_user_ids is not None else None
+    member_ids: list[str] = []
+    seen: set[str] = set()
+    cohort_names: list[str] = []
+    for cohort_id in clean_cohort_ids:
+        cohort = get_cohort(cohort_id)
+        if cohort is not None:
+            cohort_names.append(str(cohort.get('name') or cohort_id))
+        try:
+            members = list_cohort_members(cohort_id=cohort_id, active_only=True)
+        except ValueError:
+            continue
+        for member in members:
+            user_id = str(member.get('user_id') or '').strip()
+            if not user_id or member.get('role') != UserRole.MEMBER.value:
+                continue
+            if visible is not None and user_id not in visible:
+                continue
+            if user_id in seen:
+                continue
+            seen.add(user_id)
+            member_ids.append(user_id)
+    rows = build_member_results_export_rows(
+        visible_user_ids=member_ids,
+        visible_organization_ids=visible_organization_ids,
+    )
+    if len(cohort_names) == 1:
+        filename_label = f"{cohort_names[0]} members"
+    elif cohort_names:
+        filename_label = "selected cohorts members"
+    else:
+        filename_label = f"{organization_label or 'organization'} cohort members"
+    filename = f"{slugify_filename(filename_label, 'cohort-members')}-summary.csv"
     return filename, write_csv(rows, MEMBER_SUMMARY_FIELDNAMES), len(rows)
 
 
@@ -155,7 +218,7 @@ def org_cohort_summary_csv(
         visible_user_ids=visible_user_ids,
         visible_organization_ids=visible_organization_ids,
     )
-    filename = f"{slugify_filename(organization_label, 'organization')}-cohort-summary.csv"
+    filename = f"{slugify_filename(organization_label, 'organization')}-org-wide-summary.csv"
     return filename, write_csv(rows, COHORT_SUMMARY_FIELDNAMES), len(rows)
 
 
@@ -163,8 +226,8 @@ def _default_preference(user: UserAccount, cohort_id: str | None = None) -> dict
     is_org_lead = user.role in {UserRole.OWNER, UserRole.ADMIN}
     return {
         'cadence': 'weekly',
-        'include_member_summary': False,
-        'include_cohort_summary': True,
+        'include_member_summary': True,
+        'include_cohort_summary': False,
         'include_org_summary': is_org_lead,
         'cohort_id': cohort_id,
         'last_sent_at': None,
@@ -185,10 +248,11 @@ def get_data_delivery_preference(user: UserAccount, *, default_cohort_id: str | 
         ).fetchone()
     if row is None:
         return _default_preference(user, default_cohort_id)
+    include_member_summary = bool(row['include_member_summary']) or bool(row['include_cohort_summary'])
     return {
         'cadence': row['cadence'],
-        'include_member_summary': bool(row['include_member_summary']),
-        'include_cohort_summary': bool(row['include_cohort_summary']),
+        'include_member_summary': include_member_summary,
+        'include_cohort_summary': False,
         'include_org_summary': bool(row['include_org_summary']),
         'cohort_id': row['cohort_id'] or default_cohort_id,
         'last_sent_at': row['last_sent_at'],
@@ -294,6 +358,7 @@ def list_due_data_delivery_preferences(*, as_of: datetime | None = None, limit: 
             role = UserRole(row['role'])
         except ValueError:
             continue
+        include_member_summary = bool(row['include_member_summary']) or bool(row['include_cohort_summary'])
         out.append({
             'user': UserAccount(
                 user_id=row['user_id'],
@@ -304,8 +369,8 @@ def list_due_data_delivery_preferences(*, as_of: datetime | None = None, limit: 
             ),
             'preference': {
                 'cadence': row['cadence'],
-                'include_member_summary': bool(row['include_member_summary']),
-                'include_cohort_summary': bool(row['include_cohort_summary']),
+                'include_member_summary': include_member_summary,
+                'include_cohort_summary': False,
                 'include_org_summary': bool(row['include_org_summary']),
                 'cohort_id': row['cohort_id'],
                 'last_sent_at': row['last_sent_at'],
@@ -327,23 +392,17 @@ def build_delivery_files(
 ) -> list[dict[str, str]]:
     requested = {str(item).strip() for item in selected_files if str(item).strip()}
     files: list[dict[str, str]] = []
-    if 'member_summary' in requested:
-        if user.role == UserRole.MEMBER:
-            filename, content, _ = member_summary_csv(user_id=user.user_id, visible_organization_ids=visible_organization_ids)
-        else:
-            filename, content, _ = member_scope_summary_csv(
+    should_include_cohort_members = 'member_summary' in requested or 'cohort_summary' in requested
+    if should_include_cohort_members:
+        cohort_ids = split_cohort_ids(cohort_id)
+        if cohort_ids:
+            filename, content, _ = cohort_member_summary_csv(
+                cohort_ids=cohort_ids,
                 organization_label=organization_label,
                 visible_user_ids=visible_user_ids,
                 visible_organization_ids=visible_organization_ids,
             )
-        files.append({'filename': filename, 'content': content})
-    if 'cohort_summary' in requested and cohort_id:
-        filename, content, _ = cohort_summary_csv(
-            cohort_id=cohort_id,
-            visible_user_ids=visible_user_ids,
-            visible_organization_ids=visible_organization_ids,
-        )
-        files.append({'filename': filename, 'content': content})
+            files.append({'filename': filename, 'content': content})
     if 'org_summary' in requested:
         filename, content, _ = org_cohort_summary_csv(
             organization_label=organization_label,
