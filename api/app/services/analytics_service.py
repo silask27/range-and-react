@@ -648,8 +648,8 @@ def _meaningful_weak_rows(rows: list[dict[str, Any]], *, limit: int = 6, min_han
 
 
 def _compute_admin_analytics(*, visible_user_ids: Iterable[str] | None = None, visible_organization_ids: Iterable[str] | None = None) -> dict[str, Any]:
-    user_scope = _clean_ids(visible_user_ids) or None
-    org_scope = _clean_ids(visible_organization_ids) or None
+    user_scope = None if visible_user_ids is None else _clean_ids(visible_user_ids)
+    org_scope = None if visible_organization_ids is None else _clean_ids(visible_organization_ids)
     member_user_scope = _query_member_user_ids(visible_user_ids=user_scope, visible_organization_ids=org_scope)
 
     scenario_rows = _query_group_scores(column='scenario_id', visible_user_ids=member_user_scope)

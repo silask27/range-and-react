@@ -671,6 +671,32 @@ class RegressionTestCase(unittest.TestCase):
         self.assertEqual(summary["avg_response_score"], 64.0)
         self.assertEqual(len(response.json()["trend_points"]), 1)
 
+        dashboard_response = self.client.get(
+            "/dashboard/overview",
+            headers={"Authorization": f"Bearer {self.coach_token}"},
+        )
+        self.assertEqual(dashboard_response.status_code, 200)
+        dashboard_summary = dashboard_response.json()["coach_summary"]
+        self.assertEqual(dashboard_summary["completed_hands"], 1)
+        self.assertEqual(dashboard_summary["avg_ranging_score"], 82.0)
+        self.assertEqual(dashboard_summary["avg_response_score"], 64.0)
+
+        empty_cohort_response = self.client.post(
+            "/admin/cohorts",
+            headers={"Authorization": f"Bearer {self.coach_token}"},
+            json={"organization_id": "org-alpha", "name": f"Empty Analytics Cohort {uuid4()}", "user_ids": []},
+        )
+        self.assertEqual(empty_cohort_response.status_code, 200, empty_cohort_response.text)
+        empty_cohort_id = empty_cohort_response.json()["cohort"]["cohort_id"]
+        empty_analytics = self.client.get(
+            f"/admin/analytics?refresh=true&cohort_id={empty_cohort_id}",
+            headers={"Authorization": f"Bearer {self.coach_token}"},
+        )
+        self.assertEqual(empty_analytics.status_code, 200)
+        self.assertEqual(empty_analytics.json()["summary"]["completed_hands"], 0)
+        self.assertEqual(empty_analytics.json()["summary"]["users_tracked"], 0)
+        self.assertEqual(empty_analytics.json()["trend_points"], [])
+
     def test_org_admin_user_visibility_is_scoped(self) -> None:
         response = self.client.get(
             "/admin/users",

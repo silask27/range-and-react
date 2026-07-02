@@ -904,6 +904,77 @@ export default function AdminPage() {
                     }) : <EmptyState copy="No accounts yet." />}
                   </div>
                 </section>
+              </section>
+
+              <section style={{ display: "grid", gap: 18 }}>
+                <section style={membersTopPanelStyle}>
+                  <SectionHeader eyebrow="Cohorts" title="Create and manage groups" />
+                  <form onSubmit={handleCreateCohort} style={formGridStyle}>
+                    <label style={labelStyle}>Name<input value={cohortState.name} onChange={(event) => setCohortState((current) => ({ ...current, name: event.target.value }))} style={inputStyle} placeholder="Ex. Bootcamp A" required /></label>
+                    <label style={labelStyle}>Organization<select value={cohortState.organization_id} onChange={(event) => setCohortState((current) => ({ ...current, organization_id: event.target.value }))} style={inputStyle} required>
+                      <option value="">Select organization</option>
+                      {organizations.map((org) => <option key={org.organization_id} value={org.organization_id}>{org.name}</option>)}
+                    </select></label>
+                    <MemberCheckboxList
+                      label="Members"
+                      users={memberUsers}
+                      selectedIds={cohortState.member_user_ids}
+                      onChange={(ids) => setCohortState((current) => ({ ...current, member_user_ids: ids }))}
+                    />
+                    <MemberCheckboxList
+                      label="Assigned coaches/admins"
+                      users={coachUsers}
+                      selectedIds={cohortState.coach_user_ids}
+                      onChange={(ids) => setCohortState((current) => ({ ...current, coach_user_ids: ids }))}
+                      emptyCopy="No active coaches or admins are available."
+                    />
+                    <label style={labelStyle}>Description<textarea value={cohortState.description} onChange={(event) => setCohortState((current) => ({ ...current, description: event.target.value }))} style={{ ...inputStyle, minHeight: 76 }} placeholder="Optional internal note" /></label>
+                    <button type="submit" style={secondaryButtonStyle}>Create cohort</button>
+                  </form>
+                  <div style={{ ...scrollBoxStyle, marginTop: 16 }}>
+                    {cohorts.length ? cohorts.map((cohort) => (
+                      <div key={cohort.cohort_id} style={scrollRowStyle}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={rowTitleStyle}>{cohort.name}</div>
+                          <div style={rowMetaStyle}>{inviteOrganizationName.get(cohort.organization_id) || "Organization"} · {cohort.member_count} members</div>
+                          <div style={rowHelperStyle}>{cohort.coaches?.length ? `Coaches: ${cohort.coaches.map((coach) => coach.display_name || coach.email).join(", ")}` : "No assigned coach/admin yet"}</div>
+                        </div>
+                        <span style={tagStyle}>{cohort.status}</span>
+                      </div>
+                    )) : <EmptyState copy="No cohorts created yet." />}
+                  </div>
+                </section>
+
+                <section style={panelStyle}>
+                  <SectionHeader eyebrow="Membership" title="Edit cohort roster" />
+                  <label style={labelStyle}>Cohort<select value={selectedCohortId} onChange={(event) => void handleSelectCohort(event.target.value)} style={inputStyle}>
+                    <option value="">Select cohort</option>
+                    {cohorts.map((cohort) => <option key={cohort.cohort_id} value={cohort.cohort_id}>{cohort.name} ({cohort.member_count})</option>)}
+                  </select></label>
+                  {selectedCohortId ? (
+                    <div style={{ ...cohortEditorStyle, marginTop: 14 }}>
+                      <MemberCheckboxList
+                        label="Members in this cohort"
+                        users={memberUsers}
+                        selectedIds={cohortMemberIds}
+                        onChange={setCohortMemberIds}
+                      />
+                      <button type="button" onClick={() => void handleSaveCohortMembers()} disabled={isCohortMembersBusy} style={primaryButtonStyle}>
+                        {isCohortMembersBusy ? "Saving members..." : "Save cohort members"}
+                      </button>
+                      <MemberCheckboxList
+                        label="Assigned coaches/admins"
+                        users={coachUsers}
+                        selectedIds={cohortCoachIds}
+                        onChange={setCohortCoachIds}
+                        emptyCopy="No active coaches or admins are available."
+                      />
+                      <button type="button" onClick={() => void handleSaveCohortCoaches()} disabled={isCohortCoachesBusy} style={secondaryButtonStyle}>
+                        {isCohortCoachesBusy ? "Saving coaches..." : "Save assigned coaches"}
+                      </button>
+                    </div>
+                  ) : <EmptyState copy="Select a cohort to edit its roster." />}
+                </section>
 
                 <section style={panelStyle}>
                   <SectionHeader eyebrow="Invites" title="Pending signup links" />
@@ -925,7 +996,6 @@ export default function AdminPage() {
                   </div>
                 </section>
               </section>
-
             </section>
           ) : null}
 
@@ -975,7 +1045,13 @@ export default function AdminPage() {
                       <summary style={summaryStyle}><span className="admin-tool-caret" aria-hidden="true">›</span><span>Add existing user to organization</span></summary>
                       <form onSubmit={handleAddOrgMember} style={stackStyle}>
                         <select value={orgMemberState.organization_id} onChange={(event) => setOrgMemberState((current) => ({ ...current, organization_id: event.target.value }))} style={inputStyle} required><option value="">Select organization</option>{organizations.map((org) => <option key={org.organization_id} value={org.organization_id}>{org.name}</option>)}</select>
-                        <select value={orgMemberState.user_id} onChange={(event) => setOrgMemberState((current) => ({ ...current, user_id: event.target.value }))} style={inputStyle} required><option value="">Select user</option>{users.map((entry) => <option key={entry.user_id} value={entry.user_id}>{entry.display_name || entry.email}</option>)}</select>
+                        <SearchableUserSelect
+                          label="User"
+                          users={users}
+                          value={orgMemberState.user_id}
+                          onChange={(userId) => setOrgMemberState((current) => ({ ...current, user_id: userId }))}
+                          required
+                        />
                         <label style={labelStyle}><span style={labelTitleStyle}>Organization role</span><select value={orgMemberState.membership_role} onChange={(event) => setOrgMemberState((current) => ({ ...current, membership_role: event.target.value }))} style={inputStyle}>{ORG_ROLE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
                         <button type="submit" style={secondaryButtonStyle}>Save membership</button>
                       </form>
@@ -1032,7 +1108,13 @@ export default function AdminPage() {
                       <details className="admin-tool-disclosure" style={detailsStyle}>
                         <summary style={summaryStyle}><span className="admin-tool-caret" aria-hidden="true">›</span><span>Advanced · link external identity</span></summary>
                         <form onSubmit={handleLinkExternal} style={stackStyle}>
-                          <select value={externalState.user_id} onChange={(event) => setExternalState((current) => ({ ...current, user_id: event.target.value }))} style={inputStyle} required><option value="">Select user</option>{users.map((entry) => <option key={entry.user_id} value={entry.user_id}>{entry.display_name || entry.email}</option>)}</select>
+                          <SearchableUserSelect
+                            label="User"
+                            users={users}
+                            value={externalState.user_id}
+                            onChange={(userId) => setExternalState((current) => ({ ...current, user_id: userId }))}
+                            required
+                          />
                           <input value={externalState.provider} onChange={(event) => setExternalState((current) => ({ ...current, provider: event.target.value }))} placeholder="Provider" style={inputStyle} required />
                           <input value={externalState.external_user_id} onChange={(event) => setExternalState((current) => ({ ...current, external_user_id: event.target.value }))} placeholder="External user ID" style={inputStyle} required />
                           <input value={externalState.external_email} onChange={(event) => setExternalState((current) => ({ ...current, external_email: event.target.value }))} placeholder="External email (optional)" style={inputStyle} />
@@ -1151,7 +1233,12 @@ function MemberCheckboxList({
   onChange: (ids: string[]) => void;
   emptyCopy?: string;
 }) {
+  const [query, setQuery] = useState("");
   const selected = new Set(selectedIds);
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredUsers = normalizedQuery
+    ? users.filter((entry) => `${entry.display_name || ""} ${entry.email}`.toLowerCase().includes(normalizedQuery))
+    : users;
 
   function toggle(userId: string) {
     if (selected.has(userId)) {
@@ -1164,8 +1251,9 @@ function MemberCheckboxList({
   return (
     <div style={labelStyle}>
       <span style={labelTitleStyle}>{label}</span>
+      <input value={query} onChange={(event) => setQuery(event.target.value)} style={inputStyle} placeholder="Search members" />
       <div style={checkboxListStyle}>
-        {users.length ? users.map((entry) => (
+        {filteredUsers.length ? filteredUsers.map((entry) => (
           <label key={entry.user_id} style={checkboxRowStyle}>
             <input
               type="checkbox"
@@ -1174,9 +1262,44 @@ function MemberCheckboxList({
             />
             <span>{entry.display_name || entry.email}</span>
           </label>
-        )) : <div style={helperCopyStyle}>{emptyCopy}</div>}
+        )) : <div style={helperCopyStyle}>{users.length ? "No matches." : emptyCopy}</div>}
       </div>
     </div>
+  );
+}
+
+function SearchableUserSelect({
+  label,
+  users,
+  value,
+  onChange,
+  required = false,
+}: {
+  label: string;
+  users: UserEntry[];
+  value: string;
+  onChange: (value: string) => void;
+  required?: boolean;
+}) {
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLowerCase();
+  const selectedUser = users.find((entry) => entry.user_id === value) ?? null;
+  const filteredUsers = normalizedQuery
+    ? users.filter((entry) => `${entry.display_name || ""} ${entry.email}`.toLowerCase().includes(normalizedQuery))
+    : users;
+  const options = selectedUser && !filteredUsers.some((entry) => entry.user_id === selectedUser.user_id)
+    ? [selectedUser, ...filteredUsers]
+    : filteredUsers;
+
+  return (
+    <label style={labelStyle}>
+      {label}
+      <input value={query} onChange={(event) => setQuery(event.target.value)} style={inputStyle} placeholder="Search by name or email" />
+      <select value={value} onChange={(event) => onChange(event.target.value)} style={inputStyle} required={required}>
+        <option value="">Select {label.toLowerCase()}</option>
+        {options.map((entry) => <option key={entry.user_id} value={entry.user_id}>{entry.display_name || entry.email}</option>)}
+      </select>
+    </label>
   );
 }
 

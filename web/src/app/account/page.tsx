@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
-import Link from "next/link";
 import AppShell from "../../components/app/AppShell";
 import { API_BASE, apiFetch } from "../../lib/api";
 import { clearStoredAuth, getStoredAuthUser, setStoredAuthUser } from "../../lib/auth";
@@ -10,8 +9,6 @@ import { useRequireAuth } from "../../lib/hooks/useRequireAuth";
 type ExternalIdentity = { provider: string; external_user_id: string; external_email: string | null; created_at: string };
 type Organization = { organization_id: string; name: string; slug: string; membership_role?: string; external_provider: string | null };
 type MePayload = { user: { user_id: string; email: string; display_name: string | null; role: string; is_active: boolean }; external_identities: ExternalIdentity[]; organizations: Organization[] };
-
-const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL ?? "support@rangeandreact.com";
 
 export default function AccountPage() {
   const { user, isAuthLoading, authError } = useRequireAuth();
@@ -153,7 +150,11 @@ export default function AccountPage() {
   }
 
   return (
-    <AppShell title="Account" subtitle="Update profile, security, linked access, and account exports in one place.">
+    <AppShell
+      title="Account"
+      subtitle="Update profile, security, linked access, and account exports in one place."
+      headerContent={<button type="button" onClick={() => void handleLogout()} style={logoutButtonStyle}>Log out</button>}
+    >
       {(isAuthLoading && !user) || (isLoading && !payload) ? <div style={copyStyle}>Loading account…</div> : null}
       {authError ? <div style={errorStyle}>{authError}</div> : null}
       {error ? <div style={errorStyle}>{error}</div> : null}
@@ -185,21 +186,27 @@ export default function AccountPage() {
 
             <div>
               <div className="page-eyebrow">Linked access</div>
-              <h2 style={sectionTitleStyle}>Organizations and identities</h2>
+              <h2 style={sectionTitleStyle}>Access</h2>
             </div>
-            <div style={stackStyle}>
-              {payload.organizations.length ? payload.organizations.map((org) => (
-                <div key={org.organization_id} style={lineRowStyle}>
-                  <strong>{org.name}</strong>
-                  <span style={copyStyle}>{org.slug} · {org.membership_role || "member"}</span>
-                </div>
-              )) : <div style={copyStyle}>No organizations linked yet.</div>}
-              {payload.external_identities.length ? payload.external_identities.map((identity) => (
-                <div key={`${identity.provider}-${identity.external_user_id}`} style={lineRowStyle}>
-                  <strong>{identity.provider}</strong>
-                  <span style={copyStyle}>{identity.external_email || identity.external_user_id}</span>
-                </div>
-              )) : <div style={copyStyle}>No external identities linked yet.</div>}
+            <div style={accessGridStyle}>
+              <div style={accessPanelStyle}>
+                <div style={miniTitleStyle}>Organizations</div>
+                {payload.organizations.length ? payload.organizations.map((org) => (
+                  <div key={org.organization_id} style={lineRowStyle}>
+                    <strong>{org.name}</strong>
+                    <span style={copyStyle}>{org.slug} · {org.membership_role || "member"}</span>
+                  </div>
+                )) : <div style={copyStyle}>No organizations linked yet.</div>}
+              </div>
+              <div style={accessPanelStyle}>
+                <div style={miniTitleStyle}>External identities</div>
+                {payload.external_identities.length ? payload.external_identities.map((identity) => (
+                  <div key={`${identity.provider}-${identity.external_user_id}`} style={lineRowStyle}>
+                    <strong>{identity.provider}</strong>
+                    <span style={copyStyle}>{identity.external_email || identity.external_user_id}</span>
+                  </div>
+                )) : <div style={copyStyle}>No external identities linked yet.</div>}
+              </div>
             </div>
           </section>
 
@@ -227,20 +234,6 @@ export default function AccountPage() {
               <div style={copyStyle}>Deactivation signs you out and marks the account inactive until an admin reactivates it.</div>
             </div>
 
-            <div className="divider" />
-
-            <div>
-              <div className="page-eyebrow">Help and session</div>
-              <h2 style={sectionTitleStyle}>Docs, support, and logout</h2>
-            </div>
-            <div style={linkGridStyle}>
-              <Link href="/guide" style={accountLinkStyle}>Guide</Link>
-              <Link href="/privacy" style={accountLinkStyle}>Privacy</Link>
-              <Link href="/terms" style={accountLinkStyle}>Terms</Link>
-              <Link href="/status" style={accountLinkStyle}>Status</Link>
-              <a href={`mailto:${SUPPORT_EMAIL}`} style={accountLinkStyle}>Support</a>
-              <button type="button" onClick={() => void handleLogout()} style={logoutButtonStyle}>Log out</button>
-            </div>
           </section>
         </div>
       ) : null}
@@ -254,9 +247,10 @@ const labelStyle: CSSProperties = { display: "grid", gap: 8, color: "var(--text-
 const stackStyle: CSSProperties = { display: "grid", gap: 12 };
 const lineRowStyle: CSSProperties = { display: "grid", gap: 4, paddingTop: 10, borderTop: "1px solid var(--line-soft)" };
 const wideButtonStyle: CSSProperties = { width: "100%", minHeight: 52 };
-const linkGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 150px), 1fr))", gap: 10 };
-const accountLinkStyle: CSSProperties = { border: "1px solid var(--line)", borderRadius: 12, padding: "12px 13px", color: "var(--text)", fontWeight: 850, textAlign: "center", background: "var(--surface-fill)" };
-const logoutButtonStyle: CSSProperties = { ...accountLinkStyle, cursor: "pointer" };
+const accessGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 12 };
+const accessPanelStyle: CSSProperties = { display: "grid", gap: 10, padding: 14, border: "1px solid var(--line)", borderRadius: 12, background: "var(--surface-fill)" };
+const miniTitleStyle: CSSProperties = { fontSize: 12, fontWeight: 850, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--accent)" };
+const logoutButtonStyle: CSSProperties = { padding: "11px 18px", borderRadius: 999, border: "1px solid var(--accent)", background: "var(--accent)", color: "var(--text)", fontWeight: 850, cursor: "pointer" };
 const copyStyle: CSSProperties = { color: "var(--text-65)", lineHeight: 1.7 };
 const errorStyle: CSSProperties = { color: "var(--accent)", fontWeight: 700 };
 const noticeStyle: CSSProperties = { color: "var(--success)", fontWeight: 700 };

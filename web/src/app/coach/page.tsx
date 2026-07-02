@@ -402,6 +402,7 @@ export default function CoachPage() {
   async function loadAnalytics(scope = analyticsScope) {
     setIsAnalyticsLoading(true);
     setError(null);
+    setAnalytics(EMPTY_ANALYTICS);
     const query = scope !== "all" ? `?cohort_id=${encodeURIComponent(scope)}` : "";
     const analyticsData = await loadOptional(
       () => loadJson<AnalyticsPayload>(`/admin/analytics${query}`, "Unable to load analytics."),
@@ -995,10 +996,13 @@ export default function CoachPage() {
                         {cohorts.map((cohort) => <option key={cohort.cohort_id} value={cohort.cohort_id}>{cohort.name} ({cohort.member_count})</option>)}
                       </select></label>
                     ) : (
-                      <label style={labelStyle}>Member<select value={createState.target_user_id} onChange={(event) => setCreateState((current) => ({ ...current, target_user_id: event.target.value }))} style={inputStyle} required>
-                        <option value="">Select member</option>
-                        {users.filter((entry) => entry.role === "member").map((entry) => <option key={entry.user_id} value={entry.user_id}>{entry.display_name || entry.email}</option>)}
-                      </select></label>
+                      <SearchableUserSelect
+                        label="Member"
+                        users={users.filter((entry) => entry.role === "member")}
+                        value={createState.target_user_id}
+                        onChange={(userId) => setCreateState((current) => ({ ...current, target_user_id: userId }))}
+                        required
+                      />
                     )}
                   </div>
                   <label style={labelStyle}><span style={labelTitleStyle}>Title <span style={requiredStyle}>*</span></span><input value={createState.title} onChange={(event) => setCreateState((current) => ({ ...current, title: event.target.value }))} style={inputStyle} placeholder="Ex. 25 reps of 3Bet IP vs Tom" required /></label>
@@ -1255,7 +1259,12 @@ function MemberCheckboxList({
   onChange: (ids: string[]) => void;
   emptyCopy?: string;
 }) {
+  const [query, setQuery] = useState("");
   const selected = new Set(selectedIds);
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredUsers = normalizedQuery
+    ? users.filter((entry) => `${entry.display_name || ""} ${entry.email}`.toLowerCase().includes(normalizedQuery))
+    : users;
 
   function toggle(userId: string) {
     if (selected.has(userId)) {
@@ -1268,8 +1277,9 @@ function MemberCheckboxList({
   return (
     <div style={labelStyle}>
       <span style={labelTitleStyle}>{label}</span>
+      <input value={query} onChange={(event) => setQuery(event.target.value)} style={inputStyle} placeholder="Search members" />
       <div style={checkboxListStyle}>
-        {users.length ? users.map((entry) => (
+        {filteredUsers.length ? filteredUsers.map((entry) => (
           <label key={entry.user_id} style={checkboxRowStyle}>
             <input
               type="checkbox"
@@ -1278,9 +1288,44 @@ function MemberCheckboxList({
             />
             <span>{entry.display_name || entry.email}</span>
           </label>
-        )) : <div style={helperCopyStyle}>{emptyCopy}</div>}
+        )) : <div style={helperCopyStyle}>{users.length ? "No matches." : emptyCopy}</div>}
       </div>
     </div>
+  );
+}
+
+function SearchableUserSelect({
+  label,
+  users,
+  value,
+  onChange,
+  required = false,
+}: {
+  label: string;
+  users: UserEntry[];
+  value: string;
+  onChange: (value: string) => void;
+  required?: boolean;
+}) {
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLowerCase();
+  const selectedUser = users.find((entry) => entry.user_id === value) ?? null;
+  const filteredUsers = normalizedQuery
+    ? users.filter((entry) => `${entry.display_name || ""} ${entry.email}`.toLowerCase().includes(normalizedQuery))
+    : users;
+  const options = selectedUser && !filteredUsers.some((entry) => entry.user_id === selectedUser.user_id)
+    ? [selectedUser, ...filteredUsers]
+    : filteredUsers;
+
+  return (
+    <label style={labelStyle}>
+      {label}
+      <input value={query} onChange={(event) => setQuery(event.target.value)} style={inputStyle} placeholder="Search by name or email" />
+      <select value={value} onChange={(event) => onChange(event.target.value)} style={inputStyle} required={required}>
+        <option value="">Select {label.toLowerCase()}</option>
+        {options.map((entry) => <option key={entry.user_id} value={entry.user_id}>{entry.display_name || entry.email}</option>)}
+      </select>
+    </label>
   );
 }
 
