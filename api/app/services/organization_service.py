@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from typing import Any, Iterable
 from uuid import uuid4
 
+from api.app.models.enums import UserRole
 from api.app.storage.db import get_connection, json_dumps, json_loads
 
 
@@ -80,6 +81,70 @@ def organization_access_status(metadata: dict[str, Any] | None) -> str:
 
 def organization_has_access(metadata: dict[str, Any] | None) -> bool:
     return organization_access_status(metadata) in {'active', 'trial'}
+
+
+def organization_user_limit(metadata: dict[str, Any] | None) -> int | None:
+    raw = (metadata or {}).get('included_active_users')
+    try:
+        value = int(str(raw or '').strip())
+    except ValueError:
+        return None
+    return value if value > 0 else None
+
+
+def get_organization_capacity(organization_id: str) -> dict[str, int | None]:
+    clean = str(organization_id or '').strip()
+    if not clean:
+        raise ValueError('organization_id is required')
+    now = _utcnow_iso()
+    with get_connection() as conn:
+        org = conn.execute('SELECT metadata_json FROM organizations WHERE organization_id = ? LIMIT 1', (clean,)).fetchone()
+        if org is None:
+            raise ValueError('Unknown organization_id')
+        metadata = json_loads(org['metadata_json'])
+        active_users = conn.execute(
+            '''
+            SELECT COUNT(DISTINCT m.user_id) AS count
+            FROM organization_memberships m
+            JOIN users u ON u.user_id = m.user_id
+            WHERE m.organization_id = ?
+              AND u.is_active = 1
+              AND u.role <> ?
+            ''',
+            (clean, UserRole.OWNER.value),
+        ).fetchone()
+        pending_invites = conn.execute(
+            '''
+            SELECT COUNT(*) AS count
+            FROM signup_invites
+            WHERE organization_id = ?
+              AND consumed_at IS NULL
+              AND role <> ?
+              AND (expires_at IS NULL OR expires_at > ?)
+            ''',
+            (clean, UserRole.OWNER.value, now),
+        ).fetchone()
+    limit = organization_user_limit(metadata)
+    active_count = int(active_users['count'] if active_users is not None else 0)
+    pending_count = int(pending_invites['count'] if pending_invites is not None else 0)
+    reserved_count = active_count + pending_count
+    return {
+        'limit': limit,
+        'active_user_count': active_count,
+        'pending_invite_count': pending_count,
+        'reserved_user_count': reserved_count,
+        'available_slots': None if limit is None else max(0, limit - reserved_count),
+    }
+
+
+def ensure_organization_capacity_available(organization_id: str, *, reserve_pending_invites: bool = True) -> None:
+    capacity = get_organization_capacity(organization_id)
+    limit = capacity.get('limit')
+    if limit is None:
+        return
+    used = capacity.get('reserved_user_count') if reserve_pending_invites else capacity.get('active_user_count')
+    if int(used or 0) >= int(limit):
+        raise ValueError('This organization has reached its trial/user limit')
 
 
 def user_has_active_organization_access(user_id: str) -> bool:
@@ -206,6 +271,7 @@ def list_organizations(*, limit: int = 100, organization_ids: Iterable[str] | No
     orgs = [_serialize_org_row(row) for row in rows]
     for org in orgs:
         org['members'] = list_organization_members(org['organization_id'])
+        org['capacity'] = get_organization_capacity(org['organization_id'])
     return orgs
 
 
@@ -218,12 +284,18 @@ def add_user_to_organization(*, organization_id: str, user_id: str, membership_r
         raise ValueError('organization_id and user_id are required')
     now = _utcnow_iso()
     with get_connection() as conn:
-        org_exists = conn.execute('SELECT 1 FROM organizations WHERE organization_id = ? LIMIT 1', (org_id_clean,)).fetchone()
+        org_exists = conn.execute('SELECT metadata_json FROM organizations WHERE organization_id = ? LIMIT 1', (org_id_clean,)).fetchone()
         if org_exists is None:
             raise ValueError('Unknown organization_id')
-        user_exists = conn.execute('SELECT 1 FROM users WHERE user_id = ? LIMIT 1', (user_id_clean,)).fetchone()
+        user_exists = conn.execute('SELECT role, is_active FROM users WHERE user_id = ? LIMIT 1', (user_id_clean,)).fetchone()
         if user_exists is None:
             raise ValueError('Unknown user_id')
+        existing_membership = conn.execute(
+            'SELECT 1 FROM organization_memberships WHERE organization_id = ? AND user_id = ? LIMIT 1',
+            (org_id_clean, user_id_clean),
+        ).fetchone()
+        if existing_membership is None and bool(user_exists['is_active']) and user_exists['role'] != UserRole.OWNER.value:
+            ensure_organization_capacity_available(org_id_clean)
         conn.execute(
             '''
             INSERT INTO organization_memberships (

@@ -224,6 +224,73 @@ class RegressionTestCase(unittest.TestCase):
         self.assertEqual(member_login.status_code, 200, member_login.text)
 
 
+    def test_a_owner_trial_user_limit_restricts_extra_memberships(self) -> None:
+        limit = self.client.patch(
+            "/admin/organizations/org-beta",
+            headers={"Authorization": f"Bearer {self.owner_token}"},
+            json={"included_active_users": "1", "access_status": "active", "trial_ends_at": ""},
+        )
+        self.assertEqual(limit.status_code, 200, limit.text)
+        self.assertEqual(limit.json()["organization"]["metadata"]["included_active_users"], "1")
+
+        try:
+            extra_invite = self.client.post(
+                "/admin/signup-invites",
+                headers={"Authorization": f"Bearer {self.owner_token}"},
+                json={"email": "beta-extra@example.com", "role": "member", "organization_id": "org-beta", "membership_role": "member"},
+            )
+            self.assertEqual(extra_invite.status_code, 400, extra_invite.text)
+
+            add_existing = self.client.post(
+                "/admin/organizations/org-beta/members",
+                headers={"Authorization": f"Bearer {self.owner_token}"},
+                json={"user_id": self.member_user_id, "membership_role": "member"},
+            )
+            self.assertEqual(add_existing.status_code, 400, add_existing.text)
+
+            raised = self.client.patch(
+                "/admin/organizations/org-beta",
+                headers={"Authorization": f"Bearer {self.owner_token}"},
+                json={"included_active_users": "2"},
+            )
+            self.assertEqual(raised.status_code, 200, raised.text)
+
+            allowed_invite = self.client.post(
+                "/admin/signup-invites",
+                headers={"Authorization": f"Bearer {self.owner_token}"},
+                json={"email": "beta-extra@example.com", "role": "member", "organization_id": "org-beta", "membership_role": "member"},
+            )
+            self.assertEqual(allowed_invite.status_code, 200, allowed_invite.text)
+            invite_code = allowed_invite.json()["invite"]["invite_code"]
+
+            signup = self.client.post(
+                "/auth/signup",
+                json={"email": "beta-extra@example.com", "password": "Password123!", "display_name": "Beta Extra", "invite_code": invite_code},
+            )
+            self.assertEqual(signup.status_code, 200, signup.text)
+            new_user_id = signup.json()["user"]["user_id"]
+
+            full_invite = self.client.post(
+                "/admin/signup-invites",
+                headers={"Authorization": f"Bearer {self.owner_token}"},
+                json={"email": "beta-full@example.com", "role": "member", "organization_id": "org-beta", "membership_role": "member"},
+            )
+            self.assertEqual(full_invite.status_code, 400, full_invite.text)
+
+            deleted = self.client.delete(
+                f"/admin/users/{new_user_id}",
+                headers={"Authorization": f"Bearer {self.owner_token}"},
+            )
+            self.assertEqual(deleted.status_code, 200, deleted.text)
+        finally:
+            restore = self.client.patch(
+                "/admin/organizations/org-beta",
+                headers={"Authorization": f"Bearer {self.owner_token}"},
+                json={"included_active_users": ""},
+            )
+            self.assertEqual(restore.status_code, 200, restore.text)
+
+
     def test_login_route_returns_success(self) -> None:
         response = self.client.post(
             "/auth/login",

@@ -94,7 +94,8 @@ type OrganizationMetadata = {
   included_active_users?: string;
   additional_user_cents?: string;
 };
-type OrganizationEntry = { organization_id: string; name: string; slug: string; external_provider: string | null; external_org_id: string | null; access_status?: string; trial_ends_at?: string | null; metadata?: OrganizationMetadata; members: Array<{ user_id: string; display_name: string | null; email: string; membership_role: string }> };
+type OrganizationCapacity = { limit: number | null; active_user_count: number; pending_invite_count: number; reserved_user_count: number; available_slots: number | null };
+type OrganizationEntry = { organization_id: string; name: string; slug: string; external_provider: string | null; external_org_id: string | null; access_status?: string; trial_ends_at?: string | null; metadata?: OrganizationMetadata; capacity?: OrganizationCapacity; members: Array<{ user_id: string; display_name: string | null; email: string; membership_role: string }> };
 type InviteEntry = { invite_id: string; invite_code: string; email: string | null; role: string; organization_id: string | null; membership_role: string; expires_at: string | null; consumed_at: string | null; status: string; invite_url?: string; email_delivery?: { status?: string; detail?: string | null } | null };
 type CohortEntry = { cohort_id: string; organization_id: string; name: string; description: string | null; status: string; member_count: number; coach_user_ids?: string[]; coaches?: Array<{ user_id: string; email: string; display_name: string | null; role: string; is_active: boolean }> };
 type CohortMemberEntry = { user_id: string; email: string; display_name: string | null; role: string; is_active: boolean };
@@ -1080,6 +1081,7 @@ export default function AdminPage() {
                           <div style={{ minWidth: 0 }}>
                             <div style={rowTitleStyle}>{org.name}</div>
                             <div style={rowMetaStyle}>{org.members.length} rostered users · {org.slug} · {formatOrgAccessStatus(org)}</div>
+                            {org.capacity?.limit ? <div style={rowHelperStyle}>{org.capacity.active_user_count} active users · {org.capacity.pending_invite_count} pending invites · {org.capacity.available_slots ?? 0} slots open</div> : null}
                             {org.trial_ends_at ? <div style={rowHelperStyle}>Trial ends {new Date(org.trial_ends_at).toLocaleDateString()}</div> : null}
                             {org.metadata?.invite_landing_copy ? <div style={rowHelperStyle}>{org.metadata.invite_landing_copy}</div> : null}
                             {org.metadata?.coach_roster_note ? <div style={rowHelperStyle}>{org.metadata.coach_roster_note}</div> : null}
@@ -1112,7 +1114,7 @@ export default function AdminPage() {
                           <div style={threeColStyle}>
                             <input value={orgState.license_model} onChange={(event) => setOrgState((current) => ({ ...current, license_model: event.target.value }))} placeholder="License model" style={inputStyle} />
                             <input value={orgState.monthly_minimum_cents} onChange={(event) => setOrgState((current) => ({ ...current, monthly_minimum_cents: event.target.value }))} placeholder="Monthly minimum cents" style={inputStyle} />
-                            <input value={orgState.included_active_users} onChange={(event) => setOrgState((current) => ({ ...current, included_active_users: event.target.value }))} placeholder="Included active users" style={inputStyle} />
+                            <input value={orgState.included_active_users} onChange={(event) => setOrgState((current) => ({ ...current, included_active_users: event.target.value }))} placeholder="Trial/user limit" style={inputStyle} />
                             <input value={orgState.additional_user_cents} onChange={(event) => setOrgState((current) => ({ ...current, additional_user_cents: event.target.value }))} placeholder="Extra user cents" style={inputStyle} />
                           </div>
                           <textarea value={orgState.invite_landing_copy} onChange={(event) => setOrgState((current) => ({ ...current, invite_landing_copy: event.target.value }))} placeholder="Invite landing copy (optional)" style={{ ...inputStyle, minHeight: 82 }} />
@@ -1297,7 +1299,7 @@ function OrganizationSettingsForm({ organization, onSave }: { organization: Orga
         <div style={threeColStyle}>
           <input value={state.license_model} onChange={(event) => setState((current) => ({ ...current, license_model: event.target.value }))} placeholder="License model" style={inputStyle} />
           <input value={state.monthly_minimum_cents} onChange={(event) => setState((current) => ({ ...current, monthly_minimum_cents: event.target.value }))} placeholder="Monthly minimum cents" style={inputStyle} />
-          <input value={state.included_active_users} onChange={(event) => setState((current) => ({ ...current, included_active_users: event.target.value }))} placeholder="Included active users" style={inputStyle} />
+          <input value={state.included_active_users} onChange={(event) => setState((current) => ({ ...current, included_active_users: event.target.value }))} placeholder="Trial/user limit" style={inputStyle} />
           <input value={state.additional_user_cents} onChange={(event) => setState((current) => ({ ...current, additional_user_cents: event.target.value }))} placeholder="Extra user cents" style={inputStyle} />
         </div>
         <textarea value={state.invite_landing_copy} onChange={(event) => setState((current) => ({ ...current, invite_landing_copy: event.target.value }))} placeholder="Invite landing copy" style={{ ...inputStyle, minHeight: 76 }} />

@@ -15,7 +15,7 @@ from api.app.config import settings
 from api.app.models.auth import AuthSession, UserAccount
 from api.app.models.enums import UserRole
 from api.app.services.email_service import send_password_reset_email
-from api.app.services.organization_service import organization_has_access, user_has_active_organization_access
+from api.app.services.organization_service import ensure_organization_capacity_available, organization_has_access, user_has_active_organization_access
 from api.app.storage.db import get_connection, json_dumps, json_loads
 
 _PBKDF2_ITERATIONS = 240_000
@@ -194,6 +194,7 @@ def create_signup_invite(
             org_exists = conn.execute('SELECT 1 FROM organizations WHERE organization_id = ? LIMIT 1', (organization_id,)).fetchone()
             if org_exists is None:
                 raise ValueError('Unknown organization_id')
+            ensure_organization_capacity_available(organization_id)
         if normalized_email:
             existing_user = conn.execute(
                 'SELECT user_id FROM users WHERE lower(trim(email)) = ? LIMIT 1',
@@ -347,6 +348,7 @@ def create_user_from_signup_invite(
                 raise ValueError('This invite is tied to an organization that no longer exists')
             if not organization_has_access(json_loads(organization['metadata_json'])):
                 raise ValueError('This organization is paused or its trial has expired')
+            ensure_organization_capacity_available(organization_id, reserve_pending_invites=False)
 
         existing = conn.execute(
             'SELECT user_id FROM users WHERE lower(trim(email)) = ? LIMIT 1',
