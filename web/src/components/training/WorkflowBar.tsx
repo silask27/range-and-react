@@ -13,7 +13,7 @@ function stepStyle(state: WorkflowStepState): CSSProperties {
   return { border: "1px solid var(--line)", background: "transparent", color: "var(--text-45)" };
 }
 
-export default function WorkflowBar({ steps, helperText = "", timerLabel = "Off", showTimer = true, showHelper = true }: WorkflowBarProps) {
+export default function WorkflowBar({ steps, helperText = "", timerLabel = "No timer", showTimer = true, showHelper = true }: WorkflowBarProps) {
   return (
     <section style={wrapStyle} aria-label="Training workflow">
       <div style={{ display: "grid", gap: 12, minWidth: 0, flex: 1 }}>

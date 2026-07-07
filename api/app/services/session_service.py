@@ -87,9 +87,9 @@ def _validate_actor(actor: str) -> None:
 
 
 def _validate_train_timer_seconds(train_timer_seconds: int | None) -> None:
-    if train_timer_seconds not in {None, 0, 10, 30, 60}:
+    if train_timer_seconds not in {None, 0, 15, 30, 60}:
         raise ValueError(
-            "train_timer_seconds must be one of: None, 0, 10, 30, 60"
+            "train_timer_seconds must be one of: None, 0, 15, 30, 60"
         )
 
 
@@ -111,8 +111,8 @@ def create_session(
 
     train_timer_seconds semantics:
     - None -> no Train timer has been selected / timer not applicable
-    - 0    -> Train timer explicitly Off
-    - 10/30/60 -> active Train countdown selection
+    - 0    -> Train timer explicitly set to No timer
+    - 15/30/60 -> active Train countdown selection
     """
     if villain_profile_id not in VILLAIN_PROFILES:
         raise ValueError(f"Unknown villain_profile_id: {villain_profile_id}")

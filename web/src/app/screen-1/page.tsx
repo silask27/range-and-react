@@ -72,7 +72,7 @@ type SessionState = {
 
 type RangeEditorActor = "hero" | "villain";
 type MatrixBoolState = Record<string, boolean>;
-type TrainTimerSeconds = 0 | 10 | 30 | 60;
+type TrainTimerSeconds = 0 | 15 | 30 | 60;
 type TimeoutOverlayState = {
   open: boolean;
   subtitle: string;
@@ -105,7 +105,7 @@ const DISPLAY_SEATS = [
   "SB",
   "BB",
 ] as const;
-const TIMER_OPTIONS: TrainTimerSeconds[] = [0, 10, 30, 60];
+const TIMER_OPTIONS: TrainTimerSeconds[] = [0, 60, 30, 15];
 
 type DisplaySeat = (typeof DISPLAY_SEATS)[number];
 
@@ -428,7 +428,7 @@ function timerDisplayLabel(
   timerSeconds: TrainTimerSeconds,
   timeRemaining: number | null,
 ): string {
-  if (timerSeconds === 0) return "Off";
+  if (timerSeconds === 0) return "No timer";
   if (timeRemaining != null) return `${timeRemaining}s`;
   return `${timerSeconds}s`;
 }
@@ -1312,7 +1312,7 @@ function Screen1PageContent() {
                         color: THEME.text,
                       }}
                     >
-                      {option === 0 ? "Off" : `${option} seconds`}
+                      {option === 0 ? "No timer" : `${option} seconds`}
                     </div>
                     <div
                       style={{

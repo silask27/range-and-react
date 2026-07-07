@@ -22,6 +22,11 @@ RANGE_SCORE_POSTERIOR_MASS_WEIGHT = 0.70
 RANGE_SCORE_LOW_PROBABILITY_REMOVAL_WEIGHT = 0.30
 RANGE_SCORE_SUBGROUP_SURVIVAL_CAP = 45.0
 RANGE_SCORE_BUCKET_SURVIVAL_CAP = 25.0
+TIMER_SCORE_CUSHIONS = {
+    15: 6.0,
+    30: 4.0,
+    60: 2.0,
+}
 
 
 def _is_fast_interactive_scoring(iters: int | None) -> bool:
@@ -45,16 +50,27 @@ def _metadata_for_hand(hand_id: str) -> dict[str, Any]:
 def _persist_metadata(hand_id: str, metadata: dict[str, Any]) -> None:
     prune_scores = [float(item['overall_score']) for item in metadata.get('prune_evaluations', []) if item.get('overall_score') is not None]
     response_scores = [float(item['score']) for item in metadata.get('response_evaluations', []) if item.get('supported') and item.get('score') is not None]
-    ranging_score = round(sum(prune_scores) / len(prune_scores), 2) if prune_scores else None
-    response_score = round(sum(response_scores) / len(response_scores), 2) if response_scores else None
+    raw_ranging_score = round(sum(prune_scores) / len(prune_scores), 2) if prune_scores else None
+    raw_response_score = round(sum(response_scores) / len(response_scores), 2) if response_scores else None
+    timer_seconds = _timer_seconds_for_hand_result(hand_id)
+    timer_cushion = _timer_score_cushion(timer_seconds)
+    ranging_score = _apply_timer_score_cushion(raw_ranging_score, timer_cushion)
+    response_score = _apply_timer_score_cushion(raw_response_score, timer_cushion)
     overall_parts = [v for v in [ranging_score, response_score] if v is not None]
     overall_score = round(sum(overall_parts) / len(overall_parts), 2) if overall_parts else None
+    raw_overall_parts = [v for v in [raw_ranging_score, raw_response_score] if v is not None]
+    raw_overall_score = round(sum(raw_overall_parts) / len(raw_overall_parts), 2) if raw_overall_parts else None
     metadata['summary'] = {
         'prune_steps_scored': len(prune_scores),
         'response_nodes_scored': len(response_scores),
+        'raw_ranging_score': raw_ranging_score,
+        'raw_response_score': raw_response_score,
+        'raw_overall_score': raw_overall_score,
         'ranging_score': ranging_score,
         'response_score': response_score,
         'overall_score': overall_score,
+        'timer_seconds': timer_seconds,
+        'timer_score_cushion': timer_cushion,
     }
     store.update_hand_result_scores(
         hand_id,
@@ -63,6 +79,36 @@ def _persist_metadata(hand_id: str, metadata: dict[str, Any]) -> None:
         overall_score=overall_score,
         metadata=metadata,
     )
+
+
+def _timer_seconds_for_hand_result(hand_id: str) -> int | None:
+    record = store.get_hand_result(hand_id)
+    if not record or not record.get('session_id'):
+        return None
+    session = store.get_session(record.get('session_id'))
+    if not session:
+        return None
+    value = session.get('train_timer_seconds')
+    try:
+        return int(value) if value not in (None, '') else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _timer_score_cushion(timer_seconds: int | None) -> float:
+    try:
+        seconds = int(timer_seconds) if timer_seconds not in (None, '') else None
+    except (TypeError, ValueError):
+        return 0.0
+    if seconds in (None, 0):
+        return 0.0
+    return float(TIMER_SCORE_CUSHIONS.get(seconds, 0.0))
+
+
+def _apply_timer_score_cushion(score: float | None, cushion: float) -> float | None:
+    if score is None:
+        return None
+    return round(max(0.0, min(100.0, float(score) + float(cushion))), 2)
 
 
 def _actual_bucket_info(hand: HandState, *, iters: int | None) -> dict[str, Any]:
@@ -613,7 +659,7 @@ def _avg(values: list[float | int | None]) -> float | None:
 
 def _timer_label(seconds: int | None) -> str:
     if seconds in (None, 0):
-        return 'Off'
+        return 'No timer'
     return f'{int(seconds)}s'
 
 
@@ -627,6 +673,7 @@ def _result_context(result: dict[str, Any]) -> dict[str, Any]:
     metadata = dict(result.get('metadata') or {})
     prune_evals = metadata.get('prune_evaluations') or []
     response_evals = metadata.get('response_evaluations') or []
+    timer_cushion = _timer_score_cushion(timer_seconds)
 
     street_scores_map: dict[str, dict[str, list[float]]] = defaultdict(lambda: {'ranging': [], 'response': []})
     streets_played: set[str] = set()
@@ -636,14 +683,18 @@ def _result_context(result: dict[str, Any]) -> dict[str, Any]:
             continue
         streets_played.add(street)
         if item.get('overall_score') is not None:
-            street_scores_map[street]['ranging'].append(float(item['overall_score']))
+            adjusted_score = _apply_timer_score_cushion(float(item['overall_score']), timer_cushion)
+            if adjusted_score is not None:
+                street_scores_map[street]['ranging'].append(adjusted_score)
     for item in response_evals:
         street = str(item.get('street') or '').lower()
         if not street:
             continue
         streets_played.add(street)
         if item.get('supported') and item.get('score') is not None:
-            street_scores_map[street]['response'].append(float(item['score']))
+            adjusted_score = _apply_timer_score_cushion(float(item['score']), timer_cushion)
+            if adjusted_score is not None:
+                street_scores_map[street]['response'].append(adjusted_score)
     if result.get('street'):
         streets_played.add(str(result['street']).lower())
 

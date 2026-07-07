@@ -277,6 +277,7 @@ export default function AdminPage() {
   const [inviteState, setInviteState] = useState({ email: "", role: "member", organization_id: "", expires_in_days: 14 });
   const [bulkInviteState, setBulkInviteState] = useState({ emails: "", role: "member", organization_id: "", expires_in_days: 14 });
   const [selectedCohortId, setSelectedCohortId] = useState("");
+  const [selectedSetupOrgId, setSelectedSetupOrgId] = useState("");
   const [cohortMemberIds, setCohortMemberIds] = useState<string[]>([]);
   const [savedCohortMemberIds, setSavedCohortMemberIds] = useState<string[]>([]);
   const [isCohortMembersBusy, setIsCohortMembersBusy] = useState(false);
@@ -306,6 +307,10 @@ export default function AdminPage() {
     });
     return summary;
   }, [organizations]);
+
+  const selectedSetupOrganization = useMemo(() => {
+    return organizations.find((org) => org.organization_id === selectedSetupOrgId) ?? organizations[0] ?? null;
+  }, [organizations, selectedSetupOrgId]);
 
   const userNameById = useMemo(() => {
     const summary = new Map<string, string>();
@@ -459,6 +464,16 @@ export default function AdminPage() {
       setError(null);
     });
   }, [user]);
+
+  useEffect(() => {
+    if (!organizations.length) {
+      setSelectedSetupOrgId("");
+      return;
+    }
+    if (!organizations.some((org) => org.organization_id === selectedSetupOrgId)) {
+      setSelectedSetupOrgId(organizations[0].organization_id);
+    }
+  }, [organizations, selectedSetupOrgId]);
 
   async function handleCreateAssignment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1071,26 +1086,27 @@ export default function AdminPage() {
                   <SectionHeader eyebrow="Admin tools" title="Organizations and access setup" />
                   <div style={helperCopyStyle}>Create the organization first, then send signup links. Existing users can be attached later without creating a new account.</div>
                   {organizations.length ? (
-                    <div style={workspacePreviewGridStyle}>
-                      {organizations.map((org) => (
-                        <div key={org.organization_id} style={workspacePreviewStyle}>
-                          {org.metadata?.logo_url ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={org.metadata.logo_url} alt={`${org.name} logo`} style={workspaceLogoStyle} />
-                          ) : <div style={workspaceLogoFallbackStyle}>{org.name.slice(0, 2).toUpperCase()}</div>}
-                          <div style={{ minWidth: 0 }}>
-                            <div style={rowTitleStyle}>{org.name}</div>
-                            <div style={rowMetaStyle}>{org.members.length} rostered users · {org.slug} · {formatOrgAccessStatus(org)}</div>
-                            {org.capacity?.limit ? <div style={rowHelperStyle}>{org.capacity.active_user_count} active users · {org.capacity.pending_invite_count} pending invites · {org.capacity.available_slots ?? 0} slots open</div> : null}
-                            {org.trial_ends_at ? <div style={rowHelperStyle}>Trial ends {new Date(org.trial_ends_at).toLocaleDateString()}</div> : null}
-                            {org.metadata?.invite_landing_copy ? <div style={rowHelperStyle}>{org.metadata.invite_landing_copy}</div> : null}
-                            {org.metadata?.coach_roster_note ? <div style={rowHelperStyle}>{org.metadata.coach_roster_note}</div> : null}
-                          </div>
-                          {canCreateOrganizations ? (
-                            <OrganizationSettingsForm organization={org} onSave={(payload) => void handleUpdateOrganization(org.organization_id, payload)} />
-                          ) : null}
-                        </div>
-                      ))}
+                    <div style={workspaceAdminStyle}>
+                      <div style={workspaceListStyle}>
+                        {organizations.map((org) => (
+                          <OrganizationListItem
+                            key={org.organization_id}
+                            organization={org}
+                            active={selectedSetupOrganization?.organization_id === org.organization_id}
+                            onSelect={() => setSelectedSetupOrgId(org.organization_id)}
+                          />
+                        ))}
+                      </div>
+                      <div style={workspaceDetailStyle}>
+                        {selectedSetupOrganization ? (
+                          <>
+                            <OrganizationDetailHeader organization={selectedSetupOrganization} />
+                            {canCreateOrganizations ? (
+                              <OrganizationSettingsForm key={selectedSetupOrganization.organization_id} organization={selectedSetupOrganization} onSave={(payload) => void handleUpdateOrganization(selectedSetupOrganization.organization_id, payload)} />
+                            ) : null}
+                          </>
+                        ) : <EmptyState copy="Select an organization to manage access." />}
+                      </div>
                     </div>
                   ) : null}
                   <div style={toolStackStyle}>
@@ -1248,6 +1264,58 @@ function formatOrgAccessStatus(organization: OrganizationEntry) {
   return status;
 }
 
+function formatOrgTrialEnd(organization: OrganizationEntry) {
+  if (!organization.trial_ends_at) return "No trial end";
+  return `Trial ends ${new Date(organization.trial_ends_at).toLocaleDateString()}`;
+}
+
+function formatOrgCapacity(organization: OrganizationEntry) {
+  const capacity = organization.capacity;
+  if (!capacity?.limit) return `${organization.members.length} rostered users`;
+  return `${capacity.active_user_count}/${capacity.limit} active users · ${capacity.pending_invite_count} pending · ${capacity.available_slots ?? 0} open`;
+}
+
+function OrganizationListItem({ organization, active, onSelect }: { organization: OrganizationEntry; active: boolean; onSelect: () => void }) {
+  const accessStatus = formatOrgAccessStatus(organization);
+  return (
+    <button type="button" onClick={onSelect} style={active ? activeWorkspaceItemStyle : workspaceItemStyle}>
+      {organization.metadata?.logo_url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={organization.metadata.logo_url} alt={`${organization.name} logo`} style={workspaceLogoStyle} />
+      ) : <div style={workspaceLogoFallbackStyle}>{organization.name.slice(0, 2).toUpperCase()}</div>}
+      <div style={{ minWidth: 0 }}>
+        <div style={workspaceItemTitleStyle}>{organization.name}</div>
+        <div style={rowMetaStyle}>{organization.slug}</div>
+        <div style={workspaceItemMetaStyle}>{formatOrgCapacity(organization)}</div>
+      </div>
+      <span style={accessStatus === "paused" || accessStatus === "trial expired" ? dangerStatusPillStyle : statusPillStyle}>{accessStatus}</span>
+    </button>
+  );
+}
+
+function OrganizationDetailHeader({ organization }: { organization: OrganizationEntry }) {
+  const accessStatus = formatOrgAccessStatus(organization);
+  return (
+    <div style={workspaceDetailHeaderStyle}>
+      <div style={{ display: "flex", gap: 14, alignItems: "center", minWidth: 0 }}>
+        {organization.metadata?.logo_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={organization.metadata.logo_url} alt={`${organization.name} logo`} style={workspaceDetailLogoStyle} />
+        ) : <div style={workspaceDetailLogoFallbackStyle}>{organization.name.slice(0, 2).toUpperCase()}</div>}
+        <div style={{ minWidth: 0 }}>
+          <div style={workspaceDetailTitleStyle}>{organization.name}</div>
+          <div style={rowMetaStyle}>{organization.slug} · {formatOrgTrialEnd(organization)}</div>
+        </div>
+      </div>
+      <div style={workspaceDetailMetricGridStyle}>
+        <DigestStat label="Access" value={accessStatus} />
+        <DigestStat label="Capacity" value={organization.capacity?.limit ? `${organization.capacity.active_user_count}/${organization.capacity.limit}` : "No cap"} />
+        <DigestStat label="Pending" value={organization.capacity?.pending_invite_count ?? 0} />
+      </div>
+    </div>
+  );
+}
+
 function OrganizationSettingsForm({ organization, onSave }: { organization: OrganizationEntry; onSave: (payload: Record<string, string>) => void }) {
   const metadata = organization.metadata ?? {};
   const [state, setState] = useState({
@@ -1276,41 +1344,58 @@ function OrganizationSettingsForm({ organization, onSave }: { organization: Orga
   }
 
   return (
-    <details className="admin-tool-disclosure" style={{ ...detailsStyle, width: "100%", gridColumn: "1 / -1", marginTop: 12 }}>
-      <summary style={summaryStyle}><span className="admin-tool-caret" aria-hidden="true">›</span><span>Organization controls</span></summary>
-      <form onSubmit={submit} style={stackStyle}>
+    <form onSubmit={submit} style={organizationFormStyle}>
+      <div style={formSectionStyle}>
+        <div style={formSectionHeaderStyle}>Identity</div>
         <div style={twoColStyle}>
           <label style={labelStyle}><span style={labelTitleStyle}>Name</span><input value={state.name} onChange={(event) => setState((current) => ({ ...current, name: event.target.value }))} style={inputStyle} required /></label>
           <label style={labelStyle}><span style={labelTitleStyle}>Slug</span><input value={state.slug} onChange={(event) => setState((current) => ({ ...current, slug: event.target.value }))} style={inputStyle} required /></label>
         </div>
-        <div style={twoColStyle}>
+      </div>
+      <div style={formSectionStyle}>
+        <div style={formSectionHeaderStyle}>Access and trial</div>
+        <div style={threeColStyle}>
           <label style={labelStyle}><span style={labelTitleStyle}>Access status</span><select value={state.access_status} onChange={(event) => setState((current) => ({ ...current, access_status: event.target.value }))} style={inputStyle}>
             <option value="active">Active</option>
             <option value="paused">Paused</option>
           </select></label>
           <label style={labelStyle}><span style={labelTitleStyle}>Trial ends</span><input type="date" value={state.trial_ends_at.slice(0, 10)} onChange={(event) => setState((current) => ({ ...current, trial_ends_at: event.target.value }))} style={inputStyle} /></label>
+          <label style={labelStyle}><span style={labelTitleStyle}>Trial/user limit</span><input value={state.included_active_users} onChange={(event) => setState((current) => ({ ...current, included_active_users: event.target.value }))} placeholder="No cap" style={inputStyle} /></label>
         </div>
+      </div>
+      <div style={formSectionStyle}>
+        <div style={formSectionHeaderStyle}>Branding</div>
         <div style={twoColStyle}>
           <label style={labelStyle}><span style={labelTitleStyle}>Brand name</span><input value={state.brand_name} onChange={(event) => setState((current) => ({ ...current, brand_name: event.target.value }))} style={inputStyle} /></label>
           <label style={labelStyle}><span style={labelTitleStyle}>Support email</span><input value={state.support_email} onChange={(event) => setState((current) => ({ ...current, support_email: event.target.value }))} style={inputStyle} /></label>
         </div>
-        <input value={state.logo_url} onChange={(event) => setState((current) => ({ ...current, logo_url: event.target.value }))} placeholder="Logo URL" style={inputStyle} />
-        <input value={state.brand_accent} onChange={(event) => setState((current) => ({ ...current, brand_accent: event.target.value }))} placeholder="Brand accent color" style={inputStyle} />
-        <div style={threeColStyle}>
-          <input value={state.license_model} onChange={(event) => setState((current) => ({ ...current, license_model: event.target.value }))} placeholder="License model" style={inputStyle} />
-          <input value={state.monthly_minimum_cents} onChange={(event) => setState((current) => ({ ...current, monthly_minimum_cents: event.target.value }))} placeholder="Monthly minimum cents" style={inputStyle} />
-          <input value={state.included_active_users} onChange={(event) => setState((current) => ({ ...current, included_active_users: event.target.value }))} placeholder="Trial/user limit" style={inputStyle} />
-          <input value={state.additional_user_cents} onChange={(event) => setState((current) => ({ ...current, additional_user_cents: event.target.value }))} placeholder="Extra user cents" style={inputStyle} />
+        <div style={twoColStyle}>
+          <label style={labelStyle}><span style={labelTitleStyle}>Logo URL</span><input value={state.logo_url} onChange={(event) => setState((current) => ({ ...current, logo_url: event.target.value }))} style={inputStyle} /></label>
+          <label style={labelStyle}><span style={labelTitleStyle}>Accent color</span><input value={state.brand_accent} onChange={(event) => setState((current) => ({ ...current, brand_accent: event.target.value }))} style={inputStyle} /></label>
         </div>
+      </div>
+      <div style={formSectionStyle}>
+        <div style={formSectionHeaderStyle}>Commercial setup</div>
+        <div style={threeColStyle}>
+          <label style={labelStyle}><span style={labelTitleStyle}>License model</span><input value={state.license_model} onChange={(event) => setState((current) => ({ ...current, license_model: event.target.value }))} style={inputStyle} /></label>
+          <label style={labelStyle}><span style={labelTitleStyle}>Monthly minimum cents</span><input value={state.monthly_minimum_cents} onChange={(event) => setState((current) => ({ ...current, monthly_minimum_cents: event.target.value }))} style={inputStyle} /></label>
+          <label style={labelStyle}><span style={labelTitleStyle}>Extra user cents</span><input value={state.additional_user_cents} onChange={(event) => setState((current) => ({ ...current, additional_user_cents: event.target.value }))} style={inputStyle} /></label>
+        </div>
+      </div>
+      <div style={formSectionStyle}>
+        <div style={formSectionHeaderStyle}>Partner notes</div>
         <textarea value={state.invite_landing_copy} onChange={(event) => setState((current) => ({ ...current, invite_landing_copy: event.target.value }))} placeholder="Invite landing copy" style={{ ...inputStyle, minHeight: 76 }} />
         <textarea value={state.coach_roster_note} onChange={(event) => setState((current) => ({ ...current, coach_roster_note: event.target.value }))} placeholder="Coach roster note" style={{ ...inputStyle, minHeight: 76 }} />
+      </div>
+      <div style={formSectionStyle}>
+        <div style={formSectionHeaderStyle}>External link</div>
         <div style={twoColStyle}>
-          <input value={state.external_provider} onChange={(event) => setState((current) => ({ ...current, external_provider: event.target.value }))} placeholder="External provider" style={inputStyle} />
-          <input value={state.external_org_id} onChange={(event) => setState((current) => ({ ...current, external_org_id: event.target.value }))} placeholder="External org ID" style={inputStyle} />
+          <label style={labelStyle}><span style={labelTitleStyle}>External provider</span><input value={state.external_provider} onChange={(event) => setState((current) => ({ ...current, external_provider: event.target.value }))} style={inputStyle} /></label>
+          <label style={labelStyle}><span style={labelTitleStyle}>External org ID</span><input value={state.external_org_id} onChange={(event) => setState((current) => ({ ...current, external_org_id: event.target.value }))} style={inputStyle} /></label>
         </div>
-        <button type="submit" style={primaryButtonStyle}>Save organization controls</button>
-      </form>
-    </details>
+      </div>
+      <div style={formActionRowStyle}><button type="submit" style={primaryButtonStyle}>Save organization controls</button></div>
+    </form>
   );
 }
 
@@ -1651,10 +1736,26 @@ const memberFocusRowStyle: CSSProperties = { ...scrollRowStyle, textDecoration: 
 const memberFocusMetricWrapStyle: CSSProperties = { display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" };
 const memberMaintenanceStyle: CSSProperties = { display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap", minWidth: 220 };
 const toolStackStyle: CSSProperties = { display: "grid", marginTop: 14 };
-const workspacePreviewGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))", gap: 12, marginTop: 14 };
-const workspacePreviewStyle: CSSProperties = { display: "grid", gridTemplateColumns: "52px minmax(0, 1fr)", gap: 14, alignItems: "start", padding: 14, borderRadius: 16, border: "1px solid var(--line)", background: "var(--surface-fill)" };
 const workspaceLogoStyle: CSSProperties = { width: 52, height: 52, borderRadius: 14, objectFit: "contain", border: "1px solid var(--line)", background: "rgba(240,235,224,0.04)", padding: 6 };
 const workspaceLogoFallbackStyle: CSSProperties = { width: 52, height: 52, borderRadius: 14, display: "grid", placeItems: "center", border: "1px solid var(--line)", background: "rgba(231,111,81,0.16)", color: PALETTE.cream, fontWeight: 900 };
+const workspaceAdminStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 360px), 1fr))", gap: 16, marginTop: 18, alignItems: "start" };
+const workspaceListStyle: CSSProperties = { display: "grid", gap: 10, maxHeight: 720, overflowY: "auto", paddingRight: 2 };
+const workspaceItemStyle: CSSProperties = { width: "100%", display: "grid", gridTemplateColumns: "52px minmax(0, 1fr) auto", gap: 13, alignItems: "center", padding: 14, borderRadius: 14, border: "1px solid var(--line)", background: "rgba(20,18,16,0.42)", color: PALETTE.cream, textAlign: "left", cursor: "pointer" };
+const activeWorkspaceItemStyle: CSSProperties = { ...workspaceItemStyle, border: "1px solid rgba(231,111,81,0.72)", background: "rgba(231,111,81,0.11)" };
+const workspaceItemTitleStyle: CSSProperties = { fontWeight: 850, fontSize: 15, color: PALETTE.cream, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+const workspaceItemMetaStyle: CSSProperties = { color: "rgba(240,235,224,0.62)", fontSize: 12, lineHeight: 1.45, marginTop: 5 };
+const statusPillStyle: CSSProperties = { padding: "6px 9px", borderRadius: 999, border: "1px solid rgba(106,158,114,0.55)", background: "rgba(106,158,114,0.12)", color: PALETTE.green, fontSize: 11, fontWeight: 900, textTransform: "uppercase", whiteSpace: "nowrap" };
+const dangerStatusPillStyle: CSSProperties = { ...statusPillStyle, border: "1px solid rgba(231,111,81,0.6)", background: "rgba(231,111,81,0.12)", color: PALETTE.coral };
+const workspaceDetailStyle: CSSProperties = { minHeight: 620, border: "1px solid var(--line)", borderRadius: 18, background: "rgba(20,18,16,0.46)", padding: 18, display: "grid", gap: 18, alignContent: "start" };
+const workspaceDetailHeaderStyle: CSSProperties = { display: "grid", gap: 16, paddingBottom: 16, borderBottom: "1px solid var(--line-soft)" };
+const workspaceDetailLogoStyle: CSSProperties = { ...workspaceLogoStyle, width: 64, height: 64, borderRadius: 16 };
+const workspaceDetailLogoFallbackStyle: CSSProperties = { ...workspaceLogoFallbackStyle, width: 64, height: 64, borderRadius: 16, fontSize: 20 };
+const workspaceDetailTitleStyle: CSSProperties = { color: PALETTE.cream, fontSize: 24, fontWeight: 900, lineHeight: 1.1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+const workspaceDetailMetricGridStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 10 };
+const organizationFormStyle: CSSProperties = { display: "grid", gap: 16 };
+const formSectionStyle: CSSProperties = { display: "grid", gap: 12, paddingTop: 14, borderTop: "1px solid var(--line-soft)" };
+const formSectionHeaderStyle: CSSProperties = { color: "rgba(240,235,224,0.82)", fontSize: 12, fontWeight: 900, letterSpacing: 1.1, textTransform: "uppercase" };
+const formActionRowStyle: CSSProperties = { display: "flex", justifyContent: "flex-end", paddingTop: 6 };
 const sectionHeaderStyle: CSSProperties = { display: "grid", gap: 8, marginBottom: 16 };
 const splitSectionHeaderStyle: CSSProperties = { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 16 };
 const eyebrowStyle: CSSProperties = { color: PALETTE.coral, fontSize: 12, textTransform: "uppercase", letterSpacing: 1.3, fontWeight: 900 };

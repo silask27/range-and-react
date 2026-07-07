@@ -4284,7 +4284,7 @@ function getWorkflowTimerLabel(
   timeLeftSeconds: number | null,
   isCountingDown: boolean,
 ): string {
-  if (!configuredSeconds || configuredSeconds <= 0) return "Off";
+  if (!configuredSeconds || configuredSeconds <= 0) return "No timer";
   if (isCountingDown && timeLeftSeconds !== null) {
     return `${Math.max(0, timeLeftSeconds)}s`;
   }

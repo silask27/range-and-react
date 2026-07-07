@@ -25,7 +25,7 @@ from api.app.services.action_service import apply_hero_action
 from api.app.services.assignment_service import create_assignment, list_assignments_with_progress
 from api.app.services.email_service import EmailDeliveryResult
 from api.app.services.prune_service import _advance_to_next_street as _advance_to_next_street_after_prune
-from api.app.services.scoring_service import FAST_INTERACTIVE_ITERS, _hero_column_for_action, record_prune_evaluation, record_response_matrix_evaluation
+from api.app.services.scoring_service import FAST_INTERACTIVE_ITERS, _apply_timer_score_cushion, _hero_column_for_action, _timer_score_cushion, record_prune_evaluation, record_response_matrix_evaluation
 from api.app.services.response_matrix_service import save_response_matrix
 from api.app.services.response_matrix_prefill import prepare_response_matrix_for_new_node
 from api.app.storage.db import get_connection, init_db
@@ -300,6 +300,31 @@ class RegressionTestCase(unittest.TestCase):
         payload = response.json()
         self.assertIn("token", payload)
         self.assertEqual(payload["user"]["email"], "owner@example.com")
+
+    def test_train_timer_options_allow_15_seconds_and_reject_old_10_seconds(self) -> None:
+        valid_response = self.client.post(
+            "/sessions",
+            headers={"Authorization": f"Bearer {self.owner_token}"},
+            json={"villain_profile_id": "tag", "train_timer_seconds": 15},
+        )
+        self.assertEqual(valid_response.status_code, 200, valid_response.text)
+        self.assertEqual(valid_response.json()["train_timer_seconds"], 15)
+
+        invalid_response = self.client.post(
+            "/sessions",
+            headers={"Authorization": f"Bearer {self.owner_token}"},
+            json={"villain_profile_id": "tag", "train_timer_seconds": 10},
+        )
+        self.assertEqual(invalid_response.status_code, 400, invalid_response.text)
+
+    def test_timer_score_cushion_rewards_shorter_train_timers(self) -> None:
+        self.assertEqual(_timer_score_cushion(None), 0.0)
+        self.assertEqual(_timer_score_cushion(0), 0.0)
+        self.assertEqual(_timer_score_cushion(60), 2.0)
+        self.assertEqual(_timer_score_cushion(30), 4.0)
+        self.assertEqual(_timer_score_cushion(15), 6.0)
+        self.assertEqual(_apply_timer_score_cushion(94.5, 6.0), 100.0)
+        self.assertEqual(_apply_timer_score_cushion(72.25, 4.0), 76.25)
 
     def test_default_hero_stacks_stay_in_deep_training_band(self) -> None:
         hero_stacks: list[float] = []
@@ -1145,7 +1170,9 @@ class RegressionTestCase(unittest.TestCase):
         self.assertTrue(evaluation["combo_alive"])
         self.assertEqual(evaluation["score_method"], "posterior_range_quality")
         self.assertEqual(evaluation["overall_score"], 67.5)
-        self.assertEqual(result["ranging_score"], 67.5)
+        self.assertEqual(result["metadata"]["summary"]["raw_ranging_score"], 67.5)
+        self.assertEqual(result["metadata"]["summary"]["timer_score_cushion"], 4.0)
+        self.assertEqual(result["ranging_score"], 71.5)
 
     def test_prune_scoring_caps_score_when_exact_combo_removed(self) -> None:
         self._create_session_fixture(session_id="posterior-prune-cap-session")
