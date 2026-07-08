@@ -25,7 +25,7 @@ from api.app.services.action_service import apply_hero_action
 from api.app.services.assignment_service import create_assignment, list_assignments_with_progress
 from api.app.services.email_service import EmailDeliveryResult
 from api.app.services.prune_service import _advance_to_next_street as _advance_to_next_street_after_prune
-from api.app.services.scoring_service import FAST_INTERACTIVE_ITERS, _apply_timer_score_cushion, _hero_column_for_action, _timer_score_cushion, record_prune_evaluation, record_response_matrix_evaluation
+from api.app.services.scoring_service import FAST_INTERACTIVE_ITERS, _hero_column_for_action, record_prune_evaluation, record_response_matrix_evaluation
 from api.app.services.response_matrix_service import save_response_matrix
 from api.app.services.response_matrix_prefill import prepare_response_matrix_for_new_node
 from api.app.storage.db import get_connection, init_db
@@ -316,15 +316,6 @@ class RegressionTestCase(unittest.TestCase):
             json={"villain_profile_id": "tag", "train_timer_seconds": 10},
         )
         self.assertEqual(invalid_response.status_code, 400, invalid_response.text)
-
-    def test_timer_score_cushion_rewards_shorter_train_timers(self) -> None:
-        self.assertEqual(_timer_score_cushion(None), 0.0)
-        self.assertEqual(_timer_score_cushion(0), 0.0)
-        self.assertEqual(_timer_score_cushion(60), 2.0)
-        self.assertEqual(_timer_score_cushion(30), 4.0)
-        self.assertEqual(_timer_score_cushion(15), 6.0)
-        self.assertEqual(_apply_timer_score_cushion(94.5, 6.0), 100.0)
-        self.assertEqual(_apply_timer_score_cushion(72.25, 4.0), 76.25)
 
     def test_default_hero_stacks_stay_in_deep_training_band(self) -> None:
         hero_stacks: list[float] = []
@@ -1170,9 +1161,9 @@ class RegressionTestCase(unittest.TestCase):
         self.assertTrue(evaluation["combo_alive"])
         self.assertEqual(evaluation["score_method"], "posterior_range_quality")
         self.assertEqual(evaluation["overall_score"], 67.5)
-        self.assertEqual(result["metadata"]["summary"]["raw_ranging_score"], 67.5)
-        self.assertEqual(result["metadata"]["summary"]["timer_score_cushion"], 4.0)
-        self.assertEqual(result["ranging_score"], 71.5)
+        self.assertEqual(result["metadata"]["summary"]["timer_seconds"], 30)
+        self.assertNotIn("timer_score_cushion", result["metadata"]["summary"])
+        self.assertEqual(result["ranging_score"], 67.5)
 
     def test_prune_scoring_caps_score_when_exact_combo_removed(self) -> None:
         self._create_session_fixture(session_id="posterior-prune-cap-session")
@@ -1306,6 +1297,77 @@ class RegressionTestCase(unittest.TestCase):
         self.assertEqual(evaluation["score"], 60.0)
         self.assertEqual(evaluation["bucket_level_scores"][0]["best_response"], "F")
         self.assertEqual(evaluation["bucket_level_scores"][0]["selected_probability"], 0.3)
+
+    def test_incomplete_response_matrix_is_unscored_instead_of_zero(self) -> None:
+        self._create_session_fixture(session_id="incomplete-response-matrix-session")
+        hand = HandState(
+            hand_id="incomplete-response-matrix-hand",
+            session_id="incomplete-response-matrix-session",
+            user_id=self.owner_user_id,
+            scenario_id="srp_ip_btn_vs_bb",
+            villain_profile_id="tag",
+            pot=34.0,
+            hero_stack=100.0,
+            villain_stack=100.0,
+            hero_hand=("Jc", "Js"),
+            villain_hand=("Kd", "Jh"),
+            board=["8h", "8d", "2d"],
+            street=Street.FLOP,
+            betting_round=BettingRoundState(),
+            hero_tokens_saved=["AA", "KK", "QQ", "JJ", "AKs", "AKo"],
+            villain_range_combos_live={"KJo": [["Kd", "Jh"], ["Ac", "Js"]]},
+            current_actor=Player.HERO,
+            ui_gate=UIGate.MUST_FILL_RESPONSE_MATRIX,
+            response_matrix_columns=["bet_big"],
+            response_matrix_saved={
+                "street": "flop",
+                "columns": ["bet_big"],
+                "row_order": ["SDV"],
+                "selections": {"SDV": {}},
+                "complete": False,
+                "allow_partial": True,
+                "save_reason": "manual",
+            },
+        )
+        store.create_hand(hand.hand_id, asdict(hand))
+
+        bucket_view = {
+            "rows": [{
+                "bucket_name": "SDV",
+                "combo_count": 2,
+                "hands": [{"combo_cards": [["Kd", "Jh"], ["Ac", "Js"]]}],
+            }],
+        }
+        actual_bucket = {
+            "bucket_label": "SDV",
+            "subgroup_label": "High Card",
+            "equity_vs_hero": 0.24,
+            "current_strength_vs_hero": 0.2,
+            "hero_range_source": "scenario",
+        }
+
+        with (
+            patch("api.app.services.scoring_service._bucket_view", return_value=bucket_view),
+            patch("api.app.services.scoring_service._actual_bucket_info", return_value=actual_bucket),
+            patch("api.app.services.scoring_service._model_probabilities_for_combo", return_value={"f": 0.5, "c": 0.3, "r": 0.2}),
+        ):
+            record_response_matrix_evaluation(
+                hand,
+                hero_action_type=ActionType.BET,
+                hero_amount=14.0,
+                pot_before_action=20.0,
+                villain_action_type=ActionType.FOLD,
+                iters=FAST_INTERACTIVE_ITERS,
+            )
+
+        result = store.get_hand_result(hand.hand_id)
+        evaluation = result["metadata"]["response_evaluations"][0]
+        self.assertFalse(evaluation["supported"])
+        self.assertIsNone(evaluation["score"])
+        self.assertEqual(evaluation["reason"], "Response matrix was incomplete for this action node.")
+        self.assertIsNone(evaluation["bucket_level_scores"][0]["selected_probability"])
+        self.assertIsNone(result["response_score"])
+        self.assertIsNone(result["overall_score"])
 
     def test_river_terminal_response_matrix_accepts_showdown_results(self) -> None:
         self._create_session_fixture(session_id="river-call-showdown-matrix-session", pot=80.0, hero_stack=80.0, villain_stack=100.0)
