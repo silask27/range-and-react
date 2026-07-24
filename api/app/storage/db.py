@@ -281,6 +281,29 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     'CREATE INDEX IF NOT EXISTS idx_org_memberships_user_org ON organization_memberships(user_id, organization_id)',
     'CREATE INDEX IF NOT EXISTS idx_org_memberships_org_role_user ON organization_memberships(organization_id, membership_role, user_id)',
     '''
+    CREATE TABLE IF NOT EXISTS organization_join_codes (
+        join_code_id TEXT PRIMARY KEY,
+        organization_id TEXT NOT NULL,
+        code_hash TEXT NOT NULL UNIQUE,
+        created_by_user_id TEXT,
+        membership_role TEXT NOT NULL DEFAULT 'member',
+        is_active INTEGER NOT NULL DEFAULT 1,
+        max_uses INTEGER,
+        use_count INTEGER NOT NULL DEFAULT 0,
+        expires_at TEXT,
+        last_four TEXT,
+        last_used_at TEXT,
+        revoked_at TEXT,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(organization_id) REFERENCES organizations(organization_id) ON DELETE CASCADE,
+        FOREIGN KEY(created_by_user_id) REFERENCES users(user_id) ON DELETE SET NULL
+    )
+    ''',
+    'CREATE INDEX IF NOT EXISTS idx_org_join_codes_org_active ON organization_join_codes(organization_id, is_active, revoked_at, expires_at)',
+    'CREATE INDEX IF NOT EXISTS idx_org_join_codes_code_hash ON organization_join_codes(code_hash)',
+    '''
     CREATE TABLE IF NOT EXISTS cohorts (
         cohort_id TEXT PRIMARY KEY,
         organization_id TEXT NOT NULL,

@@ -54,6 +54,11 @@ from api.app.services.auth_service import (
     set_user_active,
     update_user_role,
 )
+from api.app.services.organization_join_code_service import (
+    list_organization_join_codes,
+    revoke_active_organization_join_code,
+    rotate_organization_join_code,
+)
 from api.app.services.organization_service import add_user_to_organization, create_organization, get_organization, list_organizations, update_organization_settings
 from api.app.storage.memory_store import store
 
@@ -937,6 +942,12 @@ def admin_organizations_route(current_user: UserAccount = Depends(require_role(U
     return {'organizations': list_organizations(limit=100, organization_ids=org_scope)}
 
 
+@router.get('/organization-join-codes')
+def admin_organization_join_codes_route(current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> dict:
+    org_scope, _ = _scope(current_user)
+    return {'join_codes': list_organization_join_codes(organization_ids=org_scope, active_only=True)}
+
+
 @router.post('/organizations')
 def admin_create_organization_route(payload: dict = Body(...), current_user: UserAccount = Depends(require_role(UserRole.OWNER))) -> dict:
     metadata = payload.get('metadata') if isinstance(payload.get('metadata'), dict) else {}
@@ -1018,6 +1029,58 @@ def admin_update_organization_route(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {'organization': org}
+
+
+@router.post('/organizations/{organization_id}/join-code/rotate')
+def admin_rotate_organization_join_code_route(
+    organization_id: str,
+    payload: dict = Body(default={}),
+    current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH)),
+) -> dict:
+    scoped_org_id = ensure_organization_access(current_user, organization_id)
+    try:
+        expires_in_days = int(payload.get('expires_in_days') or 30)
+        max_uses_raw = payload.get('max_uses')
+        max_uses = None if max_uses_raw in {None, ''} else int(max_uses_raw)
+        join_code = rotate_organization_join_code(
+            organization_id=scoped_org_id,
+            created_by_user_id=current_user.user_id,
+            expires_in_days=expires_in_days,
+            max_uses=max_uses,
+        )
+        log_audit_event(
+            action_type='organization_join_code_rotated',
+            actor=current_user,
+            organization_id=scoped_org_id,
+            metadata={
+                'join_code_id': join_code['join_code_id'],
+                'last_four': join_code.get('last_four'),
+                'expires_at': join_code.get('expires_at'),
+                'max_uses': join_code.get('max_uses'),
+            },
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {'join_code': join_code}
+
+
+@router.delete('/organizations/{organization_id}/join-code')
+def admin_revoke_organization_join_code_route(
+    organization_id: str,
+    current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH)),
+) -> dict:
+    scoped_org_id = ensure_organization_access(current_user, organization_id)
+    try:
+        join_code = revoke_active_organization_join_code(organization_id=scoped_org_id)
+        log_audit_event(
+            action_type='organization_join_code_revoked',
+            actor=current_user,
+            organization_id=scoped_org_id,
+            metadata={'join_code_id': join_code.get('join_code_id') if join_code else None},
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {'join_code': join_code, 'ok': True}
 
 
 @router.post('/organizations/{organization_id}/members')
