@@ -17,6 +17,7 @@ TABLE_ORDER = [
     'password_reset_tokens',
     'audit_logs',
     'organization_memberships',
+    'signup_invite_batches',
     'signup_invites',
 ]
 

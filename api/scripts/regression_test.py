@@ -291,6 +291,65 @@ class RegressionTestCase(unittest.TestCase):
             self.assertEqual(restore.status_code, 200, restore.text)
 
 
+    def test_a_bulk_member_roster_creates_trackable_invite_batch(self) -> None:
+        roster = self.client.post(
+            "/admin/signup-invites/bulk",
+            headers={"Authorization": f"Bearer {self.admin_token}"},
+            json={
+                "emails": "batch-one@example.com\nbatch-two@example.com\nbatch-one@example.com",
+                "role": "member",
+                "organization_id": "org-alpha",
+                "membership_role": "member",
+                "label": "July member roster",
+            },
+        )
+        self.assertEqual(roster.status_code, 200, roster.text)
+        payload = roster.json()
+        self.assertEqual(payload["created_count"], 2)
+        self.assertEqual(len(payload["failures"]), 1)
+        self.assertEqual(payload["failures"][0]["error"], "Duplicate email in this roster")
+        self.assertEqual(payload["batch"]["created_count"], 2)
+        self.assertEqual(payload["batch"]["failed_count"], 1)
+        self.assertEqual(payload["batch"]["pending_count"], 2)
+        self.assertEqual(payload["batch"]["label"], "July member roster")
+
+        batches = self.client.get(
+            "/admin/signup-invite-batches",
+            headers={"Authorization": f"Bearer {self.admin_token}"},
+        )
+        self.assertEqual(batches.status_code, 200, batches.text)
+        batch_ids = {batch["batch_id"] for batch in batches.json()["batches"]}
+        self.assertIn(payload["batch"]["batch_id"], batch_ids)
+
+        invite = payload["invites"][0]
+        signup = self.client.post(
+            "/auth/signup",
+            json={
+                "email": invite["email"],
+                "password": "Password123!",
+                "display_name": "Batch Member",
+                "invite_code": invite["invite_code"],
+            },
+        )
+        self.assertEqual(signup.status_code, 200, signup.text)
+        signed_up_user_id = signup.json()["user"]["user_id"]
+
+        batches_after = self.client.get(
+            "/admin/signup-invite-batches",
+            headers={"Authorization": f"Bearer {self.admin_token}"},
+        )
+        self.assertEqual(batches_after.status_code, 200, batches_after.text)
+        batch_after = next(batch for batch in batches_after.json()["batches"] if batch["batch_id"] == payload["batch"]["batch_id"])
+        self.assertEqual(batch_after["accepted_count"], 1)
+        self.assertEqual(batch_after["pending_count"], 1)
+
+        deleted = self.client.delete(
+            f"/admin/users/{signed_up_user_id}",
+            headers={"Authorization": f"Bearer {self.admin_token}"},
+        )
+        self.assertEqual(deleted.status_code, 200, deleted.text)
+
+
     def test_login_route_returns_success(self) -> None:
         response = self.client.post(
             "/auth/login",

@@ -45,13 +45,16 @@ from api.app.services.auth_service import (
     count_users,
     count_users_by_role,
     create_signup_invite,
+    create_signup_invite_batch,
     delete_signup_invite,
     delete_user_permanently,
     get_user_by_id,
     link_external_identity,
+    list_signup_invite_batches,
     list_signup_invites,
     list_users,
     set_user_active,
+    update_signup_invite_batch_delivery_count,
     update_user_role,
 )
 from api.app.services.organization_service import add_user_to_organization, create_organization, get_organization, list_organizations, update_organization_settings
@@ -387,6 +390,12 @@ def admin_signup_invites_route(current_user: UserAccount = Depends(require_role(
     return {'invites': invites}
 
 
+@router.get('/signup-invite-batches')
+def admin_signup_invite_batches_route(current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH)), limit: int = Query(100, ge=1, le=500)) -> dict:
+    org_scope, _ = _scope(current_user)
+    return {'batches': list_signup_invite_batches(limit=limit, organization_ids=org_scope)}
+
+
 @router.post('/signup-invites')
 def admin_create_signup_invite_route(background_tasks: BackgroundTasks, payload: dict = Body(...), current_user: UserAccount = Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.COACH))) -> dict:
     email = (str(payload.get('email') or '').strip() or None)
@@ -477,31 +486,46 @@ def admin_create_signup_invites_bulk_route(background_tasks: BackgroundTasks, pa
     if current_user.role == UserRole.COACH:
         membership_role = 'member'
 
-    invites = []
-    failures = []
-    for email in emails:
-        try:
-            invite = create_signup_invite(
-                created_by_user_id=current_user.user_id,
-                email=email,
-                role=role,
-                organization_id=organization_id,
-                membership_role=membership_role,
-                expires_in_days=expires_in_days,
-                metadata=payload.get('metadata') if isinstance(payload.get('metadata'), dict) else None,
-            )
-            email_delivery = _queue_invite_email(background_tasks, invite, current_user)
-            invites.append(_decorate_invite(invite, email_delivery))
-            log_audit_event(
-                action_type='signup_invite_created',
-                actor=current_user,
-                target_user_id=None,
-                organization_id=organization_id,
-                metadata={'invite_id': invite['invite_id'], 'email': invite['email'], 'role': invite['role'], 'bulk': True},
-            )
-        except ValueError as exc:
-            failures.append({'email': email, 'error': str(exc)})
-    return {'invites': invites, 'failures': failures, 'created_count': len(invites)}
+    label = _optional_str(payload.get('label'))
+    metadata = payload.get('metadata') if isinstance(payload.get('metadata'), dict) else None
+    try:
+        result = create_signup_invite_batch(
+            created_by_user_id=current_user.user_id,
+            emails=emails,
+            role=role,
+            organization_id=organization_id,
+            membership_role=membership_role,
+            expires_in_days=expires_in_days,
+            label=label,
+            metadata=metadata,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    decorated_invites = []
+    delivery_count = 0
+    for invite in result['invites']:
+        email_delivery = _queue_invite_email(background_tasks, invite, current_user)
+        if email_delivery.get('status') in {'queued', 'sent'}:
+            delivery_count += 1
+        decorated_invites.append(_decorate_invite(invite, email_delivery))
+        log_audit_event(
+            action_type='signup_invite_created',
+            actor=current_user,
+            target_user_id=None,
+            organization_id=organization_id,
+            metadata={'invite_id': invite['invite_id'], 'batch_id': result['batch']['batch_id'], 'email': invite['email'], 'role': invite['role'], 'bulk': True},
+        )
+
+    batch = update_signup_invite_batch_delivery_count(batch_id=result['batch']['batch_id'], email_delivery_queued_count=delivery_count)
+    log_audit_event(
+        action_type='signup_invite_batch_created',
+        actor=current_user,
+        target_user_id=None,
+        organization_id=organization_id,
+        metadata={'batch_id': batch['batch_id'], 'created_count': len(decorated_invites), 'failed_count': len(result['failures'])},
+    )
+    return {'batch': batch, 'invites': decorated_invites, 'failures': result['failures'], 'created_count': len(decorated_invites)}
 
 
 @router.get('/assignments')

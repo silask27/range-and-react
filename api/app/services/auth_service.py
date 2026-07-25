@@ -151,6 +151,7 @@ def _serialize_signup_invite(row) -> dict[str, Any]:
     return {
         'invite_id': row['invite_id'],
         'invite_code': row['invite_code'],
+        'batch_id': row['batch_id'] if 'batch_id' in row.keys() else None,
         'email': row['email'],
         'role': row['role'],
         'organization_id': row['organization_id'],
@@ -165,6 +166,63 @@ def _serialize_signup_invite(row) -> dict[str, Any]:
     }
 
 
+def _serialize_signup_invite_batch(row) -> dict[str, Any]:
+    return {
+        'batch_id': row['batch_id'],
+        'organization_id': row['organization_id'],
+        'role': row['role'],
+        'membership_role': row['membership_role'],
+        'label': row['label'],
+        'requested_count': int(row['requested_count'] or 0),
+        'created_count': int(row['created_count'] or 0),
+        'failed_count': int(row['failed_count'] or 0),
+        'email_delivery_queued_count': int(row['email_delivery_queued_count'] or 0),
+        'accepted_count': int(row['accepted_count'] or 0) if 'accepted_count' in row.keys() else 0,
+        'pending_count': int(row['pending_count'] or 0) if 'pending_count' in row.keys() else 0,
+        'metadata': json_loads(row['metadata_json']),
+        'created_at': row['created_at'],
+    }
+
+
+def _dedupe_emails(emails: Iterable[str]) -> tuple[list[str], list[dict[str, str]]]:
+    out: list[str] = []
+    failures: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for raw in emails:
+        raw_email = str(raw or '').strip()
+        if not raw_email:
+            continue
+        try:
+            email = _normalize_email(raw_email)
+        except ValueError as exc:
+            failures.append({'email': raw_email, 'error': str(exc)})
+            continue
+        if email in seen:
+            failures.append({'email': raw_email, 'error': 'Duplicate email in this roster'})
+            continue
+        seen.add(email)
+        out.append(email)
+    return out, failures
+
+
+def _update_signup_invite_batch_counts(
+    *,
+    batch_id: str,
+    requested_count: int,
+    created_count: int,
+    failed_count: int,
+    email_delivery_queued_count: int,
+) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            '''
+            UPDATE signup_invite_batches
+            SET requested_count = ?, created_count = ?, failed_count = ?, email_delivery_queued_count = ?
+            WHERE batch_id = ?
+            ''',
+            (requested_count, created_count, failed_count, email_delivery_queued_count, batch_id),
+        )
+
 
 def create_signup_invite(
     *,
@@ -174,6 +232,7 @@ def create_signup_invite(
     organization_id: str | None = None,
     membership_role: str = 'member',
     expires_in_days: int = 14,
+    batch_id: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if role == UserRole.OWNER:
@@ -195,6 +254,10 @@ def create_signup_invite(
             if org_exists is None:
                 raise ValueError('Unknown organization_id')
             ensure_organization_capacity_available(organization_id)
+        if batch_id:
+            batch_exists = conn.execute('SELECT 1 FROM signup_invite_batches WHERE batch_id = ? LIMIT 1', (batch_id,)).fetchone()
+            if batch_exists is None:
+                raise ValueError('Unknown batch_id')
         if normalized_email:
             existing_user = conn.execute(
                 'SELECT user_id FROM users WHERE lower(trim(email)) = ? LIMIT 1',
@@ -202,16 +265,43 @@ def create_signup_invite(
             ).fetchone()
             if existing_user is not None:
                 raise ValueError('An account with that email already exists. Update the existing user instead of creating a new invite.')
+            if organization_id:
+                existing_invite = conn.execute(
+                    '''
+                    SELECT invite_id FROM signup_invites
+                    WHERE lower(trim(email)) = ?
+                      AND consumed_at IS NULL
+                      AND (expires_at IS NULL OR expires_at > ?)
+                      AND organization_id = ?
+                    LIMIT 1
+                    ''',
+                    (normalized_email, _iso(now), organization_id),
+                ).fetchone()
+            else:
+                existing_invite = conn.execute(
+                    '''
+                    SELECT invite_id FROM signup_invites
+                    WHERE lower(trim(email)) = ?
+                      AND consumed_at IS NULL
+                      AND (expires_at IS NULL OR expires_at > ?)
+                      AND organization_id IS NULL
+                    LIMIT 1
+                    ''',
+                    (normalized_email, _iso(now)),
+                ).fetchone()
+            if existing_invite is not None:
+                raise ValueError('An active invite already exists for that email')
         conn.execute(
             '''
             INSERT INTO signup_invites (
-                invite_id, invite_code, created_by_user_id, email, role, organization_id,
+                invite_id, invite_code, batch_id, created_by_user_id, email, role, organization_id,
                 membership_role, expires_at, consumed_at, consumed_by_user_id, metadata_json, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
             ''',
             (
                 invite_id,
                 invite_code,
+                batch_id,
                 created_by_user_id,
                 normalized_email,
                 role.value,
@@ -227,6 +317,157 @@ def create_signup_invite(
     if row is None:
         raise RuntimeError('Failed to create invite')
     return _serialize_signup_invite(row)
+
+
+def create_signup_invite_batch(
+    *,
+    created_by_user_id: str,
+    emails: Iterable[str],
+    role: UserRole = UserRole.MEMBER,
+    organization_id: str | None = None,
+    membership_role: str = 'member',
+    expires_in_days: int = 14,
+    label: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if role == UserRole.OWNER:
+        raise ValueError('Owner accounts cannot be created through invite batches')
+
+    clean_emails, failures = _dedupe_emails(emails)
+    if not clean_emails and not failures:
+        raise ValueError('emails are required')
+
+    now = _utcnow()
+    batch_id = str(uuid4())
+    label_clean = (label or '').strip()[:120] or None
+    membership_role_clean = (membership_role or 'member').strip().lower() or 'member'
+    requested_count = len(clean_emails) + len(failures)
+
+    with get_connection() as conn:
+        creator_exists = conn.execute('SELECT 1 FROM users WHERE user_id = ? LIMIT 1', (created_by_user_id,)).fetchone()
+        if creator_exists is None:
+            raise ValueError('Unknown created_by_user_id')
+        if organization_id:
+            org_exists = conn.execute('SELECT 1 FROM organizations WHERE organization_id = ? LIMIT 1', (organization_id,)).fetchone()
+            if org_exists is None:
+                raise ValueError('Unknown organization_id')
+        conn.execute(
+            '''
+            INSERT INTO signup_invite_batches (
+                batch_id, created_by_user_id, organization_id, role, membership_role, label,
+                requested_count, created_count, failed_count, email_delivery_queued_count, metadata_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, 0, ?, ?)
+            ''',
+            (
+                batch_id,
+                created_by_user_id,
+                organization_id,
+                role.value,
+                membership_role_clean,
+                label_clean,
+                requested_count,
+                len(failures),
+                json_dumps(metadata or {}),
+                _iso(now),
+            ),
+        )
+
+    invites: list[dict[str, Any]] = []
+    for email in clean_emails:
+        try:
+            invites.append(
+                create_signup_invite(
+                    created_by_user_id=created_by_user_id,
+                    email=email,
+                    role=role,
+                    organization_id=organization_id,
+                    membership_role=membership_role_clean,
+                    expires_in_days=expires_in_days,
+                    batch_id=batch_id,
+                    metadata=metadata,
+                )
+            )
+        except ValueError as exc:
+            failures.append({'email': email, 'error': str(exc)})
+
+    _update_signup_invite_batch_counts(
+        batch_id=batch_id,
+        requested_count=requested_count,
+        created_count=len(invites),
+        failed_count=len(failures),
+        email_delivery_queued_count=0,
+    )
+
+    batch = get_signup_invite_batch(batch_id)
+    if batch is None:
+        raise RuntimeError('Failed to create invite batch')
+    return {'batch': batch, 'invites': invites, 'failures': failures, 'created_count': len(invites)}
+
+
+def get_signup_invite_batch(batch_id: str) -> dict[str, Any] | None:
+    clean = str(batch_id or '').strip()
+    if not clean:
+        return None
+    now = _iso(_utcnow())
+    with get_connection() as conn:
+        row = conn.execute(
+            '''
+            SELECT b.*,
+                   COALESCE(SUM(CASE WHEN i.consumed_at IS NOT NULL THEN 1 ELSE 0 END), 0) AS accepted_count,
+                   COALESCE(SUM(CASE WHEN i.consumed_at IS NULL AND (i.expires_at IS NULL OR i.expires_at > ?) THEN 1 ELSE 0 END), 0) AS pending_count
+            FROM signup_invite_batches b
+            LEFT JOIN signup_invites i ON i.batch_id = b.batch_id
+            WHERE b.batch_id = ?
+            GROUP BY b.batch_id
+            LIMIT 1
+            ''',
+            (now, clean),
+        ).fetchone()
+    return _serialize_signup_invite_batch(row) if row is not None else None
+
+
+def list_signup_invite_batches(*, limit: int = 100, organization_ids: Iterable[str] | None = None) -> list[dict[str, Any]]:
+    limit = max(1, min(int(limit), 500))
+    org_ids = [str(value).strip() for value in (organization_ids or []) if str(value).strip()]
+    if organization_ids is not None and not org_ids:
+        return []
+    clauses: list[str] = []
+    params: list[Any] = []
+    if org_ids:
+        placeholders = ', '.join('?' for _ in org_ids)
+        clauses.append(f'b.organization_id IN ({placeholders})')
+        params.extend(org_ids)
+    where_sql = f" WHERE {' AND '.join(clauses)}" if clauses else ''
+    now = _iso(_utcnow())
+    query = f'''
+        SELECT b.*,
+               COALESCE(SUM(CASE WHEN i.consumed_at IS NOT NULL THEN 1 ELSE 0 END), 0) AS accepted_count,
+               COALESCE(SUM(CASE WHEN i.consumed_at IS NULL AND (i.expires_at IS NULL OR i.expires_at > ?) THEN 1 ELSE 0 END), 0) AS pending_count
+        FROM signup_invite_batches b
+        LEFT JOIN signup_invites i ON i.batch_id = b.batch_id
+        {where_sql}
+        GROUP BY b.batch_id
+        ORDER BY b.created_at DESC
+        LIMIT ?
+    '''
+    with get_connection() as conn:
+        rows = conn.execute(query, (now, *params, limit)).fetchall()
+    return [_serialize_signup_invite_batch(row) for row in rows]
+
+
+def update_signup_invite_batch_delivery_count(*, batch_id: str, email_delivery_queued_count: int) -> dict[str, Any]:
+    clean = str(batch_id or '').strip()
+    if not clean:
+        raise ValueError('batch_id is required')
+    with get_connection() as conn:
+        conn.execute(
+            'UPDATE signup_invite_batches SET email_delivery_queued_count = ? WHERE batch_id = ?',
+            (max(0, int(email_delivery_queued_count)), clean),
+        )
+    batch = get_signup_invite_batch(clean)
+    if batch is None:
+        raise ValueError('Unknown batch_id')
+    return batch
 
 
 

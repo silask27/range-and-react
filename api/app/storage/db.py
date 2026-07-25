@@ -311,9 +311,29 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     'CREATE INDEX IF NOT EXISTS idx_cohort_memberships_user_id ON cohort_memberships(user_id)',
     'CREATE INDEX IF NOT EXISTS idx_cohort_memberships_user_cohort ON cohort_memberships(user_id, cohort_id)',
     '''
+    CREATE TABLE IF NOT EXISTS signup_invite_batches (
+        batch_id TEXT PRIMARY KEY,
+        created_by_user_id TEXT,
+        organization_id TEXT,
+        role TEXT NOT NULL,
+        membership_role TEXT NOT NULL DEFAULT \'member\',
+        label TEXT,
+        requested_count INTEGER NOT NULL DEFAULT 0,
+        created_count INTEGER NOT NULL DEFAULT 0,
+        failed_count INTEGER NOT NULL DEFAULT 0,
+        email_delivery_queued_count INTEGER NOT NULL DEFAULT 0,
+        metadata_json TEXT NOT NULL DEFAULT \'{}\',
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(created_by_user_id) REFERENCES users(user_id) ON DELETE SET NULL,
+        FOREIGN KEY(organization_id) REFERENCES organizations(organization_id) ON DELETE SET NULL
+    )
+    ''',
+    'CREATE INDEX IF NOT EXISTS idx_signup_invite_batches_org_created ON signup_invite_batches(organization_id, created_at)',
+    '''
     CREATE TABLE IF NOT EXISTS signup_invites (
         invite_id TEXT PRIMARY KEY,
         invite_code TEXT NOT NULL UNIQUE,
+        batch_id TEXT,
         created_by_user_id TEXT,
         email TEXT,
         role TEXT NOT NULL,
@@ -324,12 +344,14 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         consumed_by_user_id TEXT,
         metadata_json TEXT NOT NULL DEFAULT \'{}\',
         created_at TEXT NOT NULL,
+        FOREIGN KEY(batch_id) REFERENCES signup_invite_batches(batch_id) ON DELETE SET NULL,
         FOREIGN KEY(created_by_user_id) REFERENCES users(user_id) ON DELETE SET NULL,
         FOREIGN KEY(consumed_by_user_id) REFERENCES users(user_id) ON DELETE SET NULL,
         FOREIGN KEY(organization_id) REFERENCES organizations(organization_id) ON DELETE SET NULL
     )
     ''',
     'CREATE INDEX IF NOT EXISTS idx_signup_invites_email ON signup_invites(email)',
+    'CREATE INDEX IF NOT EXISTS idx_signup_invites_batch_id ON signup_invites(batch_id)',
     'CREATE INDEX IF NOT EXISTS idx_signup_invites_org_id ON signup_invites(organization_id)',
     'CREATE INDEX IF NOT EXISTS idx_signup_invites_expires_at ON signup_invites(expires_at)',
     'CREATE INDEX IF NOT EXISTS idx_signup_invites_org_consumed_expires ON signup_invites(organization_id, consumed_at, expires_at)',
@@ -472,6 +494,7 @@ def init_db() -> None:
 
         _ensure_column(conn, 'users', 'deactivated_at', 'TEXT')
         _ensure_column(conn, 'users', 'metadata_json', "TEXT NOT NULL DEFAULT '{}'" )
+        _ensure_column(conn, 'signup_invites', 'batch_id', 'TEXT')
         _ensure_column(conn, 'assignments', 'organization_id', 'TEXT')
         _ensure_column(conn, 'hand_results', 'review_flagged', 'INTEGER NOT NULL DEFAULT 0')
         _ensure_column(conn, 'hand_results', 'review_sent_to_coaches', 'INTEGER NOT NULL DEFAULT 0')

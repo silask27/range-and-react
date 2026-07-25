@@ -96,7 +96,8 @@ type OrganizationMetadata = {
 };
 type OrganizationCapacity = { limit: number | null; active_user_count: number; pending_invite_count: number; reserved_user_count: number; available_slots: number | null };
 type OrganizationEntry = { organization_id: string; name: string; slug: string; external_provider: string | null; external_org_id: string | null; access_status?: string; trial_ends_at?: string | null; metadata?: OrganizationMetadata; capacity?: OrganizationCapacity; members: Array<{ user_id: string; display_name: string | null; email: string; membership_role: string }> };
-type InviteEntry = { invite_id: string; invite_code: string; email: string | null; role: string; organization_id: string | null; membership_role: string; expires_at: string | null; consumed_at: string | null; status: string; invite_url?: string; email_delivery?: { status?: string; detail?: string | null } | null };
+type InviteEntry = { invite_id: string; invite_code: string; batch_id?: string | null; email: string | null; role: string; organization_id: string | null; membership_role: string; expires_at: string | null; consumed_at: string | null; status: string; invite_url?: string; email_delivery?: { status?: string; detail?: string | null } | null };
+type InviteBatchEntry = { batch_id: string; organization_id: string | null; role: string; membership_role: string; label: string | null; requested_count: number; created_count: number; failed_count: number; email_delivery_queued_count: number; accepted_count: number; pending_count: number; created_at: string };
 type CohortEntry = { cohort_id: string; organization_id: string; name: string; description: string | null; status: string; member_count: number; coach_user_ids?: string[]; coaches?: Array<{ user_id: string; email: string; display_name: string | null; role: string; is_active: boolean }> };
 type CohortMemberEntry = { user_id: string; email: string; display_name: string | null; role: string; is_active: boolean };
 type DataDeliveryPreference = { cadence: string; include_member_summary: boolean; include_cohort_summary: boolean; include_org_summary: boolean; cohort_id: string | null; last_sent_at?: string | null; next_send_at?: string | null; updated_at?: string | null };
@@ -263,6 +264,7 @@ export default function AdminPage() {
   const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([]);
   const [organizations, setOrganizations] = useState<OrganizationEntry[]>([]);
   const [invites, setInvites] = useState<InviteEntry[]>([]);
+  const [inviteBatches, setInviteBatches] = useState<InviteBatchEntry[]>([]);
   const [cohorts, setCohorts] = useState<CohortEntry[]>([]);
   const [deliveryPreference, setDeliveryPreference] = useState<DataDeliveryPreference | null>(null);
   const [isDeliveryBusy, setIsDeliveryBusy] = useState(false);
@@ -275,7 +277,7 @@ export default function AdminPage() {
   const [orgState, setOrgState] = useState({ name: "", slug: "", logo_url: "", brand_name: "", invite_landing_copy: "", brand_accent: "", coach_roster_note: "", support_email: "", access_status: "active", trial_starts_at: "", trial_ends_at: "", license_model: "trial", monthly_minimum_cents: "", included_active_users: "", additional_user_cents: "", external_provider: "", external_org_id: "" });
   const [orgMemberState, setOrgMemberState] = useState({ organization_id: "", user_id: "", membership_role: "member" });
   const [inviteState, setInviteState] = useState({ email: "", role: "member", organization_id: "", expires_in_days: 14 });
-  const [bulkInviteState, setBulkInviteState] = useState({ emails: "", role: "member", organization_id: "", expires_in_days: 14 });
+  const [bulkInviteState, setBulkInviteState] = useState({ label: "", emails: "", role: "member", organization_id: "", expires_in_days: 14 });
   const [selectedCohortId, setSelectedCohortId] = useState("");
   const [selectedSetupOrgId, setSelectedSetupOrgId] = useState("");
   const [cohortMemberIds, setCohortMemberIds] = useState<string[]>([]);
@@ -342,6 +344,12 @@ export default function AdminPage() {
       .slice()
       .sort((a, b) => dueSortValue(a.expires_at) - dueSortValue(b.expires_at) || (a.email || "").localeCompare(b.email || ""));
   }, [invites]);
+
+  const inviteBatchesSorted = useMemo(() => {
+    return inviteBatches
+      .slice()
+      .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+  }, [inviteBatches]);
 
   const memberUsers = useMemo(
     () => users.filter((entry) => entry.role === "member" && entry.is_active),
@@ -436,17 +444,19 @@ export default function AdminPage() {
 
   async function loadAll() {
     setError(null);
-    const [usersData, auditsData, orgsData, invitesData, cohortsData] = await Promise.all([
+    const [usersData, auditsData, orgsData, invitesData, inviteBatchesData, cohortsData] = await Promise.all([
       loadOptional(() => loadPagedCollection<UserEntry>("/admin/users", "users"), []),
       loadOptional(() => loadPagedCollection<AuditEntry>("/admin/audit-logs", "audit_logs", 100), []),
       loadOptional(() => loadJson<{ organizations: OrganizationEntry[] }>("/admin/organizations", "Unable to load organizations."), { organizations: [] }),
       loadOptional(() => loadJson<{ invites: InviteEntry[] }>(`/admin/signup-invites?limit=${ADMIN_COLLECTION_CAP}`, "Unable to load invites."), { invites: [] }),
+      loadOptional(() => loadJson<{ batches: InviteBatchEntry[] }>("/admin/signup-invite-batches?limit=100", "Unable to load invite batches."), { batches: [] }),
       loadOptional(() => loadJson<{ cohorts: CohortEntry[] }>("/admin/cohorts", "Unable to load cohorts."), { cohorts: [] }),
     ]);
     setUsers(usersData);
     setAuditLogs(auditsData);
     setOrganizations(orgsData.organizations);
     setInvites(invitesData.invites);
+    setInviteBatches(inviteBatchesData.batches);
     setCohorts(cohortsData.cohorts);
     if (selectedCohortId) {
       await loadOptional(() => loadCohortMembers(selectedCohortId), undefined);
@@ -716,8 +726,9 @@ export default function AdminPage() {
       if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to create bulk invites.");
       const createdCount = Number((data as { created_count?: number }).created_count ?? 0);
       const failureCount = Array.isArray((data as { failures?: unknown[] }).failures) ? (data as { failures?: unknown[] }).failures!.length : 0;
-      setBulkInviteState({ emails: "", role: "member", organization_id: "", expires_in_days: 14 });
-      setNotice(`Created ${createdCount} invite${createdCount === 1 ? "" : "s"}${failureCount ? ` · ${failureCount} failed` : ""}.`);
+      const batch = (data as { batch?: InviteBatchEntry }).batch;
+      setBulkInviteState({ label: "", emails: "", role: "member", organization_id: "", expires_in_days: 14 });
+      setNotice(`Roster batch created${batch?.label ? `: ${batch.label}` : ""}. ${createdCount} invite${createdCount === 1 ? "" : "s"} ready${failureCount ? ` · ${failureCount} skipped` : ""}.`);
       await loadAll();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to create bulk invites.");
@@ -1057,8 +1068,27 @@ export default function AdminPage() {
                 </section>
 
                 <section style={panelStyle}>
+                  <SectionHeader eyebrow="Invites" title="Roster invite batches" />
+                  <div style={helperCopyStyle}>Each roster batch creates one secure invite per email and tracks who has accepted.</div>
+                  <div style={scrollBoxStyle}>
+                    {inviteBatchesSorted.length ? inviteBatchesSorted.slice(0, 8).map((batch) => (
+                      <div key={batch.batch_id} style={scrollRowStyle}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={rowTitleStyle}>{batch.label || "Roster batch"}</div>
+                          <div style={rowMetaStyle}>{new Date(batch.created_at).toLocaleDateString()} · {batch.organization_id ? inviteOrganizationName.get(batch.organization_id) || "Organization" : "No organization"}</div>
+                          <div style={rowHelperStyle}>{batch.accepted_count} accepted · {batch.pending_count} pending · {batch.failed_count} skipped</div>
+                        </div>
+                        <div style={{ textAlign: "right", fontWeight: 900, color: PALETTE.cream }}>
+                          {batch.created_count}/{batch.requested_count}
+                        </div>
+                      </div>
+                    )) : <EmptyState copy="No roster invite batches yet." />}
+                  </div>
+                </section>
+
+                <section style={panelStyle}>
                   <SectionHeader eyebrow="Invites" title="Pending signup links" />
-                  <div style={helperCopyStyle}>Pending links are shown until they are consumed or deleted.</div>
+                  <div style={helperCopyStyle}>Pending links are shown until they are accepted, expired, or deleted.</div>
                   <div style={scrollBoxStyle}>
                     {pendingInvitesSorted.length ? pendingInvitesSorted.map((invite) => (
                       <div key={invite.invite_id} style={scrollRowStyle}>
@@ -1188,6 +1218,7 @@ export default function AdminPage() {
                             <input type="file" accept=".csv,text/csv" onChange={(event) => void handleRosterCsvUpload(event.currentTarget.files?.[0] ?? null)} style={{ display: "none" }} />
                           </label>
                         </div>
+                        <label style={labelStyle}><span style={labelTitleStyle}>Batch name</span><input value={bulkInviteState.label} onChange={(event) => setBulkInviteState((current) => ({ ...current, label: event.target.value }))} placeholder="Optional, e.g. August cohort" style={inputStyle} /></label>
                         <label style={labelStyle}><span style={labelTitleStyle}>Email list</span><textarea value={bulkInviteState.emails} onChange={(event) => setBulkInviteState((current) => ({ ...current, emails: event.target.value }))} placeholder="One email per line" style={{ ...inputStyle, minHeight: 140, resize: "vertical" }} required /></label>
                         <div style={twoColStyle}>
                           <label style={labelStyle}><span style={labelTitleStyle}>Account role</span><select value={bulkInviteState.role} onChange={(event) => updateBulkInviteRole(event.target.value)} style={inputStyle}>{roleOptionsForUser(canManageRoles).map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
