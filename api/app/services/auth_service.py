@@ -15,11 +15,6 @@ from api.app.config import settings
 from api.app.models.auth import AuthSession, UserAccount
 from api.app.models.enums import UserRole
 from api.app.services.email_service import send_password_reset_email
-from api.app.services.organization_join_code_service import (
-    find_active_join_code_for_signup,
-    get_active_organization_join_code_preview,
-    mark_join_code_used,
-)
 from api.app.services.organization_service import ensure_organization_capacity_available, organization_has_access, user_has_active_organization_access
 from api.app.storage.db import get_connection, json_dumps, json_loads
 
@@ -290,7 +285,7 @@ def get_active_signup_invite_preview(*, invite_code: str) -> dict[str, Any]:
             (code,),
         ).fetchone()
     if row is None:
-        return get_active_organization_join_code_preview(join_code=code)
+        raise ValueError('Invalid invite code')
     if row['consumed_at']:
         raise ValueError('That invite has already been used')
     if row['expires_at'] and _parse_iso(row['expires_at']) <= now:
@@ -317,97 +312,6 @@ def get_active_signup_invite_preview(*, invite_code: str) -> dict[str, Any]:
     }
 
 
-def _ensure_signup_capacity_available(conn, organization_id: str) -> None:
-    org = conn.execute('SELECT metadata_json FROM organizations WHERE organization_id = ? LIMIT 1', (organization_id,)).fetchone()
-    if org is None:
-        raise ValueError('This organization no longer exists')
-    metadata = json_loads(org['metadata_json'])
-    raw_limit = metadata.get('included_active_users')
-    try:
-        limit = int(str(raw_limit or '').strip())
-    except ValueError:
-        return
-    if limit <= 0:
-        return
-    now = _iso(_utcnow())
-    active_users = conn.execute(
-        '''
-        SELECT COUNT(DISTINCT m.user_id) AS count
-        FROM organization_memberships m
-        JOIN users u ON u.user_id = m.user_id
-        WHERE m.organization_id = ?
-          AND u.is_active = 1
-          AND u.role <> ?
-        ''',
-        (organization_id, UserRole.OWNER.value),
-    ).fetchone()
-    pending_invites = conn.execute(
-        '''
-        SELECT COUNT(*) AS count
-        FROM signup_invites
-        WHERE organization_id = ?
-          AND consumed_at IS NULL
-          AND role <> ?
-          AND (expires_at IS NULL OR expires_at > ?)
-        ''',
-        (organization_id, UserRole.OWNER.value, now),
-    ).fetchone()
-    used = int(active_users['count'] if active_users is not None else 0) + int(pending_invites['count'] if pending_invites is not None else 0)
-    if used >= limit:
-        raise ValueError('This organization has reached its trial/user limit')
-
-
-def _create_user_from_organization_join_code(
-    conn,
-    *,
-    invite_code: str,
-    normalized_email: str,
-    password_hash: str,
-    resolved_display_name: str,
-    now: datetime,
-) -> UserAccount:
-    join_code = find_active_join_code_for_signup(conn, invite_code, now=now)
-    organization_id = join_code['organization_id']
-    conn.execute('UPDATE organizations SET updated_at = updated_at WHERE organization_id = ?', (organization_id,))
-    join_code = find_active_join_code_for_signup(conn, invite_code, now=now)
-    _ensure_signup_capacity_available(conn, organization_id)
-
-    existing = conn.execute(
-        'SELECT user_id FROM users WHERE lower(trim(email)) = ? LIMIT 1',
-        (normalized_email,),
-    ).fetchone()
-    if existing is not None:
-        raise ValueError('An account with that email already exists')
-
-    user_id = str(uuid4())
-    timestamp = _iso(now)
-    conn.execute(
-        '''
-        INSERT INTO users (user_id, email, password_hash, display_name, role, is_active, created_at, updated_at, metadata_json)
-        VALUES (?, ?, ?, ?, ?, 1, ?, ?, '{}')
-        ''',
-        (user_id, normalized_email, password_hash, resolved_display_name, UserRole.MEMBER.value, timestamp, timestamp),
-    )
-    conn.execute(
-        '''
-        INSERT INTO organization_memberships (
-            organization_membership_id, organization_id, user_id, membership_role, created_at
-        ) VALUES (?, ?, ?, 'member', ?)
-        ON CONFLICT (organization_id, user_id)
-        DO UPDATE SET membership_role = EXCLUDED.membership_role
-        ''',
-        (str(uuid4()), organization_id, user_id, timestamp),
-    )
-    mark_join_code_used(conn, join_code_id=join_code['join_code_id'], used_at=now)
-    user_row = conn.execute(
-        'SELECT user_id, email, display_name, role, is_active FROM users WHERE user_id = ?',
-        (user_id,),
-    ).fetchone()
-    if user_row is None:
-        raise RuntimeError('Failed to create user from organization join code')
-    return _user_from_row(user_row)
-
-
 def create_user_from_signup_invite(
     *,
     invite_code: str,
@@ -426,14 +330,7 @@ def create_user_from_signup_invite(
     with get_connection() as conn:
         row = conn.execute('SELECT * FROM signup_invites WHERE invite_code = ? LIMIT 1', (code,)).fetchone()
         if row is None:
-            return _create_user_from_organization_join_code(
-                conn,
-                invite_code=code,
-                normalized_email=normalized_email,
-                password_hash=password_hash,
-                resolved_display_name=resolved_display_name,
-                now=now,
-            )
+            raise ValueError('Invalid invite code')
         if row['consumed_at']:
             raise ValueError('That invite has already been used')
         if row['expires_at'] and _parse_iso(row['expires_at']) <= now:

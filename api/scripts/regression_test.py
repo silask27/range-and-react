@@ -13,7 +13,6 @@ os.environ.setdefault("VRT_REQUIRE_SIGNUP_INVITE", "true")
 os.environ.setdefault("VRT_PUBLIC_STATUS_DETAILED_CHECKS", "false")
 os.environ.setdefault("VRT_PUBLIC_STATUS_SHOW_DEMO_DETAILS", "false")
 os.environ.setdefault("VRT_DATA_DELIVERY_CRON_SECRET", "test-cron-secret")
-os.environ.setdefault("VRT_TRUST_PROXY_HEADERS", "true")
 
 from fastapi.testclient import TestClient
 
@@ -283,111 +282,6 @@ class RegressionTestCase(unittest.TestCase):
                 headers={"Authorization": f"Bearer {self.owner_token}"},
             )
             self.assertEqual(deleted.status_code, 200, deleted.text)
-        finally:
-            restore = self.client.patch(
-                "/admin/organizations/org-beta",
-                headers={"Authorization": f"Bearer {self.owner_token}"},
-                json={"included_active_users": ""},
-            )
-            self.assertEqual(restore.status_code, 200, restore.text)
-
-    def test_a_reusable_organization_join_code_onboards_members_safely(self) -> None:
-        created = self.client.post(
-            "/admin/organizations/org-alpha/join-code/rotate",
-            headers={"Authorization": f"Bearer {self.owner_token}"},
-            json={"expires_in_days": 30},
-        )
-        self.assertEqual(created.status_code, 200, created.text)
-        join_code_payload = created.json()["join_code"]
-        join_code = join_code_payload["join_code"]
-        self.assertIn("join_url", join_code_payload)
-        self.assertEqual(join_code_payload["membership_role"], "member")
-
-        listed = self.client.get(
-            "/admin/organization-join-codes",
-            headers={"Authorization": f"Bearer {self.owner_token}"},
-        )
-        self.assertEqual(listed.status_code, 200, listed.text)
-        listed_code = next(item for item in listed.json()["join_codes"] if item["organization_id"] == "org-alpha")
-        self.assertNotIn("join_code", listed_code)
-        self.assertNotIn("join_url", listed_code)
-        self.assertEqual(listed_code["last_four"], ''.join(ch for ch in join_code.upper() if ch.isalnum())[-4:])
-
-        preview = self.client.get(f"/auth/signup-invites/{join_code.lower()}")
-        self.assertEqual(preview.status_code, 200, preview.text)
-        self.assertEqual(preview.json()["invite"]["code_type"], "organization_join_code")
-        self.assertEqual(preview.json()["invite"]["role"], "member")
-        self.assertIsNone(preview.json()["invite"]["email"])
-
-        first_signup = self.client.post(
-            "/auth/signup",
-            headers={"x-forwarded-for": "203.0.113.10"},
-            json={"email": "joiner-one@example.com", "password": "Password123!", "display_name": "Joiner One", "invite_code": join_code.lower()},
-        )
-        self.assertEqual(first_signup.status_code, 200, first_signup.text)
-        self.assertEqual(first_signup.json()["user"]["role"], "member")
-
-        still_reusable = self.client.get(f"/auth/signup-invites/{join_code}")
-        self.assertEqual(still_reusable.status_code, 200, still_reusable.text)
-
-        first_me = self.client.get("/auth/me", headers={"Authorization": f"Bearer {first_signup.json()['token']}"})
-        self.assertEqual(first_me.status_code, 200, first_me.text)
-        self.assertEqual(first_me.json()["organizations"][0]["organization_id"], "org-alpha")
-        self.assertEqual(first_me.json()["organizations"][0]["membership_role"], "member")
-        deleted_joiner = self.client.delete(
-            f"/admin/users/{first_signup.json()['user']['user_id']}",
-            headers={"Authorization": f"Bearer {self.owner_token}"},
-        )
-        self.assertEqual(deleted_joiner.status_code, 200, deleted_joiner.text)
-
-        rotated = self.client.post(
-            "/admin/organizations/org-alpha/join-code/rotate",
-            headers={"Authorization": f"Bearer {self.coach_token}"},
-            json={"expires_in_days": 30},
-        )
-        self.assertEqual(rotated.status_code, 200, rotated.text)
-        replacement_code = rotated.json()["join_code"]["join_code"]
-
-        old_preview = self.client.get(f"/auth/signup-invites/{join_code}")
-        self.assertEqual(old_preview.status_code, 404, old_preview.text)
-
-        blocked_cross_org = self.client.post(
-            "/admin/organizations/org-beta/join-code/rotate",
-            headers={"Authorization": f"Bearer {self.coach_token}"},
-            json={"expires_in_days": 30},
-        )
-        self.assertEqual(blocked_cross_org.status_code, 403, blocked_cross_org.text)
-
-        disabled = self.client.delete(
-            "/admin/organizations/org-alpha/join-code",
-            headers={"Authorization": f"Bearer {self.owner_token}"},
-        )
-        self.assertEqual(disabled.status_code, 200, disabled.text)
-        disabled_preview = self.client.get(f"/auth/signup-invites/{replacement_code}")
-        self.assertEqual(disabled_preview.status_code, 404, disabled_preview.text)
-
-    def test_a_reusable_join_code_respects_organization_user_limit(self) -> None:
-        limit = self.client.patch(
-            "/admin/organizations/org-beta",
-            headers={"Authorization": f"Bearer {self.owner_token}"},
-            json={"included_active_users": "1", "access_status": "active", "trial_ends_at": ""},
-        )
-        self.assertEqual(limit.status_code, 200, limit.text)
-        created = self.client.post(
-            "/admin/organizations/org-beta/join-code/rotate",
-            headers={"Authorization": f"Bearer {self.owner_token}"},
-            json={"expires_in_days": 30},
-        )
-        self.assertEqual(created.status_code, 200, created.text)
-        try:
-            join_code = created.json()["join_code"]["join_code"]
-            signup = self.client.post(
-                "/auth/signup",
-                headers={"x-forwarded-for": "203.0.113.11"},
-                json={"email": "beta-limit-join@example.com", "password": "Password123!", "display_name": "Beta Limited", "invite_code": join_code},
-            )
-            self.assertEqual(signup.status_code, 400, signup.text)
-            self.assertIn("limit", signup.text.lower())
         finally:
             restore = self.client.patch(
                 "/admin/organizations/org-beta",

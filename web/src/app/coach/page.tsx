@@ -82,7 +82,6 @@ type AccountabilityDigest = {
 type AuditEntry = { audit_log_id: string; action_type: string; created_at: string; target_user_id: string | null };
 type OrganizationEntry = { organization_id: string; name: string; slug: string; external_provider: string | null; metadata?: { logo_url?: string; invite_landing_copy?: string; brand_accent?: string; coach_roster_note?: string }; members: Array<{ user_id: string; display_name: string | null; email: string; membership_role: string }> };
 type InviteEntry = { invite_id: string; invite_code: string; email: string | null; role: string; organization_id: string | null; membership_role: string; expires_at: string | null; consumed_at: string | null; status: string; invite_url?: string; email_delivery?: { status?: string; detail?: string | null } | null };
-type JoinCodeEntry = { join_code_id: string; organization_id: string; membership_role: string; status: string; expires_at: string | null; max_uses: number | null; use_count: number; last_four: string | null; join_code?: string; join_url?: string };
 type CohortEntry = { cohort_id: string; organization_id: string; name: string; description: string | null; status: string; member_count: number; coach_user_ids?: string[]; coaches?: Array<{ user_id: string; email: string; display_name: string | null; role: string; is_active: boolean }> };
 type DataDeliveryPreference = { cadence: string; include_member_summary: boolean; include_cohort_summary: boolean; include_org_summary: boolean; cohort_id: string | null; last_sent_at?: string | null; next_send_at?: string | null; updated_at?: string | null };
 type TabKey = "analytics" | "assignments" | "review" | "reporting";
@@ -248,8 +247,6 @@ export default function CoachPage() {
   const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([]);
   const [organizations, setOrganizations] = useState<OrganizationEntry[]>([]);
   const [invites, setInvites] = useState<InviteEntry[]>([]);
-  const [joinCodes, setJoinCodes] = useState<JoinCodeEntry[]>([]);
-  const [issuedJoinLinks, setIssuedJoinLinks] = useState<Record<string, string>>({});
   const [cohorts, setCohorts] = useState<CohortEntry[]>([]);
   const [deliveryPreference, setDeliveryPreference] = useState<DataDeliveryPreference | null>(null);
   const [isDeliveryBusy, setIsDeliveryBusy] = useState(false);
@@ -293,14 +290,6 @@ export default function CoachPage() {
     });
     return summary;
   }, [organizations]);
-
-  const activeJoinCodeByOrgId = useMemo(() => {
-    const summary = new Map<string, JoinCodeEntry>();
-    joinCodes.forEach((code) => {
-      if (code.status === "active") summary.set(code.organization_id, code);
-    });
-    return summary;
-  }, [joinCodes]);
 
   const userNameById = useMemo(() => {
     const summary = new Map<string, string>();
@@ -429,27 +418,24 @@ export default function CoachPage() {
   }
 
   async function loadCoachLookups() {
-    const [orgsData, joinCodesData, cohortsData, deliveryData] = await Promise.all([
+    const [orgsData, cohortsData, deliveryData] = await Promise.all([
       loadOptional(() => loadJson<{ organizations: OrganizationEntry[] }>("/admin/organizations", "Unable to load organizations."), { organizations: [] }),
-      loadOptional(() => loadJson<{ join_codes: JoinCodeEntry[] }>("/admin/organization-join-codes", "Unable to load organization join codes."), { join_codes: [] }),
       loadOptional(() => loadJson<{ cohorts: CohortEntry[] }>("/admin/cohorts", "Unable to load cohorts."), { cohorts: [] }),
       loadOptional(() => loadJson<{ preference: DataDeliveryPreference }>("/admin/data-delivery-preferences", "Unable to load delivery settings."), null),
     ]);
     setOrganizations(orgsData.organizations);
-    setJoinCodes(joinCodesData.join_codes);
     setCohorts(cohortsData.cohorts);
     setDeliveryPreference(deliveryData?.preference ?? null);
   }
 
   async function loadAssignmentData() {
     setIsAssignmentDataLoading(true);
-    const [usersData, assignmentsData, villainsData, scenariosData, orgsData, joinCodesData, cohortsData] = await Promise.all([
+    const [usersData, assignmentsData, villainsData, scenariosData, orgsData, cohortsData] = await Promise.all([
       loadOptional(() => loadPagedCollection<UserEntry>("/admin/users", "users"), []),
       loadOptional(() => loadPagedCollection<AssignmentEntry>("/admin/assignments", "assignments"), []),
       loadOptional(() => loadJson<Array<{ id: string; display_name: string }>>("/villains", "Unable to load villains."), []),
       loadOptional(() => loadJson<Array<{ id: string; display_name: string }>>("/scenarios", "Unable to load scenarios."), []),
       loadOptional(() => loadJson<{ organizations: OrganizationEntry[] }>("/admin/organizations", "Unable to load organizations."), { organizations: [] }),
-      loadOptional(() => loadJson<{ join_codes: JoinCodeEntry[] }>("/admin/organization-join-codes", "Unable to load organization join codes."), { join_codes: [] }),
       loadOptional(() => loadJson<{ cohorts: CohortEntry[] }>("/admin/cohorts", "Unable to load cohorts."), { cohorts: [] }),
     ]);
     setUsers(usersData);
@@ -457,7 +443,6 @@ export default function CoachPage() {
     setVillains(villainsData.map((item) => ({ id: item.id, display_name: item.display_name })));
     setScenarios(scenariosData.map((item) => ({ id: item.id, display_name: item.display_name })));
     setOrganizations(orgsData.organizations);
-    setJoinCodes(joinCodesData.join_codes);
     setCohorts(cohortsData.cohorts);
     setIsAssignmentDataLoading(false);
   }
@@ -777,65 +762,6 @@ export default function CoachPage() {
     }
   }
 
-  async function handleRotateJoinCode(organizationId: string) {
-    const confirmed = window.confirm("Generate a new member join link for this organization? The previous reusable join link will stop working.");
-    if (!confirmed) return;
-    setError(null); setNotice(null);
-    try {
-      const res = await apiFetch(`${API_BASE}/admin/organizations/${encodeURIComponent(organizationId)}/join-code/rotate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ expires_in_days: 30 }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to generate organization join link.");
-      const joinCode = (data as { join_code: JoinCodeEntry }).join_code;
-      if (joinCode.join_url) {
-        setIssuedJoinLinks((current) => ({ ...current, [organizationId]: joinCode.join_url! }));
-        try {
-          await navigator.clipboard.writeText(joinCode.join_url);
-          setNotice("New member join link generated and copied.");
-        } catch {
-          setNotice(`New member join link generated: ${joinCode.join_url}`);
-        }
-      } else {
-        setNotice("New member join code generated.");
-      }
-      await refreshActiveData();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to generate organization join link.");
-    }
-  }
-
-  async function handleDisableJoinCode(organizationId: string) {
-    const confirmed = window.confirm("Disable the reusable member join link for this organization?");
-    if (!confirmed) return;
-    setError(null); setNotice(null);
-    try {
-      const res = await apiFetch(`${API_BASE}/admin/organizations/${encodeURIComponent(organizationId)}/join-code`, { method: "DELETE" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to disable organization join link.");
-      setIssuedJoinLinks((current) => {
-        const next = { ...current };
-        delete next[organizationId];
-        return next;
-      });
-      setNotice("Reusable member join link disabled.");
-      await refreshActiveData();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to disable organization join link.");
-    }
-  }
-
-  async function handleCopyJoinLink(url: string) {
-    try {
-      await navigator.clipboard.writeText(url);
-      setNotice("Member join link copied.");
-    } catch {
-      setError("Unable to copy the member join link.");
-    }
-  }
-
   async function handleCopyInvite(url: string) {
     try {
       await navigator.clipboard.writeText(url);
@@ -1043,22 +969,6 @@ export default function CoachPage() {
           {activeTab === "reporting" ? (
             <div style={{ display: "grid", gap: 24 }}>
               <section style={panelStyle}>
-                <SectionHeader eyebrow="Onboarding" title="Member join links" />
-                <div style={stackStyle}>
-                  {organizations.length ? organizations.map((organization) => (
-                    <OrganizationJoinCodePanel
-                      key={organization.organization_id}
-                      organization={organization}
-                      joinCode={activeJoinCodeByOrgId.get(organization.organization_id) ?? null}
-                      issuedLink={issuedJoinLinks[organization.organization_id]}
-                      onRotate={() => void handleRotateJoinCode(organization.organization_id)}
-                      onDisable={() => void handleDisableJoinCode(organization.organization_id)}
-                      onCopy={(url) => void handleCopyJoinLink(url)}
-                    />
-                  )) : <EmptyState copy="No organizations are available." />}
-                </div>
-              </section>
-              <section style={panelStyle}>
                 <div style={splitSectionHeaderStyle}>
                   <SectionHeader eyebrow="Reporting" title="CSV exports" />
                   <div style={actionClusterStyle}>
@@ -1172,52 +1082,6 @@ function CommandRow({ title, meta, right }: { title: string; meta: string; right
     </div>
   );
 }
-
-function OrganizationJoinCodePanel({
-  organization,
-  joinCode,
-  issuedLink,
-  onRotate,
-  onDisable,
-  onCopy,
-}: {
-  organization: OrganizationEntry;
-  joinCode: JoinCodeEntry | null;
-  issuedLink?: string;
-  onRotate: () => void;
-  onDisable: () => void;
-  onCopy: (url: string) => void;
-}) {
-  const expiresCopy = joinCode?.expires_at ? `Expires ${new Date(joinCode.expires_at).toLocaleDateString()}` : "No active expiry";
-  const usageCopy = joinCode ? `${joinCode.use_count}${joinCode.max_uses ? `/${joinCode.max_uses}` : ""} uses` : "No active member link";
-  return (
-    <div style={joinCodePanelStyle}>
-      <div style={{ minWidth: 0, display: "grid", gap: 8 }}>
-        <div style={rowTitleStyle}>{organization.name}</div>
-        <div style={rowMetaStyle}>Reusable member-only signup for this organization.</div>
-        <div style={pillWrapStyle}>
-          <span style={joinCode?.status === "active" ? activeTagStyle : softTagStyle}>{joinCode?.status ?? "not generated"}</span>
-          {joinCode?.last_four ? <span style={softTagStyle}>ending {joinCode.last_four}</span> : null}
-          <span style={softTagStyle}>{expiresCopy}</span>
-          <span style={softTagStyle}>{usageCopy}</span>
-        </div>
-        {issuedLink ? (
-          <div style={issuedJoinLinkStyle}>
-            <div style={inviteUrlStyle}>{issuedLink}</div>
-            <button type="button" onClick={() => onCopy(issuedLink)} style={secondaryButtonStyle}>Copy new link</button>
-          </div>
-        ) : (
-          <div style={helperCopyStyle}>The full link is shown only after a new one is generated.</div>
-        )}
-      </div>
-      <div style={actionClusterStyle}>
-        <button type="button" onClick={onRotate} style={primaryButtonStyle}>{joinCode ? "Rotate member link" : "Generate member link"}</button>
-        {joinCode ? <button type="button" onClick={onDisable} style={deleteButtonStyle}>Disable link</button> : null}
-      </div>
-    </div>
-  );
-}
-
 function ScoreBreakdownList({ title, rows }: { title: string; rows: ScoreBreakdown[] }) {
   if (!rows.length) return null;
   return (
@@ -1604,8 +1468,6 @@ const activeTagStyle: CSSProperties = { ...tagStyle, background: PALETTE.green, 
 const inactiveTagStyle: CSSProperties = { ...tagStyle, background: "rgba(231,111,81,0.14)", border: `1px solid rgba(231,111,81,0.55)`, color: PALETTE.coral };
 const inviteCardRowStyle: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 14, alignItems: "flex-start", padding: "16px 18px", borderRadius: 18, border: "1px solid var(--line)", background: "var(--surface-fill)" };
 const inviteUrlStyle: CSSProperties = { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12, lineHeight: 1.55, color: "rgba(240,235,224,0.72)", wordBreak: "break-all" };
-const joinCodePanelStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))", gap: 16, alignItems: "start", padding: "16px 18px", borderRadius: 18, border: "1px solid rgba(106,158,114,0.45)", background: "rgba(106,158,114,0.08)" };
-const issuedJoinLinkStyle: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))", gap: 10, alignItems: "center", padding: 12, borderRadius: 14, border: "1px solid var(--line)", background: "rgba(20,18,16,0.5)" };
 const detailsStyle: CSSProperties = { borderTop: "1px solid var(--line-soft)", padding: "14px 0", margin: 0 };
 const summaryStyle: CSSProperties = { cursor: "pointer", fontWeight: 900, color: PALETTE.cream, marginBottom: 12, fontSize: 17, listStyle: "none", display: "flex", alignItems: "center", gap: 10 };
 const emptyStateStyle: CSSProperties = { color: PALETTE.muted, padding: "8px 0 4px", lineHeight: 1.6 };

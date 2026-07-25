@@ -17,7 +17,6 @@ type PublicConfig = {
 
 type InvitePreview = {
   invite_code: string;
-  code_type?: string;
   email: string | null;
   role: string;
   organization_name: string | null;
@@ -217,7 +216,7 @@ function LoginPageContent() {
               {mode === "login"
                 ? "Simple access to your training, results, and assignments."
                 : isInviteFlow
-                  ? "Use the invite or organization join code from your coach to create the right account."
+                  ? "Use the invite from your coach or company admin to create the right account and join the correct organization."
                   : "Create a member account and get into the lab."}
             </p>
           </div>
@@ -247,7 +246,7 @@ function LoginPageContent() {
                 <div style={inviteCardStyle}>
                   <div style={inviteCardTitleStyle}>{invitePreview.organization_name || "Organization invite"}</div>
                   <div style={inviteCardCopyStyle}>
-                    {invitePreview.email ? `Invited email: ${invitePreview.email}` : invitePreview.code_type === "organization_join_code" ? "This organization code creates a member account." : "This invite can be claimed with a new account."}
+                    {invitePreview.email ? `Invited email: ${invitePreview.email}` : "This invite can be claimed with a new account."}
                     {invitePreview.expires_at ? ` Expires ${new Date(invitePreview.expires_at).toLocaleString()}.` : ""}
                   </div>
                   <div style={inviteMetaWrapStyle}>
@@ -259,7 +258,7 @@ function LoginPageContent() {
               <input className="field" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Display name" required />
               <input className="field" value={signupEmail} onChange={(e) => setSignupEmail(e.target.value)} placeholder="Email" type="email" required />
               <input className="field" value={signupPassword} onChange={(e) => setSignupPassword(e.target.value)} placeholder="Password" type="password" required />
-              {isInviteFlow ? <input className="field" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} placeholder="Invite or organization code" required /> : null}
+              {isInviteFlow ? <input className="field" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} placeholder="Invite code" required /> : null}
               {error ? <div style={errorStyle}>{error}</div> : null}
               <button disabled={isBusy} className="btn-primary" style={primaryStyle}>{isBusy ? "Creating account…" : isInviteFlow ? "Accept invite" : "Create account"}</button>
               <button type="button" onClick={() => { setError(null); setMode("login"); }} style={switchStyle}>Already have an account? Log in</button>
