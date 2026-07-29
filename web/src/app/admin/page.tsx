@@ -1132,7 +1132,10 @@ export default function AdminPage() {
                           <>
                             <OrganizationDetailHeader organization={selectedSetupOrganization} />
                             {canCreateOrganizations ? (
-                              <OrganizationSettingsForm key={selectedSetupOrganization.organization_id} organization={selectedSetupOrganization} onSave={(payload) => void handleUpdateOrganization(selectedSetupOrganization.organization_id, payload)} />
+                              <details className="admin-tool-disclosure" style={organizationControlsDisclosureStyle}>
+                                <summary style={organizationControlsSummaryStyle}><span className="admin-tool-caret" aria-hidden="true">›</span><span>Edit organization controls</span></summary>
+                                <OrganizationSettingsForm key={selectedSetupOrganization.organization_id} organization={selectedSetupOrganization} onSave={(payload) => void handleUpdateOrganization(selectedSetupOrganization.organization_id, payload)} />
+                              </details>
                             ) : null}
                           </>
                         ) : <EmptyState copy="Select an organization to manage access." />}
@@ -1777,7 +1780,7 @@ const workspaceItemTitleStyle: CSSProperties = { fontWeight: 850, fontSize: 15, 
 const workspaceItemMetaStyle: CSSProperties = { color: "rgba(240,235,224,0.62)", fontSize: 12, lineHeight: 1.45, marginTop: 5 };
 const statusPillStyle: CSSProperties = { padding: "6px 9px", borderRadius: 999, border: "1px solid rgba(106,158,114,0.55)", background: "rgba(106,158,114,0.12)", color: PALETTE.green, fontSize: 11, fontWeight: 900, textTransform: "uppercase", whiteSpace: "nowrap" };
 const dangerStatusPillStyle: CSSProperties = { ...statusPillStyle, border: "1px solid rgba(231,111,81,0.6)", background: "rgba(231,111,81,0.12)", color: PALETTE.coral };
-const workspaceDetailStyle: CSSProperties = { minHeight: 620, border: "1px solid var(--line)", borderRadius: 18, background: "rgba(20,18,16,0.46)", padding: 18, display: "grid", gap: 18, alignContent: "start" };
+const workspaceDetailStyle: CSSProperties = { border: "1px solid var(--line)", borderRadius: 18, background: "rgba(20,18,16,0.46)", padding: 18, display: "grid", gap: 16, alignContent: "start" };
 const workspaceDetailHeaderStyle: CSSProperties = { display: "grid", gap: 16, paddingBottom: 16, borderBottom: "1px solid var(--line-soft)" };
 const workspaceDetailLogoStyle: CSSProperties = { ...workspaceLogoStyle, width: 64, height: 64, borderRadius: 16 };
 const workspaceDetailLogoFallbackStyle: CSSProperties = { ...workspaceLogoFallbackStyle, width: 64, height: 64, borderRadius: 16, fontSize: 20 };
@@ -1840,5 +1843,7 @@ const inviteCardRowStyle: CSSProperties = { display: "flex", justifyContent: "sp
 const inviteUrlStyle: CSSProperties = { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12, lineHeight: 1.55, color: "rgba(240,235,224,0.72)", wordBreak: "break-all" };
 const detailsStyle: CSSProperties = { borderTop: "1px solid var(--line-soft)", padding: "14px 0", margin: 0 };
 const summaryStyle: CSSProperties = { cursor: "pointer", fontWeight: 900, color: PALETTE.cream, marginBottom: 12, fontSize: 17, listStyle: "none", display: "flex", alignItems: "center", gap: 10 };
+const organizationControlsDisclosureStyle: CSSProperties = { ...detailsStyle, borderTop: 0, padding: 0 };
+const organizationControlsSummaryStyle: CSSProperties = { ...summaryStyle, marginBottom: 0, paddingTop: 2 };
 const emptyStateStyle: CSSProperties = { color: PALETTE.muted, padding: "8px 0 4px", lineHeight: 1.6 };
 const helperPanelStyle: CSSProperties = { padding: "14px 16px", borderRadius: 16, border: "1px solid var(--line)", background: "var(--surface-fill)", color: "rgba(240,235,224,0.7)", lineHeight: 1.65, fontSize: 13 };
