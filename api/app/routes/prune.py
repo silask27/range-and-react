@@ -299,9 +299,14 @@ def save_current_row_and_advance_route(
 
     try:
         existing = _get_authorized_hand(hand_id, current_user)
+        bucket_matrix_view_for_scoring = _valid_bucket_matrix_override(
+            existing,
+            bucket_matrix_view,
+        )
         hand = save_current_row_and_advance(
             hand_id=hand_id,
             iters=iters,
+            bucket_matrix_view_snapshot=bucket_matrix_view_for_scoring,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -333,9 +338,14 @@ def save_full_prune_step_and_continue_route(
 
     try:
         existing = _get_authorized_hand(hand_id, current_user)
+        bucket_matrix_view_for_scoring = _valid_bucket_matrix_override(
+            existing,
+            bucket_matrix_view,
+        )
         hand = save_full_prune_step_and_continue(
             hand_id=hand_id,
             iters=iters,
+            bucket_matrix_view_snapshot=bucket_matrix_view_for_scoring,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -397,7 +397,12 @@ def _prune_efficiency_score(*, start_total: int, end_total: int) -> float:
         return 0.0
     return max(0.0, min(100.0, (start_total - end_total) / (start_total - 1) * 100.0))
 
-def record_prune_evaluation(hand: HandState, *, iters: int | None) -> None:
+def record_prune_evaluation(
+    hand: HandState,
+    *,
+    iters: int | None,
+    bucket_view_snapshot: dict[str, Any] | None = None,
+) -> None:
     if not hand.prune_range_snapshot:
         return
     start_total = sum(len(combos) for combos in hand.prune_range_snapshot.values())
@@ -406,7 +411,7 @@ def record_prune_evaluation(hand: HandState, *, iters: int | None) -> None:
     combo_alive, live_labels = _combo_alive(hand)
 
     bucket_alive, subgroup_alive = _row_flags(
-        _bucket_view(hand, iters=iters),
+        bucket_view_snapshot or _bucket_view(hand, iters=iters),
         actual_bucket=actual['bucket_label'],
         actual_subgroup=actual['subgroup_label'],
     )

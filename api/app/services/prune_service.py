@@ -808,6 +808,7 @@ def save_current_row_and_advance(
     hand_id: str,
     *,
     iters: int | None = None,
+    bucket_matrix_view_snapshot: dict | None = None,
 ) -> HandState:
     """
     Save the current prune row draft as the new saved version, then advance to the next row.
@@ -831,7 +832,11 @@ def save_current_row_and_advance(
     hand.advance_prune_row()
 
     if hand.all_prune_rows_complete():
-        record_prune_evaluation(hand, iters=iters)
+        record_prune_evaluation(
+            hand,
+            iters=iters,
+            bucket_view_snapshot=bucket_matrix_view_snapshot,
+        )
         _continue_after_completed_prune(hand, iters=iters)
 
     store.update_hand(hand_id, _hand_to_store_payload(hand))
@@ -841,6 +846,7 @@ def save_full_prune_step_and_continue(
     hand_id: str,
     *,
     iters: int | None = None,
+    bucket_matrix_view_snapshot: dict | None = None,
 ) -> HandState:
     """
     Finalize the entire prune step exactly as the live range currently stands,
@@ -869,7 +875,11 @@ def save_full_prune_step_and_continue(
         initialize_prune_state(hand, iters=iters)
 
     if hand.prune_row_order:
-        record_prune_evaluation(hand, iters=iters)
+        record_prune_evaluation(
+            hand,
+            iters=iters,
+            bucket_view_snapshot=bucket_matrix_view_snapshot,
+        )
 
     _continue_after_completed_prune(hand, iters=iters)
 
