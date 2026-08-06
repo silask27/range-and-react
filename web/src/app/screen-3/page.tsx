@@ -1347,7 +1347,6 @@ function Screen3PageContent() {
       }
 
       const updated = (await res.json()) as HandState;
-      setIsPruneBusy(false);
       await applyHandUpdateWithVillainPause(previousHand, updated);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save prune row.");
@@ -1365,7 +1364,6 @@ function Screen3PageContent() {
     try {
       const previousHand = hand;
       const updated = await saveFullPruneStep(hand.hand_id);
-      setIsPruneBusy(false);
       await applyHandUpdateWithVillainPause(previousHand, updated);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save prune step.");
