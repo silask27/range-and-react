@@ -5,8 +5,9 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+import logging
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
 
 from api.app.engine.bucket_engine import build_bucket_matrix_view
 from api.app.models.auth import UserAccount
@@ -21,8 +22,17 @@ from api.app.services.prune_service import (
     save_full_prune_step_and_continue,
     start_prune_mode,
 )
+from api.app.services.scoring_service import record_prune_evaluation
 
 router = APIRouter(prefix="/prune", tags=["prune"])
+logger = logging.getLogger(__name__)
+
+
+def _record_prune_evaluation_background(hand: HandState, iters: int | None) -> None:
+    try:
+        record_prune_evaluation(hand, iters=iters)
+    except Exception:
+        logger.exception("Background prune evaluation failed for hand %s", hand.hand_id)
 
 
 def _serialize_prune_row_for_ui(
@@ -285,6 +295,7 @@ def revert_current_row_route(
 
 @router.post("/save-row")
 def save_current_row_and_advance_route(
+    background_tasks: BackgroundTasks,
     payload: dict = Body(...),
     current_user: UserAccount = Depends(get_current_user),
 ) -> dict:
@@ -302,6 +313,11 @@ def save_current_row_and_advance_route(
         hand = save_current_row_and_advance(
             hand_id=hand_id,
             iters=iters,
+            schedule_prune_evaluation=lambda scoring_hand: background_tasks.add_task(
+                _record_prune_evaluation_background,
+                scoring_hand,
+                iters,
+            ),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -319,6 +335,7 @@ def save_current_row_and_advance_route(
 
 @router.post("/save-step")
 def save_full_prune_step_and_continue_route(
+    background_tasks: BackgroundTasks,
     payload: dict = Body(...),
     current_user: UserAccount = Depends(get_current_user),
 ) -> dict:
@@ -336,6 +353,11 @@ def save_full_prune_step_and_continue_route(
         hand = save_full_prune_step_and_continue(
             hand_id=hand_id,
             iters=iters,
+            schedule_prune_evaluation=lambda scoring_hand: background_tasks.add_task(
+                _record_prune_evaluation_background,
+                scoring_hand,
+                iters,
+            ),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

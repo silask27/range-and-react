@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from copy import deepcopy
 from dataclasses import fields
 import random
 from api.app.data.catalog import get_scenario
@@ -20,6 +22,7 @@ from api.app.services.response_matrix_prefill import prepare_response_matrix_for
 
 
 AGGRESSIVE_ACTIONS = {ActionType.BET, ActionType.RAISE}
+PruneEvaluationScheduler = Callable[[HandState], None]
 
 
 def _hand_to_store_payload(hand: HandState) -> dict:
@@ -35,6 +38,19 @@ def _hand_from_store(hand_id: str) -> HandState:
     if payload is None:
         raise ValueError(f"Unknown hand_id: {hand_id}")
     return HandState(**payload)
+
+
+def _record_or_schedule_prune_evaluation(
+    hand: HandState,
+    *,
+    iters: int | None,
+    schedule_prune_evaluation: PruneEvaluationScheduler | None,
+) -> None:
+    if schedule_prune_evaluation is None:
+        record_prune_evaluation(hand, iters=iters)
+        return
+
+    schedule_prune_evaluation(deepcopy(hand))
 
 
 
@@ -808,6 +824,7 @@ def save_current_row_and_advance(
     hand_id: str,
     *,
     iters: int | None = None,
+    schedule_prune_evaluation: PruneEvaluationScheduler | None = None,
 ) -> HandState:
     """
     Save the current prune row draft as the new saved version, then advance to the next row.
@@ -831,7 +848,11 @@ def save_current_row_and_advance(
     hand.advance_prune_row()
 
     if hand.all_prune_rows_complete():
-        record_prune_evaluation(hand, iters=iters)
+        _record_or_schedule_prune_evaluation(
+            hand,
+            iters=iters,
+            schedule_prune_evaluation=schedule_prune_evaluation,
+        )
         _continue_after_completed_prune(hand, iters=iters)
 
     store.update_hand(hand_id, _hand_to_store_payload(hand))
@@ -841,6 +862,7 @@ def save_full_prune_step_and_continue(
     hand_id: str,
     *,
     iters: int | None = None,
+    schedule_prune_evaluation: PruneEvaluationScheduler | None = None,
 ) -> HandState:
     """
     Finalize the entire prune step exactly as the live range currently stands,
@@ -869,7 +891,11 @@ def save_full_prune_step_and_continue(
         initialize_prune_state(hand, iters=iters)
 
     if hand.prune_row_order:
-        record_prune_evaluation(hand, iters=iters)
+        _record_or_schedule_prune_evaluation(
+            hand,
+            iters=iters,
+            schedule_prune_evaluation=schedule_prune_evaluation,
+        )
 
     _continue_after_completed_prune(hand, iters=iters)
 
