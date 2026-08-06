@@ -114,6 +114,21 @@ const MIN_DRIVER_DELTA = 3;
 const MIN_DRIVER_SAMPLE_SHARE = 0.15;
 const MAX_DRIVER_SAMPLE_SHARE = 0.85;
 
+function filenameFromResponse(res: Response, fallback: string) {
+  const disposition = res.headers.get("Content-Disposition") || "";
+  const match = disposition.match(/filename="?([^";]+)"?/i);
+  return match?.[1] || fallback;
+}
+
+function slugifyFilename(value: string | null | undefined, fallback: string) {
+  const clean = (value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return clean || fallback;
+}
+
 async function loadMemberOptions(): Promise<Option[]> {
   const options: Option[] = [];
   let offset = 0;
@@ -288,6 +303,10 @@ export default function ResultsPage() {
     setCsvBusy(true);
     setReviewMessage(null);
     try {
+      const selectedMemberName = selectedMemberId
+        ? memberOptions.find((option) => option.id === selectedMemberId)?.display_name
+        : user?.display_name || user?.email;
+      const fallbackFilename = `${slugifyFilename(selectedMemberName, "member")}-results.csv`;
       const params = new URLSearchParams();
       if (selectedMemberId) params.set("user_id", selectedMemberId);
       const query = params.toString();
@@ -297,14 +316,13 @@ export default function ResultsPage() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      const disposition = res.headers.get("Content-Disposition") || "";
-      const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
-      link.download = filenameMatch?.[1] || "member-results.csv";
+      const filename = filenameFromResponse(res, fallbackFilename);
+      link.download = filename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-      setReviewMessage("Member Results.csv downloaded.");
+      setReviewMessage(`${filename} downloaded.`);
     } catch (err) {
       setReviewMessage(err instanceof Error ? err.message : "Unable to download member results.");
     } finally {

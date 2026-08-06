@@ -100,6 +100,19 @@ def write_csv(rows: list[dict[str, Any]], fieldnames: list[str]) -> str:
     return buffer.getvalue()
 
 
+def _member_filename_label(user_id: str, rows: list[dict[str, Any]]) -> str:
+    if rows:
+        return str(rows[0].get('display_name') or rows[0].get('email') or 'member')
+    with get_connection() as conn:
+        row = conn.execute(
+            'SELECT display_name, email FROM users WHERE user_id = ?',
+            (user_id,),
+        ).fetchone()
+    if row is None:
+        return 'member'
+    return str(row.get('display_name') or row.get('email') or 'member')
+
+
 def member_summary_csv(
     *,
     user_id: str,
@@ -109,8 +122,8 @@ def member_summary_csv(
         visible_user_ids=[user_id],
         visible_organization_ids=visible_organization_ids,
     )
-    display_name = rows[0].get('display_name') if rows else 'member'
-    filename = f"{slugify_filename(str(display_name or ''), 'member')}-results.csv"
+    display_name = _member_filename_label(user_id, rows)
+    filename = f"{slugify_filename(display_name, 'member')}-results.csv"
     return filename, write_csv(rows, MEMBER_SUMMARY_FIELDNAMES), len(rows)
 
 

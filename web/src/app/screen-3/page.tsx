@@ -919,6 +919,7 @@ function Screen3PageContent() {
           action,
           amount: roundedAmount,
           iters: SCREEN3_ITERS,
+          bucket_matrix_view: handRef.current?.bucket_matrix_view,
         }),
       });
     } catch (err) {
