@@ -82,20 +82,51 @@ class VillainHandBucketResult:
     uses_scenario_hero_range: bool
 
 
-def _hero_mix_for_villain(
+@dataclass(frozen=True)
+class HeroRangeMixSnapshot:
+    hero_range_source: str
+    uses_scenario_hero_range: bool
+    fixed_combos: tuple[tuple[str, str], ...]
+    scenario_combos: tuple[tuple[str, str], ...]
+    scenario_weight: float
+    fixed_weight: float
+
+
+@lru_cache(maxsize=4_096)
+def _hero_mix_snapshot_for_villain(
     villain_profile_id: str,
-    scenario_hero_range_tokens: Iterable[str] | None,
-) -> tuple[dict, str, bool]:
-    """Return the same hybrid hero comparison mix used by bucketizer v7."""
+    scenario_hero_range_tokens: tuple[str, ...],
+) -> HeroRangeMixSnapshot:
     hero_mix = bz.selected_hero_range_mix(
         villain_profile_id=villain_profile_id,
         scenario_hero_range_tokens=scenario_hero_range_tokens,
     )
+    scenario_combos = tuple(tuple(combo) for combo in hero_mix["scenario_combos"])
+    fixed_combos = tuple(tuple(combo) for combo in hero_mix["fixed_combos"])
     uses_scenario_hero_range = (
-        bool(hero_mix.get("scenario_combos"))
+        bool(scenario_combos)
         and float(hero_mix.get("scenario_weight", 0.0)) > 0.0
     )
-    return hero_mix, str(hero_mix.get("source") or "fixed"), uses_scenario_hero_range
+    return HeroRangeMixSnapshot(
+        hero_range_source=str(hero_mix.get("source") or "fixed"),
+        uses_scenario_hero_range=uses_scenario_hero_range,
+        fixed_combos=fixed_combos,
+        scenario_combos=scenario_combos,
+        scenario_weight=float(hero_mix["scenario_weight"]),
+        fixed_weight=float(hero_mix["fixed_weight"]),
+    )
+
+
+def _hero_mix_for_villain(
+    villain_profile_id: str,
+    scenario_hero_range_tokens: Iterable[str] | None,
+) -> HeroRangeMixSnapshot:
+    """Return the same hybrid hero comparison mix used by bucketizer v7."""
+    scenario_tokens = tuple(str(token) for token in (scenario_hero_range_tokens or ()))
+    return _hero_mix_snapshot_for_villain(
+        villain_profile_id=villain_profile_id,
+        scenario_hero_range_tokens=scenario_tokens,
+    )
 
 
 @lru_cache(maxsize=1)
@@ -700,7 +731,7 @@ def bucket_villain_hand(
         raise ValueError(f"board must contain 3 to 5 cards, got {len(board_cards)}")
 
     hole = tuple(sorted((hole_cards[0], hole_cards[1])))
-    hero_mix, hero_range_source, uses_scenario_hero_range = _hero_mix_for_villain(
+    hero_mix = _hero_mix_for_villain(
         villain_profile_id=villain_profile_id,
         scenario_hero_range_tokens=scenario_hero_range_tokens,
     )
@@ -710,12 +741,12 @@ def bucket_villain_hand(
         hole=hole,
         board=tuple(board_cards),
         villain_profile_id=villain_profile_id,
-        hero_range_source=hero_range_source,
-        uses_scenario_hero_range=uses_scenario_hero_range,
-        fixed_combos=tuple(tuple(combo) for combo in hero_mix["fixed_combos"]),
-        scenario_combos=tuple(tuple(combo) for combo in hero_mix["scenario_combos"]),
-        scenario_weight=float(hero_mix["scenario_weight"]),
-        fixed_weight=float(hero_mix["fixed_weight"]),
+        hero_range_source=hero_mix.hero_range_source,
+        uses_scenario_hero_range=hero_mix.uses_scenario_hero_range,
+        fixed_combos=hero_mix.fixed_combos,
+        scenario_combos=hero_mix.scenario_combos,
+        scenario_weight=hero_mix.scenario_weight,
+        fixed_weight=hero_mix.fixed_weight,
         iters=resolved_iters,
         seed=int(seed),
     )

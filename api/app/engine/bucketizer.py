@@ -1300,19 +1300,33 @@ def current_score_vs_hero_range_exact(
     AA/KK on Q-6-3 by blocking QQ. River stays blocker-aware because river
     current score is final hand equity.
     """
-    if len(board) == 5:
-        return equity_vs_hero_range_river_exact(villain_hole, board, hero_combos)
+    return _current_score_vs_hero_range_exact_cached(
+        tuple(sorted(villain_hole)),
+        tuple(board),
+        tuple(tuple(sorted(combo)) for combo in hero_combos),
+    )
 
-    board_set = set(board)
+
+@lru_cache(maxsize=200_000)
+def _current_score_vs_hero_range_exact_cached(
+    villain_hole: tuple[str, str],
+    board: tuple[str, ...],
+    hero_combos: tuple[tuple[str, str], ...],
+) -> float:
+    board_list = list(board)
+    if len(board_list) == 5:
+        return equity_vs_hero_range_river_exact(villain_hole, board_list, list(hero_combos))
+
+    board_set = set(board_list)
     valid_hero = [hc for hc in hero_combos if not (set(hc) & board_set)]
     if not valid_hero:
         return 0.0
 
-    villain_rank = rank_7(list(villain_hole) + board)
+    villain_rank = rank_7(list(villain_hole) + board_list)
     wins = ties = total = 0
 
     for hero in valid_hero:
-        hero_rank = rank_7(list(hero) + board)
+        hero_rank = rank_7(list(hero) + board_list)
         total += 1
         if villain_rank > hero_rank:
             wins += 1
@@ -1354,12 +1368,27 @@ def pair_component_current_score_vs_hero_range_rank_exact(
     hero_combos: list[tuple[str, str]],
 ) -> float:
     """Rank-level current score for the made-pair part of a pair+draw hand."""
-    candidates = rank_equivalent_pair_component_holes(villain_hole, board)
+    return _pair_component_current_score_vs_hero_range_rank_exact_cached(
+        tuple(sorted(villain_hole)),
+        tuple(board),
+        tuple(tuple(sorted(combo)) for combo in hero_combos),
+    )
+
+
+@lru_cache(maxsize=100_000)
+def _pair_component_current_score_vs_hero_range_rank_exact_cached(
+    villain_hole: tuple[str, str],
+    board: tuple[str, ...],
+    hero_combos: tuple[tuple[str, str], ...],
+) -> float:
+    board_list = list(board)
+    hero_combo_list = list(hero_combos)
+    candidates = rank_equivalent_pair_component_holes(villain_hole, board_list)
     if not candidates:
-        return current_score_vs_hero_range_exact(villain_hole, board, hero_combos)
+        return current_score_vs_hero_range_exact(villain_hole, board_list, hero_combo_list)
 
     scores = [
-        current_score_vs_hero_range_exact(candidate, board, hero_combos)
+        current_score_vs_hero_range_exact(candidate, board_list, hero_combo_list)
         for candidate in candidates
     ]
     return sum(scores) / len(scores)
@@ -1525,6 +1554,11 @@ def stable_combo_rng_seed(
     return int.from_bytes(digest, "big")
 
 
+@lru_cache(maxsize=1)
+def _full_deck_tuple() -> tuple[str, ...]:
+    return tuple(f"{rank}{suit}" for rank in RANKS for suit in SUITS)
+
+
 def equity_vs_hero_range_mc(
     villain_hole: tuple[str, str],
     board: list[str],
@@ -1541,7 +1575,7 @@ def equity_vs_hero_range_mc(
     if not valid_hero:
         return 0.0
 
-    deck = [f"{rank}{suit}" for rank in RANKS for suit in SUITS]
+    deck = _full_deck_tuple()
     dead = set(board) | set(villain_hole)
     need = 5 - len(board)
 
@@ -1549,9 +1583,19 @@ def equity_vs_hero_range_mc(
 
     for _ in range(iters):
         hero = rng.choice(valid_hero)
-        dead2 = dead | set(hero)
-        avail = [c for c in deck if c not in dead2]
-        runout = rng.sample(avail, need) if need > 0 else []
+        if need == 1:
+            hero_set = set(hero)
+            while True:
+                river_card = rng.choice(deck)
+                if river_card not in dead and river_card not in hero_set:
+                    runout = [river_card]
+                    break
+        elif need > 1:
+            dead2 = dead | set(hero)
+            avail = [c for c in deck if c not in dead2]
+            runout = rng.sample(avail, need)
+        else:
+            runout = []
         full_board = board + runout
 
         villain_rank = rank_7(list(villain_hole) + full_board)

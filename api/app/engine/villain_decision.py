@@ -1667,6 +1667,7 @@ def _format_probs_for_note(probs: dict[str, float]) -> str:
     return ', '.join(pieces)
 
 
+@lru_cache(maxsize=1)
 def validate_model_runtime() -> None:
     _load_runtime_modules()
     required = [
