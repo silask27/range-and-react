@@ -6,9 +6,13 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+from api.app.engine import bucketizer as bz
 from api.app.engine.bucketizer import BUCKETS, SUBGROUPS
 from api.app.engine.dealing import available_combos_for_label
 from api.app.engine.villain_hand_bucket import bucket_villain_hand
+
+
+PAIR_DRAW_AIR_MARGIN_FOR_FULL_EQUITY = 0.05
 
 
 def _bucket_sort_key(bucket_name: str) -> int:
@@ -27,6 +31,59 @@ def _subgroup_sort_key(subgroup_name: str) -> int:
 
 def _sorted_combo_lists(combos: list[list[str]]) -> list[list[str]]:
     return sorted([list(combo) for combo in combos], key=lambda c: (c[0], c[1]))
+
+
+def _fast_bucket_and_subgroup_for_matrix(
+    *,
+    hole: tuple[str, str],
+    board: list[str],
+    villain_profile_id: str,
+    scenario_hero_range_tokens: list[str] | tuple[str, ...] | None,
+    hero_mix: dict,
+    thresholds: dict[str, float],
+    iters: int | None,
+    seed: int,
+) -> tuple[str, str]:
+    """
+    Classify a combo for Screen 3 bucket rows without policy/equity metadata.
+
+    The prune/response matrix only needs broad bucket + display subgroup. The
+    bucket rules are current-strength driven for made hands, pure draws, high
+    cards, and pair+draw placement, so this avoids the per-combo Monte Carlo
+    equity work used by the fuller villain-policy bucket result.
+    """
+    subgroup = bz.subgroup_of(hole, board)
+    current_strength = bz.current_score_vs_hybrid_hero_range_exact(hole, board, hero_mix)
+    pair_component_current_strength = (
+        bz.pair_component_current_score_vs_hybrid_hero_range_rank_exact(hole, board, hero_mix)
+        if bz.is_pair_draw_subgroup(subgroup)
+        else None
+    )
+    if (
+        pair_component_current_strength is not None
+        and not bz.pair_draw_has_non_river_sdv_floor(subgroup, board)
+        and thresholds["air"] <= pair_component_current_strength <= thresholds["air"] + PAIR_DRAW_AIR_MARGIN_FOR_FULL_EQUITY
+    ):
+        result = bucket_villain_hand(
+            villain_hand=hole,
+            board=board,
+            villain_profile_id=villain_profile_id,
+            scenario_hero_range_tokens=scenario_hero_range_tokens,
+            iters=iters,
+            seed=seed,
+        )
+        return result.bucket_label, result.subgroup_label
+
+    bucket_name = bz.broad_bucket_for_subgroup(
+        hole,
+        board,
+        subgroup,
+        current_strength,
+        current_score_vs_hero=current_strength,
+        pair_component_current_score_vs_hero=pair_component_current_strength,
+        thresholds=thresholds,
+    )
+    return bucket_name, bz.display_subgroup_for_bucket(subgroup, bucket_name)
 
 
 def build_bucket_matrix_view(
@@ -110,27 +167,28 @@ def build_bucket_matrix_view(
     )
     bucket_combo_counts: dict[str, int] = defaultdict(int)
     bucket_subgroup_combo_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
-    hero_range_source: str | None = None
+    hero_mix = bz.selected_hero_range_mix(
+        villain_profile_id=villain_profile_id,
+        scenario_hero_range_tokens=scenario_hero_range_tokens,
+    )
+    thresholds = bz.equity_thresholds_for_board(board, hero_mix)
+    hero_range_source = str(hero_mix.get("source") or "fixed")
 
     for label, combos in villain_range_combos_live.items():
         if not combos:
             continue
 
         for combo_cards in combos:
-            result = bucket_villain_hand(
-                villain_hand=tuple(combo_cards),
+            bucket_name, subgroup_name = _fast_bucket_and_subgroup_for_matrix(
+                hole=tuple(sorted(combo_cards)),
                 board=board,
                 villain_profile_id=villain_profile_id,
                 scenario_hero_range_tokens=scenario_hero_range_tokens,
+                hero_mix=hero_mix,
+                thresholds=thresholds,
                 iters=iters,
                 seed=seed,
             )
-
-            if hero_range_source is None:
-                hero_range_source = result.hero_range_source
-
-            bucket_name = result.bucket_label
-            subgroup_name = result.subgroup_label
 
             bucket_to_subgroup_to_label_to_combos[bucket_name][subgroup_name][label].append(
                 list(combo_cards)
@@ -191,7 +249,7 @@ def build_bucket_matrix_view(
 
     return {
         "total_live_combos": total_live_combos,
-        "hero_range_source": hero_range_source or "fixed",
+        "hero_range_source": hero_range_source,
         "row_order": row_names,
         "rows": rows,
     }
