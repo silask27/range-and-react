@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 import os
+from types import SimpleNamespace
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -18,7 +19,7 @@ from fastapi.testclient import TestClient
 
 from api.app.main import app
 from api.app.engine.bucketizer import _one_pair_subgroup
-from api.app.models.betting import ActionEvent, BettingRoundState
+from api.app.models.betting import ActionEvent, ActionHistory, BettingRoundState
 from api.app.models.enums import ActionType, Player, Street, UIGate
 from api.app.models.state import HandState, SessionState
 from api.app.services.action_service import apply_hero_action
@@ -1070,6 +1071,79 @@ class RegressionTestCase(unittest.TestCase):
 
         self.assertTrue(updated.hand_over)
         self.assertEqual(updated.ui_gate, UIGate.HAND_OVER)
+
+    def test_hero_action_schedules_response_scoring_after_visible_state_update(self) -> None:
+        self._create_session_fixture(session_id="scheduled-response-score-session")
+        hand = HandState(
+            hand_id="scheduled-response-score-hand",
+            session_id="scheduled-response-score-session",
+            user_id=self.owner_user_id,
+            scenario_id="srp_ip_btn_vs_bb",
+            villain_profile_id="tag",
+            pot=20.0,
+            hero_stack=100.0,
+            villain_stack=100.0,
+            hero_hand=("Ah", "Kd"),
+            villain_hand=("Qs", "Qd"),
+            board=["2h", "4d", "Qh"],
+            street=Street.FLOP,
+            betting_round=BettingRoundState(),
+            history=ActionHistory(events=[
+                ActionEvent(
+                    street=Street.FLOP,
+                    actor=Player.VILLAIN,
+                    action=ActionType.CHECK,
+                    amount=0.0,
+                ),
+            ]),
+            hero_tokens_saved=["AA", "KK", "QQ", "AKs", "AKo"],
+            villain_range_combos_live={"QQ": [["Qs", "Qd"]]},
+            current_actor=Player.HERO,
+            ui_gate=UIGate.HERO_TO_ACT,
+            response_matrix_columns=["check", "bet_small", "bet_big"],
+            response_matrix_saved={
+                "street": "flop",
+                "columns": ["check", "bet_small", "bet_big"],
+                "row_order": ["SDV"],
+                "selections": {"SDV": {"check": "X", "bet_small": "C", "bet_big": "C"}},
+                "complete": True,
+                "allow_partial": False,
+                "save_reason": "manual",
+            },
+        )
+        store.create_hand(hand.hand_id, asdict(hand))
+
+        scheduled: list[tuple] = []
+
+        with (
+            patch(
+                "api.app.services.action_service._choose_villain_action_for_hand",
+                return_value=SimpleNamespace(action=ActionType.CHECK, note="test model"),
+            ),
+            patch("api.app.services.action_service.initialize_prune_state"),
+            patch(
+                "api.app.services.action_service.record_response_matrix_evaluation",
+                side_effect=AssertionError("response scoring must not block hero action"),
+            ),
+        ):
+            updated = apply_hero_action(
+                hand_id=hand.hand_id,
+                action="check",
+                iters=FAST_INTERACTIVE_ITERS,
+                schedule_response_evaluation=lambda *args: scheduled.append(args),
+            )
+
+        self.assertEqual(updated.street, Street.TURN)
+        self.assertEqual(updated.ui_gate, UIGate.MUST_PRUNE_RANGE)
+        self.assertEqual(updated.current_actor, Player.HERO)
+        self.assertEqual(len(scheduled), 1)
+        scheduled_hand, hero_action_type, hero_amount, pot_before_action, villain_action_type = scheduled[0]
+        self.assertEqual(scheduled_hand.hand_id, hand.hand_id)
+        self.assertEqual(scheduled_hand.street, Street.TURN)
+        self.assertEqual(hero_action_type, ActionType.CHECK)
+        self.assertIsNone(hero_amount)
+        self.assertIsNone(pot_before_action)
+        self.assertEqual(villain_action_type, ActionType.CHECK)
 
     def test_street_advance_keeps_previous_response_matrix_for_prune_display(self) -> None:
         saved_matrix = {

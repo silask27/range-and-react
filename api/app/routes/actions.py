@@ -5,18 +5,46 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+import logging
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
 
 from api.app.engine.bucket_engine import build_bucket_matrix_view
 from api.app.models.auth import UserAccount
+from api.app.models.enums import ActionType
 from api.app.models.state import HandState
 from api.app.security import get_current_user
 from api.app.services.action_service import apply_hero_action
 from api.app.services.auth_service import ensure_can_access_owner_resource
 from api.app.services.hand_service import get_hand
+from api.app.services.scoring_service import record_response_matrix_evaluation
 
 router = APIRouter(prefix="/actions", tags=["actions"])
+logger = logging.getLogger(__name__)
+
+
+def _record_response_matrix_evaluation_background(
+    hand: HandState,
+    hero_action_type: ActionType,
+    hero_amount: float | None,
+    pot_before_action: float | None,
+    villain_action_type: ActionType | None,
+    iters: int | None,
+) -> None:
+    try:
+        record_response_matrix_evaluation(
+            hand,
+            hero_action_type=hero_action_type,
+            hero_amount=hero_amount,
+            pot_before_action=pot_before_action,
+            villain_action_type=villain_action_type,
+            iters=iters,
+        )
+    except Exception:
+        logger.exception(
+            "Background response matrix evaluation failed for hand %s",
+            hand.hand_id,
+        )
 
 
 def _serialize_prune_row_for_ui(
@@ -120,6 +148,7 @@ def _valid_bucket_matrix_override(
 
 @router.post("/hero")
 def apply_hero_action_route(
+    background_tasks: BackgroundTasks,
     payload: dict = Body(...),
     current_user: UserAccount = Depends(get_current_user),
 ) -> dict:
@@ -136,6 +165,23 @@ def apply_hero_action_route(
     if not action:
         raise HTTPException(status_code=400, detail="action is required")
 
+    def schedule_response_evaluation(
+        scoring_hand: HandState,
+        hero_action_type: ActionType,
+        hero_amount: float | None,
+        pot_before_action: float | None,
+        villain_action_type: ActionType | None,
+    ) -> None:
+        background_tasks.add_task(
+            _record_response_matrix_evaluation_background,
+            scoring_hand,
+            hero_action_type,
+            hero_amount,
+            pot_before_action,
+            villain_action_type,
+            iters,
+        )
+
     try:
         existing = get_hand(hand_id)
         ensure_can_access_owner_resource(existing.user_id, current_user)
@@ -150,6 +196,7 @@ def apply_hero_action_route(
             seed=seed,
             iters=iters,
             bucket_view_snapshot=bucket_matrix_view_for_prune,
+            schedule_response_evaluation=schedule_response_evaluation,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

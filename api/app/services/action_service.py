@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from copy import deepcopy
 from dataclasses import fields
 import random
 
@@ -22,6 +24,10 @@ from api.app.storage.memory_store import store
 
 
 AGGRESSIVE_ACTIONS = {ActionType.BET, ActionType.RAISE}
+ResponseEvaluationScheduler = Callable[
+    [HandState, ActionType, float | None, float | None, ActionType | None],
+    None,
+]
 
 
 def _hand_to_store_payload(hand: HandState) -> dict:
@@ -36,6 +42,36 @@ def _hand_from_store(hand_id: str) -> HandState:
     if payload is None:
         raise ValueError(f"Unknown hand_id: {hand_id}")
     return HandState(**payload)
+
+
+def _record_or_schedule_response_matrix_evaluation(
+    hand: HandState,
+    *,
+    hero_action_type: ActionType,
+    hero_amount: float | None,
+    pot_before_action: float | None,
+    villain_action_type: ActionType | None,
+    iters: int | None,
+    schedule_response_evaluation: ResponseEvaluationScheduler | None,
+) -> None:
+    if schedule_response_evaluation is None:
+        record_response_matrix_evaluation(
+            hand,
+            hero_action_type=hero_action_type,
+            hero_amount=hero_amount,
+            pot_before_action=pot_before_action,
+            villain_action_type=villain_action_type,
+            iters=iters,
+        )
+        return
+
+    schedule_response_evaluation(
+        deepcopy(hand),
+        hero_action_type,
+        hero_amount,
+        pot_before_action,
+        villain_action_type,
+    )
 
 
 def _response_columns_for_current_hero_node(hand: HandState) -> list[str]:
@@ -372,6 +408,7 @@ def _advance_street_or_end(
     *,
     seed: int,
     iters: int | None,
+    schedule_response_evaluation: ResponseEvaluationScheduler | None = None,
 ) -> None:
     """
     Advance to the next street if possible; otherwise end the hand on river completion.
@@ -421,6 +458,7 @@ def _advance_street_or_end(
         seed=seed + 1,
         iters=iters,
         can_raise=False,
+        schedule_response_evaluation=schedule_response_evaluation,
     )
 
 
@@ -458,6 +496,7 @@ def _resolve_villain_turn(
     hero_action_type: ActionType | None = None,
     hero_amount: float | None = None,
     pot_before_action: float | None = None,
+    schedule_response_evaluation: ResponseEvaluationScheduler | None = None,
 ) -> None:
     """
     Resolve the next villain action node.
@@ -496,13 +535,14 @@ def _resolve_villain_turn(
             )
         )
 
-        record_response_matrix_evaluation(
+        _record_or_schedule_response_matrix_evaluation(
             hand,
             hero_action_type=hero_action_type or ActionType.CHECK,
             hero_amount=hero_amount,
             pot_before_action=pot_before_action,
             villain_action_type=ActionType.CHECK,
             iters=iters,
+            schedule_response_evaluation=schedule_response_evaluation,
         )
 
         _finalize_after_villain_non_aggressive_action(
@@ -545,13 +585,14 @@ def _resolve_villain_turn(
             )
         )
 
-        record_response_matrix_evaluation(
+        _record_or_schedule_response_matrix_evaluation(
             hand,
             hero_action_type=hero_action_type or ActionType.CHECK,
             hero_amount=hero_amount,
             pot_before_action=pot_before_action,
             villain_action_type=ActionType.BET,
             iters=iters,
+            schedule_response_evaluation=schedule_response_evaluation,
         )
 
         _set_prune_gate_for_hero(hand, iters=iters, bucket_view_snapshot=bucket_view_snapshot)
@@ -578,13 +619,14 @@ def _resolve_villain_turn(
             )
         )
 
-        record_response_matrix_evaluation(
+        _record_or_schedule_response_matrix_evaluation(
             hand,
             hero_action_type=hero_action_type or ActionType.CHECK,
             hero_amount=hero_amount,
             pot_before_action=pot_before_action,
             villain_action_type=ActionType.CALL,
             iters=iters,
+            schedule_response_evaluation=schedule_response_evaluation,
         )
 
         _finalize_after_villain_non_aggressive_action(
@@ -607,13 +649,14 @@ def _resolve_villain_turn(
                 forced=False,
             )
         )
-        record_response_matrix_evaluation(
+        _record_or_schedule_response_matrix_evaluation(
             hand,
             hero_action_type=hero_action_type or ActionType.CHECK,
             hero_amount=hero_amount,
             pot_before_action=pot_before_action,
             villain_action_type=ActionType.FOLD,
             iters=iters,
+            schedule_response_evaluation=schedule_response_evaluation,
         )
         _set_hand_over(hand)
         return
@@ -652,13 +695,14 @@ def _resolve_villain_turn(
             )
         )
 
-        record_response_matrix_evaluation(
+        _record_or_schedule_response_matrix_evaluation(
             hand,
             hero_action_type=hero_action_type or ActionType.CHECK,
             hero_amount=hero_amount,
             pot_before_action=pot_before_action,
             villain_action_type=ActionType.RAISE,
             iters=iters,
+            schedule_response_evaluation=schedule_response_evaluation,
         )
 
         _set_prune_gate_for_hero(hand, iters=iters, bucket_view_snapshot=bucket_view_snapshot)
@@ -675,6 +719,7 @@ def apply_hero_action(
     seed: int = 42,
     iters: int | None = None,
     bucket_view_snapshot: dict | None = None,
+    schedule_response_evaluation: ResponseEvaluationScheduler | None = None,
 ) -> HandState:
     """
     Apply a hero action and continue the hand flow.
@@ -720,7 +765,12 @@ def apply_hero_action(
         )
 
         if _street_is_complete(hand):
-            _advance_street_or_end(hand, seed=seed + 20, iters=iters)
+            _advance_street_or_end(
+                hand,
+                seed=seed + 20,
+                iters=iters,
+                schedule_response_evaluation=schedule_response_evaluation,
+            )
         else:
             hand.current_actor = Player.VILLAIN
             _resolve_villain_turn(
@@ -732,6 +782,7 @@ def apply_hero_action(
                 hero_action_type=ActionType.CHECK,
                 hero_amount=0.0,
                 pot_before_action=pot_before_action,
+                schedule_response_evaluation=schedule_response_evaluation,
             )
 
     elif action_type == ActionType.BET:
@@ -774,6 +825,7 @@ def apply_hero_action(
             hero_action_type=ActionType.BET,
             hero_amount=amount,
             pot_before_action=pot_before_action,
+            schedule_response_evaluation=schedule_response_evaluation,
         )
 
     elif action_type == ActionType.FOLD:
@@ -815,7 +867,12 @@ def apply_hero_action(
         )
 
         if _street_is_complete(hand):
-            _advance_street_or_end(hand, seed=seed + 20, iters=iters)
+            _advance_street_or_end(
+                hand,
+                seed=seed + 20,
+                iters=iters,
+                schedule_response_evaluation=schedule_response_evaluation,
+            )
         else:
             hand.current_actor = Player.VILLAIN
 
@@ -862,6 +919,7 @@ def apply_hero_action(
             hero_action_type=ActionType.RAISE,
             hero_amount=raise_to,
             pot_before_action=pot_before_action,
+            schedule_response_evaluation=schedule_response_evaluation,
         )
 
     else:
