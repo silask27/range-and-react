@@ -20,6 +20,7 @@ SEMANTIC_SIZE_NUMERIC = [
     "board_favors_caller", "is_dynamic_board", "is_static_board",
     "board_four_to_straight", "board_four_to_flush", "board_made_straight",
     "board_made_flush", "is_facing_all_in", "is_stack_committing_size",
+    "board_double_paired", "board_triple_card", "board_4_liner",
     "effective_fold_equity_score", "stack_pressure_score", "pot_pressure_score", "value_bet_incentive",
     "thin_value_incentive", "protection_bet_incentive", "semi_bluff_incentive",
     "sdv_bluff_raise_candidate", "air_bluff_candidate", "bluff_candidate_score",
@@ -177,6 +178,13 @@ def build_size_feature_dict_v4(raw_features: dict[str, object], model_kind: str,
     out = build_size_feature_dict_by_space(raw_features, model_kind, "villain_context_v3")
     semantic = build_semantic_features_v7(spot, raw_features)
     out.update({key: semantic.get(key) for key in SEMANTIC_SIZE_NUMERIC + SEMANTIC_SIZE_CATEGORICAL})
+    out.update(
+        {
+            "board_double_paired": int(bool(raw_features.get("board_double_paired"))),
+            "board_triple_card": int(bool(raw_features.get("board_triple_card"))),
+            "board_4_liner": int(bool(raw_features.get("board_4_liner"))),
+        }
+    )
     villain = str(out.get("villain_type") or "NA")
     scenario = str(out.get("scenario_id") or "NA")
     street = str(out.get("street") or "NA")

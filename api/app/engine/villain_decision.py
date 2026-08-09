@@ -120,6 +120,9 @@ class BoardStateFlags:
     flush_completed: bool
     straight_completed: bool
     connected: bool
+    double_paired: bool = False
+    triple_card: bool = False
+    four_liner: bool = False
 
 
 @dataclass(frozen=True)
@@ -437,6 +440,9 @@ def _derive_board_state_flags(board: Sequence[str]) -> BoardStateFlags:
         flush_completed=flush_completed,
         straight_completed=bool(texture.straight_completed),
         connected=connected,
+        double_paired=bool(texture.double_paired),
+        triple_card=bool(texture.trips_board),
+        four_liner=bool(texture.four_to_straight),
     )
 
 
@@ -818,7 +824,7 @@ def _derive_flat_predictors(*, villain_type: str, scenario_id: str, street: str,
     board_high_card_bucket = _derive_board_high_card_bucket(board)
     vulnerability_score = _compute_vulnerability_score(street=street, villain_is_ip=villain_is_ip, hand_equity=hand_equity, hand_subgroup=hand_subgroup, board_state=board_state)
     return {
-        'feature_version': 'v4',
+        'feature_version': 'v9',
         'villain_type': villain_type,
         'scenario_id': scenario_id,
         'street': street,
@@ -851,6 +857,9 @@ def _derive_flat_predictors(*, villain_type: str, scenario_id: str, street: str,
         'board_flush_completed': board_state.flush_completed,
         'board_straight_completed': board_state.straight_completed,
         'board_connected': board_state.connected,
+        'board_double_paired': board_state.double_paired,
+        'board_triple_card': board_state.triple_card,
+        'board_4_liner': board_state.four_liner,
         'vulnerability_score': float(vulnerability_score),
     }
 
@@ -869,6 +878,9 @@ def _build_v2_action_feature_dict(flat: dict[str, object], *, node: str) -> dict
         flush_completed=bool(flat.get('board_flush_completed')),
         straight_completed=bool(flat.get('board_straight_completed')),
         connected=bool(flat.get('board_connected')),
+        double_paired=bool(flat.get('board_double_paired')),
+        triple_card=bool(flat.get('board_triple_card')),
+        four_liner=bool(flat.get('board_4_liner')),
     )
     hand_eq_bucket = _equity_bucket(hand_equity)
     opp_bucket = _opponent_perceived_strength_bucket(opp_strength)
@@ -933,6 +945,9 @@ def _build_size_feature_dict_compact(flat: dict[str, object], model_kind: str) -
         flush_completed=bool(flat.get('board_flush_completed')),
         straight_completed=bool(flat.get('board_straight_completed')),
         connected=bool(flat.get('board_connected')),
+        double_paired=bool(flat.get('board_double_paired')),
+        triple_card=bool(flat.get('board_triple_card')),
+        four_liner=bool(flat.get('board_4_liner')),
     )
     hand_equity_bucket = _equity_bucket(hand_equity)
     current_strength_bucket = _equity_bucket(current_strength)
@@ -1009,6 +1024,9 @@ def _build_size_feature_dict_context(flat: dict[str, object], model_kind: str) -
         flush_completed=bool(flat.get('board_flush_completed')),
         straight_completed=bool(flat.get('board_straight_completed')),
         connected=bool(flat.get('board_connected')),
+        double_paired=bool(flat.get('board_double_paired')),
+        triple_card=bool(flat.get('board_triple_card')),
+        four_liner=bool(flat.get('board_4_liner')),
     )
     hand_equity_bucket = _equity_bucket(hand_equity)
     current_strength_bucket = _equity_bucket(current_strength)
@@ -1045,6 +1063,9 @@ def _build_size_feature_dict_context(flat: dict[str, object], model_kind: str) -
         'board_flush_completed': int(flags.flush_completed),
         'board_straight_completed': int(flags.straight_completed),
         'board_connected': int(flags.connected),
+        'board_double_paired': int(flags.double_paired),
+        'board_triple_card': int(flags.triple_card),
+        'board_4_liner': int(flags.four_liner),
         'vulnerability_score': vulnerability_score,
         'hand_equity_bucket': hand_equity_bucket,
         'current_strength_bucket': current_strength_bucket,
